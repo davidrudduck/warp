@@ -237,7 +237,7 @@ pub struct AgentDriverOptions {
     /// Selected execution harness for this run.
     pub selected_harness: Harness,
     /// Model ID for the selected harness. Only used for non-Oz harnesses.
-    pub harness_model_id: Option<String>,
+    pub third_party_harness_model_id: Option<String>,
     /// Whether to skip end-of-run snapshot upload.
     pub snapshot_disabled: Option<bool>,
     /// End-of-run snapshot upload timeout override.
@@ -301,6 +301,7 @@ pub struct AgentDriver {
     /// conversation's `parent_agent_id` field at register time so the
     /// streamer recognizes the child role in driver-hosted processes.
     parent_run_id: Option<String>,
+    third_party_harness_model_id: Option<String>,
 
     /// Async writer that records `file` declarations for paths the agent creates or edits
     /// via `RequestFileEdits`. `Some` only when `FeatureFlag::OzHandoff` is enabled, the run
@@ -497,7 +498,7 @@ impl AgentDriver {
             cloud_providers,
             environment,
             selected_harness,
-            harness_model_id,
+            third_party_harness_model_id,
             snapshot_disabled,
             snapshot_upload_timeout,
             snapshot_script_timeout,
@@ -623,7 +624,7 @@ impl AgentDriver {
         ));
         env_vars.extend(harness_model_env_vars(
             selected_harness,
-            harness_model_id.as_deref(),
+            third_party_harness_model_id.as_deref(),
         ));
 
         // Signal to third-party harnesses (e.g. Claude Code) that we're in a sandbox
@@ -693,6 +694,7 @@ impl AgentDriver {
                 .unwrap_or(snapshot::DEFAULT_DECLARATIONS_SCRIPT_TIMEOUT),
             run_conversation_id,
             parent_run_id: parent_run_id_for_self,
+            third_party_harness_model_id,
             snapshot_file_writer,
         })
     }
@@ -1592,11 +1594,21 @@ impl AgentDriver {
         };
 
         // Prepare harness config files (onboarding, trust dialog, API-key approval, etc.).
-        let secrets = foreground
-            .spawn(|me, _| Arc::clone(&me.secrets))
+        let (secrets, third_party_harness_model_id) = foreground
+            .spawn(|me, _| {
+                (
+                    Arc::clone(&me.secrets),
+                    me.third_party_harness_model_id.clone(),
+                )
+            })
             .await
             .map_err(|_| AgentDriverError::InvalidRuntimeState)?;
-        harness.prepare_environment_config(&working_dir, system_prompt.as_deref(), &secrets)?;
+        harness.prepare_environment_config(
+            &working_dir,
+            system_prompt.as_deref(),
+            &secrets,
+            third_party_harness_model_id.as_deref(),
+        )?;
         let resume = foreground
             .spawn(|me, _| me.resume_payload.take())
             .await

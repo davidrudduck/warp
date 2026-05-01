@@ -119,7 +119,7 @@ pub(super) async fn prepare_local_harness_child_launch(
             // hidden child pane.
             let managed_secrets: HashMap<String, ManagedSecretValue> = HashMap::new();
             third_party_harness
-                .prepare_environment_config(&working_dir, None, &managed_secrets)
+                .prepare_environment_config(&working_dir, None, &managed_secrets, None)
                 .map_err(|error: AgentDriverError| error.to_string())?;
             if let Some(manager) = plugin_manager_for(third_party_harness.cli_agent()) {
                 if let Err(error) = manager.install().await {
