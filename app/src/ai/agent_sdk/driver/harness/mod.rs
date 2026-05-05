@@ -15,6 +15,7 @@ use warpui::{ModelHandle, ModelSpawner, SingletonEntity};
 
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
+use crate::ai::mcp::JSONMCPServer;
 use crate::server::server_api::harness_support::{upload_to_target, HarnessSupportClient};
 use crate::server::server_api::ServerApi;
 use crate::terminal::cli_agent_sessions::{CLIAgentSessionStatus, CLIAgentSessionsModel};
@@ -86,6 +87,7 @@ pub(crate) trait ThirdPartyHarness: Send + Sync {
         _working_dir: &Path,
         _system_prompt: Option<&str>,
         _secrets: &HashMap<String, ManagedSecretValue>,
+        _resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
     ) -> Result<(), AgentDriverError> {
         Ok(())
     }
@@ -129,6 +131,7 @@ pub(crate) trait ThirdPartyHarness: Send + Sync {
         server_api: Arc<ServerApi>,
         terminal_driver: ModelHandle<TerminalDriver>,
         resume: Option<ResumePayload>,
+        resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
     ) -> Result<Box<dyn HarnessRunner>, AgentDriverError>;
 }
 

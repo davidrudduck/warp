@@ -105,8 +105,14 @@ pub(super) async fn prepare_local_harness_child_launch(
             // but there are no Warp-managed secrets to materialize into the
             // hidden child pane.
             let managed_secrets: HashMap<String, ManagedSecretValue> = HashMap::new();
+            let empty_mcp_servers = HashMap::new();
             claude_harness
-                .prepare_environment_config(&working_dir, None, &managed_secrets)
+                .prepare_environment_config(
+                    &working_dir,
+                    None,
+                    &managed_secrets,
+                    &empty_mcp_servers,
+                )
                 .map_err(|error: AgentDriverError| error.to_string())?;
             if let Some(manager) = plugin_manager_for(claude_harness.cli_agent()) {
                 if let Err(error) = manager.install().await {

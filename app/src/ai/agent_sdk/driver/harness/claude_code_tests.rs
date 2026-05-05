@@ -52,7 +52,7 @@ fn write_surfaced_parent_bridge_message(state_dir: &Path, record: &MessageBridge
 #[test]
 fn claude_command_uses_session_id_when_not_resuming() {
     let uuid = Uuid::new_v4();
-    let cmd = claude_command("claude", &uuid, "/tmp/prompt.txt", None, false);
+    let cmd = claude_command("claude", &uuid, "/tmp/prompt.txt", None, None, false);
     assert!(
         cmd.contains(&format!("--session-id {uuid}")),
         "expected --session-id flag in non-resume command, got: {cmd}"
@@ -66,7 +66,7 @@ fn claude_command_uses_session_id_when_not_resuming() {
 #[test]
 fn claude_command_uses_resume_flag_when_resuming() {
     let uuid = Uuid::new_v4();
-    let cmd = claude_command("claude", &uuid, "/tmp/prompt.txt", None, true);
+    let cmd = claude_command("claude", &uuid, "/tmp/prompt.txt", None, None, true);
     assert!(
         cmd.contains(&format!("--resume {uuid}")),
         "expected --resume flag in resume command, got: {cmd}"
@@ -80,7 +80,14 @@ fn claude_command_uses_resume_flag_when_resuming() {
 #[test]
 fn claude_command_pipes_prompt_path() {
     let uuid = Uuid::new_v4();
-    let cmd = claude_command("claude", &uuid, "/tmp/prompt with spaces.txt", None, true);
+    let cmd = claude_command(
+        "claude",
+        &uuid,
+        "/tmp/prompt with spaces.txt",
+        None,
+        None,
+        true,
+    );
     assert!(
         cmd.contains("< '/tmp/prompt with spaces.txt'"),
         "expected single-quoted stdin redirect of the prompt path, got: {cmd}"
@@ -89,6 +96,47 @@ fn claude_command_pipes_prompt_path() {
         cmd.contains("--dangerously-skip-permissions"),
         "expected --dangerously-skip-permissions, got: {cmd}"
     );
+}
+
+#[test]
+fn serialize_claude_mcp_config_cli_server() {
+    let servers = HashMap::from([(
+        "test-server".to_string(),
+        JSONMCPServer {
+            transport_type: JSONTransportType::CLIServer {
+                command: "node".to_string(),
+                args: vec!["server.js".to_string()],
+                env: HashMap::from([("API_KEY".to_string(), "secret".to_string())]),
+                working_directory: None,
+            },
+        },
+    )]);
+    let json = serialize_claude_mcp_config(&servers).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let server = &parsed["mcpServers"]["test-server"];
+    assert_eq!(server["type"], "stdio");
+    assert_eq!(server["command"], "node");
+    assert_eq!(server["args"][0], "server.js");
+    assert_eq!(server["env"]["API_KEY"], "secret");
+}
+
+#[test]
+fn serialize_claude_mcp_config_sse_server() {
+    let servers = HashMap::from([(
+        "remote".to_string(),
+        JSONMCPServer {
+            transport_type: JSONTransportType::SSEServer {
+                url: "https://mcp.example.com".to_string(),
+                headers: HashMap::from([("Authorization".to_string(), "Bearer tok".to_string())]),
+            },
+        },
+    )]);
+    let json = serialize_claude_mcp_config(&servers).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let server = &parsed["mcpServers"]["remote"];
+    assert_eq!(server["type"], "sse");
+    assert_eq!(server["url"], "https://mcp.example.com");
+    assert_eq!(server["headers"]["Authorization"], "Bearer tok");
 }
 
 #[test]
