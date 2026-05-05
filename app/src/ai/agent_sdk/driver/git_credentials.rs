@@ -35,6 +35,37 @@ fn home_dir() -> Result<PathBuf> {
     dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))
 }
 
+/// Write `content` to `path` using owner-only (0600) permissions.
+///
+/// On Unix the file is created with mode 0600 so no other user can read the
+/// credential material. On non-Unix platforms the function falls back to the
+/// standard write, relying on OS default permissions.
+fn write_secret_file(path: &std::path::Path, content: &str) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::io::Write as _;
+        use std::os::unix::fs::OpenOptionsExt as _;
+        use std::os::unix::fs::PermissionsExt as _;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)
+            .with_context(|| format!("Failed to open {} for writing", path.display()))?;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("Failed to set permissions on {}", path.display()))?;
+        file.write_all(content.as_bytes())
+            .with_context(|| format!("Failed to write {}", path.display()))?;
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::write(path, content)
+            .with_context(|| format!("Failed to write {}", path.display()))?;
+    }
+    Ok(())
+}
+
 /// Write `~/.git-credentials` with the given credentials.
 ///
 /// Each credential entry is formatted as:
@@ -60,8 +91,7 @@ fn write_git_credentials_file(credentials: &[GitCredential]) -> Result<()> {
         content.push_str(&format!("https://{}@{}\n", userinfo, cred.host));
     }
 
-    std::fs::write(&tmp_path, &content)
-        .with_context(|| format!("Failed to write {}", tmp_path.display()))?;
+    write_secret_file(&tmp_path, &content)?;
     std::fs::rename(&tmp_path, &path).with_context(|| {
         format!(
             "Failed to rename {} to {}",
@@ -107,8 +137,7 @@ fn write_gh_hosts_yaml(credentials: &[GitCredential]) -> Result<()> {
         }
     }
 
-    std::fs::write(&tmp_path, &yaml)
-        .with_context(|| format!("Failed to write {}", tmp_path.display()))?;
+    write_secret_file(&tmp_path, &yaml)?;
     std::fs::rename(&tmp_path, &path).with_context(|| {
         format!(
             "Failed to rename {} to {}",
@@ -148,15 +177,48 @@ fn run_git_config(key: &str, value: &str) {
     }
 }
 
+/// Like [`run_git_config`] but passes `--add` so the new value is appended to
+/// any existing values for `key` rather than replacing them.
+fn run_git_config_add(key: &str, value: &str) {
+    match BlockingCommand::new("git")
+        .args(["config", "--global", "--add", key, value])
+        .output()
+    {
+        Ok(output) if output.status.success() => {}
+        Ok(output) => {
+            log::warn!(
+                "git config --global --add {key} failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        Err(e) => {
+            log::warn!("Failed to run git config --global --add {key}: {e}");
+        }
+    }
+}
+
 /// Run one-time git configuration that is set at startup and never needs to
 /// be refreshed:
 /// - `credential.helper store` so git reads `~/.git-credentials`
-/// - SSH→HTTPS URL rewrites so `git clone git@github.com:...` works
-pub(crate) fn setup_git_config() {
+/// - SSH→HTTPS URL rewrites for each credential host, covering both the
+///   scp-style (`git@{host}:`) and explicit-protocol (`ssh://git@{host}/`)
+///   URL forms, so operations on either form use HTTPS credentials instead
+///   of looking for an SSH key.
+pub(crate) fn setup_git_config(credentials: &[GitCredential]) {
     run_git_config("credential.helper", "store");
-    // Rewrite both ssh:// and scp-style git@ URLs to HTTPS.
-    run_git_config("url.https://github.com/.insteadOf", "ssh://git@github.com/");
-    run_git_config("url.https://github.com/.insteadOf", "git@github.com:");
+    // Use --add for both forms per host so all values coexist as a
+    // multi-value key rather than each entry overwriting the previous one.
+    for cred in credentials {
+        let host = &cred.host;
+        run_git_config_add(
+            &format!("url.https://{host}/.insteadOf"),
+            &format!("ssh://git@{host}/"),
+        );
+        run_git_config_add(
+            &format!("url.https://{host}/.insteadOf"),
+            &format!("git@{host}:"),
+        );
+    }
 }
 
 /// Configure the git user identity from the server-returned credential.

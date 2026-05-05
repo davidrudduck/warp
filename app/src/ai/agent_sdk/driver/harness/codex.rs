@@ -394,7 +394,9 @@ async fn upload_transcript(
     };
     let Some(transcript_path) = transcript_path else {
         if is_final {
-            log::warn!("No codex rollout file found at final save for session {session_id}; transcript was never uploaded");
+            log::warn!(
+                "No codex rollout file found at final save for session {session_id}; transcript was never uploaded"
+            );
         } else {
             log::debug!("No codex rollout file yet for session {session_id}");
         }

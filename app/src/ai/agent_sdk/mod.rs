@@ -1063,7 +1063,7 @@ impl AgentDriverRunner {
         // run continues without file-based git authentication.
         match git_credentials_result {
             Ok(credentials) if !credentials.is_empty() => {
-                driver::git_credentials::setup_git_config();
+                driver::git_credentials::setup_git_config(&credentials);
                 driver::git_credentials::configure_git_identity(&credentials);
                 if let Err(e) = driver::git_credentials::write_git_credentials(&credentials) {
                     log::warn!("Failed to write git credentials: {e:#}");
