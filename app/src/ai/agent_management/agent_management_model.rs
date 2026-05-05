@@ -262,7 +262,9 @@ impl AgentNotificationsModel {
             return;
         };
 
-        if updated_conversation.should_exclude_from_navigation() {
+        if updated_conversation.should_exclude_from_navigation()
+            && !updated_conversation.is_child_agent_conversation()
+        {
             return;
         }
 
@@ -312,16 +314,53 @@ impl AgentNotificationsModel {
     ) {
         let origin = NotificationOrigin::Conversation(conversation_id);
 
+        let ai_history_model = BlocklistAIHistoryModel::as_ref(ctx);
+        let conversation = ai_history_model.conversation(&conversation_id);
+        let is_child = conversation.is_some_and(|c| c.is_child_agent_conversation());
+
+        // For child conversations, check whether the parent conversation is open
+        // instead, since child agents don't have their own agent view — they are
+        // visible via the parent's ChildAgentStatusCard.
+        let is_open = if is_child {
+            conversation
+                .and_then(|c| c.parent_conversation_id())
+                .is_some_and(|parent_id| {
+                    ActiveAgentViewsModel::as_ref(ctx).is_conversation_open(parent_id, ctx)
+                })
+        } else {
+            ActiveAgentViewsModel::as_ref(ctx).is_conversation_open(conversation_id, ctx)
+        };
+
         // If the conversation view is no longer open, don't create notifications for it
         // (there's nothing to navigate to when clicking them).
-        if !ActiveAgentViewsModel::as_ref(ctx).is_conversation_open(conversation_id, ctx) {
+        if !is_open {
             self.pending_artifacts.remove(&conversation_id);
             self.remove_notification_by_source(origin, ctx);
             return;
         }
 
-        let title = latest_query.unwrap_or_else(|| "Agent task".to_owned());
-        let metadata = TerminalViewMetadata::lookup(terminal_view_id, ctx);
+        // For child agent conversations, resolve the parent's terminal_view_id so that
+        // clicking the notification navigates to the parent's pane (the child's pane is
+        // hidden). Also use the child's agent_name as the notification title.
+        let (effective_terminal_view_id, title) = if is_child {
+            let parent_terminal_view_id = conversation
+                .and_then(|c| c.parent_conversation_id())
+                .and_then(|parent_id| {
+                    ai_history_model.terminal_view_id_for_conversation(&parent_id)
+                })
+                .unwrap_or(terminal_view_id);
+            let child_name = conversation
+                .and_then(|c| c.agent_name())
+                .map(|name| name.to_owned())
+                .or(latest_query)
+                .unwrap_or_else(|| "Child agent".to_owned());
+            (parent_terminal_view_id, child_name)
+        } else {
+            let title = latest_query.unwrap_or_else(|| "Agent task".to_owned());
+            (terminal_view_id, title)
+        };
+
+        let metadata = TerminalViewMetadata::lookup(effective_terminal_view_id, ctx);
         let oz_agent = NotificationSourceAgent::Oz {
             is_ambient: metadata.is_ambient,
         };
@@ -333,13 +372,18 @@ impl AgentNotificationsModel {
             }
             ConversationStatus::Success => {
                 let artifacts = self.flush_pending_artifacts(conversation_id);
+                let message = if is_child {
+                    "Child agent completed."
+                } else {
+                    "Task completed."
+                };
                 self.add_notification(
                     title,
-                    "Task completed.".to_owned(),
+                    message.to_owned(),
                     NotificationCategory::Complete,
                     oz_agent,
                     origin,
-                    terminal_view_id,
+                    effective_terminal_view_id,
                     artifacts,
                     metadata.branch,
                     ctx,
@@ -347,13 +391,18 @@ impl AgentNotificationsModel {
             }
             ConversationStatus::Cancelled => {
                 let artifacts = self.flush_pending_artifacts(conversation_id);
+                let message = if is_child {
+                    "Child agent was cancelled."
+                } else {
+                    "Task was cancelled."
+                };
                 self.add_notification(
                     title,
-                    "Task was cancelled.".to_owned(),
+                    message.to_owned(),
                     NotificationCategory::Complete,
                     oz_agent,
                     origin,
-                    terminal_view_id,
+                    effective_terminal_view_id,
                     artifacts,
                     metadata.branch,
                     ctx,
@@ -366,7 +415,7 @@ impl AgentNotificationsModel {
                     NotificationCategory::Request,
                     oz_agent,
                     origin,
-                    terminal_view_id,
+                    effective_terminal_view_id,
                     vec![],
                     metadata.branch,
                     ctx,
@@ -374,13 +423,18 @@ impl AgentNotificationsModel {
             }
             ConversationStatus::Error => {
                 let artifacts = self.flush_pending_artifacts(conversation_id);
+                let message = if is_child {
+                    "Child agent encountered an error."
+                } else {
+                    "Something went wrong."
+                };
                 self.add_notification(
                     title,
-                    "Something went wrong.".to_owned(),
+                    message.to_owned(),
                     NotificationCategory::Error,
                     oz_agent,
                     origin,
-                    terminal_view_id,
+                    effective_terminal_view_id,
                     artifacts,
                     metadata.branch,
                     ctx,
