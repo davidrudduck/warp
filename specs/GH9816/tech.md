@@ -19,7 +19,6 @@ The product behavior is specified in `specs/GH9816/product.md`. The implementati
 In `app/src/settings/editor.rs`, add a new enum near the existing cursor/Vim editor enums:
 - `CodeEditorLineNumberMode::Absolute`
 - `CodeEditorLineNumberMode::Relative`
-- `CodeEditorLineNumberMode::Hybrid`
 Derive the same traits used by nearby public settings enums: `Clone`, `Copy`, `Debug`, `Default`, `Eq`, `PartialEq`, `Deserialize`, `Serialize`, `Sequence`, `schemars::JsonSchema`, and `settings_value::SettingsValue`. Use `#[schemars(rename_all = "snake_case")]` and make `Absolute` the default.
 Add a setting to `define_settings_group!(AppEditorSettings, settings: [...])`:
 - field name: `code_editor_line_number_mode`
@@ -31,13 +30,13 @@ Add a setting to `define_settings_group!(AppEditorSettings, settings: [...])`:
 - TOML path: `text_editing.code_editor_line_number_mode`
 - description: `How line numbers are displayed in code editors.`
 Add small helpers on the enum:
-- `dropdown_item_label(&self) -> &'static str` returning `Absolute`, `Relative`, and `Hybrid`
-- optional `search_terms()` or a widget-level search string that covers `line number relative hybrid vim gutter`
+- `dropdown_item_label(&self) -> &'static str` returning `Absolute` and `Relative`
+- optional `search_terms()` or a widget-level search string that covers `line number relative vim gutter`
 ### 2. Add the settings UI dropdown
 In `app/src/settings_view/features_page.rs`:
 1. Import `CodeEditorLineNumberMode` and the generated setting type, likely `CodeEditorLineNumberModeSetting` or the actual generated name from `define_settings_group!`.
 2. Add `SetCodeEditorLineNumberMode(CodeEditorLineNumberMode)` to `FeaturesPageAction`.
-3. Add telemetry mapping for the new action, following `SetTabBehavior` and `SetNewTabPlacement`.
+3. No new telemetry event is required for this setting in this iteration.
 4. Add action handling that writes the setting:
    - `AppEditorSettings::handle(ctx).update(ctx, |settings, ctx| report_if_error!(settings.code_editor_line_number_mode.set_value(*mode, ctx)))`
    - Notify after the write so settings UI and open editors repaint.
@@ -53,7 +52,7 @@ Extend `LineNumberConfig` in `app/src/code/editor/element.rs`:
 In `CodeEditorView::line_number_config` (`app/src/code/editor/view.rs (1041-1239)`):
 1. Read `let editor_settings = AppEditorSettings::as_ref(ctx)`.
 2. Set `mode: *editor_settings.code_editor_line_number_mode.value()`.
-3. Compute the active cursor line from the primary selection head:
+3. Compute the active cursor line from the primary selection head only when the editor, or the relevant diff/review section, has active cursor focus:
    - Use `self.model.as_ref(ctx).selections(ctx).first().head`.
    - Convert the head to a buffer point with the code editor buffer.
    - Convert that row to the same `LineCount` convention used by `model.start_line_index(&**block)`.
@@ -71,8 +70,7 @@ The helper should implement:
 - `absolute = line_count.as_usize() + config.starting_line_number.unwrap_or(1)`
 - `relative = config.active_line_number.map(|active| active.as_usize().abs_diff(line_count.as_usize()))`
 - Absolute mode returns `absolute`.
-- Relative mode returns `relative.unwrap_or(absolute)` so editors without an active cursor fall back gracefully.
-- Hybrid mode returns `absolute` when `Some(line_count) == active_line_number`, otherwise `relative.unwrap_or(absolute)`.
+- Relative mode returns `absolute` when `Some(line_count) == active_line_number`, otherwise `relative.unwrap_or(absolute)`, so editors without an active cursor fall back gracefully.
 Use the returned value as the `current_line` passed into `render_gutter_element`.
 Important indexing detail: the current code’s absolute calculation implies `line_count` is zero-based for display purposes. The implementation must verify the active cursor conversion uses the same convention. A small unit test should cover this directly to avoid off-by-one bugs.
 ### 5. Keep non-number gutter elements unchanged
@@ -80,9 +78,9 @@ Do not display relative numbers for:
 - temporary removed diff blocks, which currently pass `None` to `render_gutter_element`
 - hidden-section controls, which use `construct_expand_hidden_section_gutter_element`
 - surfaces where `line_number_config` is `None`
-For diff and review editors, preserve absolute numbering unless the cursor is active inside a specific diff section. Only numbered current-buffer lines in that active section should apply the selected Relative or Hybrid display; inactive sections should continue to display absolute line numbers so review context does not shift while the user is elsewhere. Diff hunk and comment interactions should continue to use `EditorLineLocation` and `line_range` exactly as they do today; only the text shown inside eligible numbered gutter elements changes.
+For diff and review editors, preserve absolute numbering unless the cursor is active inside a specific diff section and Relative is selected. Only numbered current-buffer lines in that active section should apply the selected Relative display; inactive sections should continue to display absolute line numbers so review context does not shift while the user is elsewhere. Diff hunk and comment interactions should continue to use `EditorLineLocation` and `line_range` exactly as they do today; only the text shown inside eligible numbered gutter elements changes.
 ### 6. Width and alignment
-The existing `GUTTER_WIDTH` is fixed and currently supports absolute numbers plus gutter controls. Do not change it unless testing shows three-digit or larger relative values clip in common cases. If adjustment is needed, prefer the smallest safe change within `app/src/code/editor/element.rs`, and verify diff/comment buttons still fit.
+The existing `GUTTER_WIDTH` is fixed and currently supports absolute numbers plus gutter controls. Do not change it unless testing shows three-digit or larger relative values clip in common cases. Relative mode still shows the active line’s absolute number, so any width calculation must account for both absolute active-line values and relative non-active-line distances. If adjustment is needed, prefer the smallest safe change within `app/src/code/editor/element.rs`, and verify diff/comment buttons still fit.
 ### 7. Do not wire terminal input or notebook editors
 No changes are needed in `app/src/terminal/input/*`, `app/src/editor/view/mod.rs`, or `app/src/notebooks/editor/view.rs` to render line numbers. The new setting can live in shared editor settings, but only `CodeEditorView` should consume it.
 ## End-to-end flow
@@ -91,27 +89,26 @@ No changes are needed in `app/src/terminal/input/*`, `app/src/editor/view/mod.rs
 3. Open `CodeEditorView` instances observe settings changes and re-render.
 4. `CodeEditorView::line_number_config` includes the selected mode and active cursor line.
 5. `EditorWrapper::gutter_elements` computes each visible current-buffer line’s displayed number from the mode.
-6. Cursor movement emits the existing selection/content events, causing the view to notify and repaint; relative/hybrid gutter values update on the next render.
+6. Cursor movement emits the existing selection/content events, causing the view to notify and repaint; relative gutter values update on the next render.
 ## Risks and mitigations
-1. **Off-by-one errors between buffer rows and gutter `LineCount`.** Mitigate with focused tests for cursor on first, middle, and last lines in Relative and Hybrid modes, and with a code comment documenting the chosen convention.
+1. **Off-by-one errors between buffer rows and gutter `LineCount`.** Mitigate with focused tests for cursor on first, middle, and last lines in Relative mode, and with a code comment documenting the chosen convention.
 2. **Settings UI accidentally scopes the setting under Vim.** Mitigate by implementing a separate Text Editing widget rather than adding it to `VimModeWidget`’s conditional subgroup.
 3. **Open editors may not repaint when the setting changes.** `CodeEditorView::new` already subscribes to appearance and font settings; add or reuse an `AppEditorSettings` observation/subscription if necessary so setting changes notify code editor views.
-4. **Diff/review gutter regression.** The implementation touches the shared code editor wrapper used by code review surfaces. Mitigate with manual testing in a diff editor, keeping `EditorLineLocation` unchanged, and verifying inactive diff sections keep absolute numbering while relative or hybrid numbering is limited to the cursor-active section.
+4. **Diff/review gutter regression.** The implementation touches the shared code editor wrapper used by code review surfaces. Mitigate with manual testing in a diff editor, keeping `EditorLineLocation` unchanged, and verifying inactive diff sections keep absolute numbering while Relative numbering is limited to the cursor-active section.
 5. **Multi-cursor ambiguity.** The product spec defines the primary selection head as the relative origin. Mitigate by using `selections(ctx).first().head`, which matches existing cursor-position helpers.
 ## Testing and validation
 1. Add or update code editor view/element tests to cover the number calculation helper:
    - Absolute mode returns the same values as today.
-   - Relative mode returns `0` for active line and positive distances for lines above/below.
-   - Hybrid mode returns absolute on active line and distances elsewhere.
+   - Relative mode returns absolute on the active line and positive distances for lines above/below.
    - Missing active cursor line falls back to absolute values.
-   - `starting_line_number` still affects absolute/hybrid active-line display without affecting relative distances.
+   - `starting_line_number` still affects absolute and relative active-line display without affecting non-active relative distances.
 2. Add settings tests, if the existing settings test harness supports them, to verify `text_editing.code_editor_line_number_mode = "relative"` deserializes and invalid values fall back through normal settings validation.
 3. Manually verify product invariants from `specs/GH9816/product.md`:
    - Behavior 1-7 in a normal code editor.
-   - Behavior 8-10 with Vim disabled/enabled and with multiple cursors if available.
-   - Behavior 11 with a soft-wrapped long line.
-   - Behavior 12-13 in code review/diff views with hidden sections and inline comments, including absolute numbering for inactive sections and relative or hybrid numbering only in the cursor-active section.
-   - Behavior 16 in terminal input, AI input, and notebook editors.
+   - Behavior 8-10 with Vim disabled/enabled, visual selections, and soft-wrapped lines.
+   - Behavior 11 with hidden/collapsed code regions.
+   - Behavior 12 in code review/diff views with focused and unfocused sections, hidden sections, and inline comments.
+   - Behavior 15 in terminal input, AI input, and notebook editors.
 4. Run the repository’s standard formatting/check flow for touched Rust files. At minimum, run targeted Rust tests for settings and code editor modules; if feasible, run the broader app test command used by the repository before the implementation PR.
 ## Parallelization
 After the settings enum name is settled, implementation can split across two agents:
