@@ -1986,6 +1986,26 @@ pub enum Event {
     RevealChildAgent {
         conversation_id: AIConversationId,
     },
+    /// Emitted when the user picks "Open in new tab" from a child pill's 3-dot
+    /// menu in the orchestration pill bar. Bubbles up through `PaneGroup` to
+    /// `Workspace`, which creates a new tab and switches its agent view to
+    /// the given child conversation.
+    OpenChildAgentInNewTab {
+        conversation_id: AIConversationId,
+    },
+    /// Emitted when the user picks "Open in new pane" from a child pill's
+    /// 3-dot menu in the orchestration pill bar. Bubbles up to `PaneGroup`,
+    /// which splits a fresh terminal pane to the right and loads the child
+    /// conversation into it via `enter_agent_view_for_conversation`. We
+    /// can't reuse the orchestrator's hidden child pane here — its
+    /// terminal model never received the rendered AI blocks for the
+    /// conversation (those are inserted into whichever pane was last
+    /// hosting the agent view in place), so revealing it would show a
+    /// blank transcript. Going through a fresh view + the cloud
+    /// load+restore path mirrors what "Open in new tab" already does.
+    OpenChildAgentInNewPane {
+        conversation_id: AIConversationId,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -2304,6 +2324,13 @@ struct TerminalViewMouseStates {
     jump_to_bottom_of_block_button: MouseStateHandle,
 
     parent_conversation_header_link: MouseStateHandle,
+    /// Persistent horizontal scroll state for the orchestration breadcrumb
+    /// row. Lives here (rather than as a `MouseStateHandle`) so the user's
+    /// scroll position survives across renders — in narrow split-off panes
+    /// the breadcrumb row often overflows the title slot, and we wrap it
+    /// in a `NewScrollable::horizontal` keyed on this handle so the user
+    /// can pan to read clipped labels.
+    breadcrumbs_horizontal_scroll: ClippedScrollStateHandle,
 }
 
 /// Where content was routed when sent to a CLI agent.
@@ -4011,8 +4038,9 @@ impl TerminalView {
                 ctx,
             )
         });
-        let orchestration_pill_bar =
-            ctx.add_view(|ctx| OrchestrationPillBar::new(agent_view_controller.clone(), ctx));
+        let orchestration_pill_bar = ctx.add_typed_action_view(|ctx| {
+            OrchestrationPillBar::new(agent_view_controller.clone(), ctx)
+        });
         ctx.subscribe_to_view(&orchestration_pill_bar, |_, _, _, ctx| ctx.notify());
 
         let agent_view_back_button = ctx.add_typed_action_view(|ctx| {
@@ -4921,6 +4949,42 @@ impl TerminalView {
             .unwrap_or(false)
     }
 
+    /// If this terminal view's agent view is currently displaying the given
+    /// child conversation, switch the agent view back to its parent
+    /// orchestrator conversation.
+    ///
+    /// Used after the user picks "Open in new pane"/"Open in new tab" from
+    /// the orchestration pill bar's 3-dot menu. The new pane/tab takes over
+    /// ownership of the child conversation, so this view should silently
+    /// revert to the orchestrator so the user is left looking at the parent
+    /// (and the pill bar's in-place pill click works again).
+    fn revert_agent_view_to_parent_if_displaying_child(
+        &mut self,
+        child_conversation_id: AIConversationId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let active_conversation_id = self
+            .agent_view_controller
+            .as_ref(ctx)
+            .agent_view_state()
+            .active_conversation_id();
+        if active_conversation_id != Some(child_conversation_id) {
+            return;
+        }
+        let parent_conversation_id = BlocklistAIHistoryModel::as_ref(ctx)
+            .conversation(&child_conversation_id)
+            .and_then(|c| c.parent_conversation_id());
+        let Some(parent_conversation_id) = parent_conversation_id else {
+            return;
+        };
+        self.enter_agent_view_for_conversation(
+            None,
+            AgentViewEntryOrigin::OrchestrationPillBar,
+            parent_conversation_id,
+            ctx,
+        );
+    }
+
     fn handle_agent_todos_popup_event(
         &mut self,
         event: &AgentTodosPopupEvent,
@@ -5190,6 +5254,19 @@ impl TerminalView {
                         .lock()
                         .block_list_mut()
                         .set_is_executing_oz_environment_startup_commands(false);
+                }
+
+                // REMOTE-1486: clear the queued-prompt block on the cloud agent's first
+                // exchange for an Oz local-to-cloud handoff. Mirrors the third-party-harness
+                // path's `HarnessCommandStarted` cleanup, but for the Oz harness the first
+                // `AppendedExchange` is the analogous transition. Idempotent when no block
+                // is currently inserted.
+                if self
+                    .ambient_agent_view_model
+                    .as_ref()
+                    .is_some_and(|model| model.as_ref(ctx).is_local_to_cloud_handoff())
+                {
+                    self.remove_pending_user_query_block(ctx);
                 }
 
                 let should_add_ai_block = history_model
@@ -5514,6 +5591,46 @@ impl TerminalView {
                 });
                 self.is_using_conversation_for_pane_header_title = false;
             }
+            BlocklistAIHistoryEvent::ConversationOwnershipTransferred {
+                conversation_id,
+                previous_terminal_view_id,
+                ..
+            } => {
+                // The conversation has moved to another terminal view. We are
+                // the previous owner (the per-view filter at the top of this
+                // function uses `previous_terminal_view_id`), so drop any
+                // rendered AI blocks and agent-view entry blocks tagged to
+                // this conversation. Otherwise the user sees a transcript
+                // split across two panes (old exchanges here, new exchanges
+                // in the new owner).
+                if *previous_terminal_view_id != self.view_id {
+                    return;
+                }
+                let view_ids_to_remove = self
+                    .rich_content_views
+                    .iter()
+                    .filter_map(|view| {
+                        let belongs_to_conversation = match view.metadata() {
+                            Some(RichContentMetadata::AIBlock(metadata)) => {
+                                metadata.conversation_id == *conversation_id
+                            }
+                            Some(RichContentMetadata::AgentViewEntry(metadata)) => {
+                                metadata.conversation_id == *conversation_id
+                            }
+                            _ => false,
+                        };
+                        belongs_to_conversation.then_some(view.view_id())
+                    })
+                    .collect_vec();
+                for view_id_to_remove in view_ids_to_remove.into_iter() {
+                    self.model
+                        .lock()
+                        .block_list_mut()
+                        .remove_rich_content(view_id_to_remove);
+                    self.rich_content_views
+                        .retain(|view| view.view_id() != view_id_to_remove);
+                }
+            }
             BlocklistAIHistoryEvent::CreatedSubtask { .. }
             | BlocklistAIHistoryEvent::UpdatedAutoexecuteOverride { .. }
             | BlocklistAIHistoryEvent::UpdatedTodoList { .. }
@@ -5524,7 +5641,8 @@ impl TerminalView {
             | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. }
             | BlocklistAIHistoryEvent::DeletedConversation { .. }
             | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. }
-            | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. } => {}
+            | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. }
+            | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. } => {}
         }
         ctx.notify();
     }
@@ -8101,7 +8219,24 @@ impl TerminalView {
 
             ctx.notify();
 
-            send_telemetry_from_ctx!(TelemetryEvent::SSHControlMasterError, ctx);
+            let has_remote_server = active_session_id.is_some_and(|session_id| {
+                self.sessions
+                    .as_ref(ctx)
+                    .get(session_id)
+                    .is_some_and(|session| {
+                        matches!(
+                            session.session_type(),
+                            SessionType::WarpifiedRemote {
+                                host_id: Some(_),
+                                ..
+                            }
+                        )
+                    })
+            });
+            send_telemetry_from_ctx!(
+                TelemetryEvent::SSHControlMasterError { has_remote_server },
+                ctx
+            );
         }
     }
 
@@ -24723,6 +24858,10 @@ impl TypedActionView for TerminalView {
             | ToggleUsageFooter
             | RevealChildAgent { .. }
             | SwitchAgentViewToConversation { .. }
+            | OpenChildAgentInNewPane { .. }
+            | OpenChildAgentInNewTab { .. }
+            | StopAgentConversation { .. }
+            | KillAgentConversation { .. }
             | OpenCLIAgentRichInput
             | ToggleSessionRecording => Empty,
         }
@@ -25757,6 +25896,98 @@ impl TypedActionView for TerminalView {
                     None,
                     AgentViewEntryOrigin::OrchestrationPillBar,
                     *conversation_id,
+                    ctx,
+                );
+            }
+            OpenChildAgentInNewPane { conversation_id } => {
+                // "Open in new pane": split a fresh terminal pane to the
+                // right and load the child conversation into it. We do
+                // *not* reveal the orchestrator's hidden child pane here
+                // — that pane's terminal model has no rendered AI blocks
+                // for the conversation (they live in whichever pane last
+                // hosted the in-place agent view via
+                // `SwitchAgentViewToConversation`), so revealing it would
+                // show an empty transcript. Going through a fresh view
+                // forces the cloud load+restore path in
+                // `enter_agent_view_for_conversation`, which mirrors what
+                // "Open in new tab" does and gives a fully populated
+                // history view.
+                ctx.emit(Event::OpenChildAgentInNewPane {
+                    conversation_id: *conversation_id,
+                });
+                self.revert_agent_view_to_parent_if_displaying_child(*conversation_id, ctx);
+            }
+            OpenChildAgentInNewTab { conversation_id } => {
+                // "Open in new tab": bubble up to the workspace, which is
+                // the only layer that can add a new tab. The workspace will
+                // create a fresh session tab and call
+                // `enter_agent_view_for_conversation` with this id so the
+                // new tab opens directly into the child's agent view (not
+                // the orchestrator's). The current tab stays where it is
+                // and the workspace switches focus to the new tab as part
+                // of `add_new_session_tab_with_default_mode`.
+                ctx.emit(Event::OpenChildAgentInNewTab {
+                    conversation_id: *conversation_id,
+                });
+                self.revert_agent_view_to_parent_if_displaying_child(*conversation_id, ctx);
+            }
+            StopAgentConversation { conversation_id } => {
+                // Cancel the ambient task only if the conversation is
+                // still in progress. The server rejects cancel requests
+                // for terminated runs ("Terminated agent runs cannot be
+                // cancelled"), which would otherwise pop a confusing
+                // error toast every time a user clicks Stop on an
+                // already-finished agent. For local conversations, we
+                // also have no per-conversation cancel entry point yet.
+                let history_model = BlocklistAIHistoryModel::as_ref(ctx);
+                let conversation = history_model.conversation(conversation_id);
+                let is_in_progress = conversation
+                    .map(|c| c.status().is_in_progress())
+                    .unwrap_or(false);
+                let task_id = conversation.and_then(|c| c.task_id());
+                match (is_in_progress, task_id) {
+                    (true, Some(task_id)) => {
+                        crate::ai::ambient_agents::task::cancel_task_with_toast(task_id, ctx);
+                    }
+                    (true, None) => {
+                        // TODO(QUALITY-567): wire local conversation cancel for
+                        // child agents whose run is hosted in this client.
+                        log::info!(
+                            "StopAgentConversation: no task_id for in-progress conversation {conversation_id:?}; skipping (local cancel TODO)",
+                        );
+                    }
+                    (false, _) => {
+                        log::debug!(
+                            "StopAgentConversation: conversation {conversation_id:?} is not in progress; nothing to cancel",
+                        );
+                    }
+                }
+            }
+            KillAgentConversation { conversation_id } => {
+                // Best-effort: cancel the ambient run if it's still in
+                // progress, then remove the conversation from local
+                // history regardless. Cloud-side deletion is
+                // intentionally not done in V2 (see PRODUCT.md
+                // "Non-goals" — server cleanup is a follow-up).
+                //
+                // We gate the cancel on `is_in_progress()` so killing an
+                // already-terminated run doesn't surface the server's
+                // "Terminated agent runs cannot be cancelled" error.
+                let history_model = BlocklistAIHistoryModel::as_ref(ctx);
+                let conversation = history_model.conversation(conversation_id);
+                let is_in_progress = conversation
+                    .map(|c| c.status().is_in_progress())
+                    .unwrap_or(false);
+                let task_id = conversation.and_then(|c| c.task_id());
+                if is_in_progress {
+                    if let Some(task_id) = task_id {
+                        crate::ai::ambient_agents::task::cancel_task_with_toast(task_id, ctx);
+                    }
+                }
+                conversation_utils::remove_conversation(
+                    *conversation_id,
+                    self.view_id,
+                    false, /* delete_from_cloud */
                     ctx,
                 );
             }
