@@ -16026,6 +16026,25 @@ impl Workspace {
                 ctx.notify();
             }
             CodexModalEvent::UseCodex => {
+                let Some(codex_model_id) = LLMPreferences::as_ref(ctx)
+                    .get_preferred_codex_model()
+                    .map(|info| info.id.clone())
+                else {
+                    log::error!("No preferred codex model found");
+                    self.toast_stack.update(ctx, |toast_stack, ctx| {
+                        toast_stack.add_ephemeral_toast(
+                            DismissibleToast::error(
+                                "Codex is not available right now. Please try again later."
+                                    .to_string(),
+                            ),
+                            ctx,
+                        );
+                    });
+                    return;
+                };
+
+                self.current_workspace_state.is_codex_modal_open = false;
+
                 // Add a new terminal tab
                 self.add_new_session_tab_internal_with_default_session_mode_behavior(
                     NewSessionSource::Tab,
@@ -16048,14 +16067,6 @@ impl Workspace {
                     return;
                 };
 
-                let Some(codex_model_id) = LLMPreferences::as_ref(ctx)
-                    .get_preferred_codex_model()
-                    .map(|info| info.id.clone())
-                else {
-                    log::error!("No preferred codex model found");
-                    return;
-                };
-
                 // Set codex as the model for the default profile and make the default profile active.
                 AIExecutionProfilesModel::handle(ctx).update(ctx, |profiles, ctx| {
                     let default_profile_id = profiles.default_profile_id();
@@ -16073,7 +16084,6 @@ impl Workspace {
                     );
                 });
 
-                self.current_workspace_state.is_codex_modal_open = false;
                 ctx.notify();
                 send_telemetry_from_ctx!(TelemetryEvent::CodexModalUseCodexClicked, ctx);
             }
