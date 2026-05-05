@@ -503,11 +503,24 @@ impl ProjectContextModel {
     /// Uses repo_metadata::entry::build_tree for efficient directory traversal
     #[cfg(feature = "local_fs")]
     async fn scan_directory_for_rules(dir_path: &Path) -> Result<ProjectRules> {
-        use repo_metadata::entry::IgnoredPathStrategy;
+        use repo_metadata::entry::{BuildTreeError, IgnoredPathStrategy};
 
         let mut rule_files = ProjectRules::default();
 
-        if !async_fs::metadata(dir_path).await?.is_dir() {
+        let metadata = match async_fs::metadata(dir_path).await {
+            Ok(metadata) => metadata,
+            Err(e) => {
+                let dir_path = dir_path.display();
+                log::warn!(
+                    "Failed to read metadata for project rules scan at {dir_path}; active_rule_files may be missing: {e}"
+                );
+                return Err(e.into());
+            }
+        };
+
+        if !metadata.is_dir() {
+            let dir_path = dir_path.display();
+            log::warn!("Skipping project rules scan because path is not a directory: {dir_path}");
             return Ok(rule_files);
         }
 
@@ -522,8 +535,7 @@ impl ProjectContextModel {
 
         // Build the file tree using repo_metadata's build_tree function
         let ignore_behavior = IgnoredPathStrategy::IncludeOnly(override_ignore_patterns.clone());
-
-        let _ = Entry::build_tree(
+        if let Err(e) = Entry::build_tree(
             dir_path,
             &mut files,
             &mut gitignores,
@@ -531,7 +543,22 @@ impl ProjectContextModel {
             MAX_SCAN_DEPTH,
             0,
             &ignore_behavior,
-        )?;
+        ) {
+            let dir_path = dir_path.display();
+            match &e {
+                BuildTreeError::ExceededMaxFileLimit => {
+                    log::warn!(
+                        "Project rules scan exceeded max file limit for {dir_path}; max_files_to_scan={MAX_FILES_TO_SCAN}; active_rule_files may be incomplete"
+                    );
+                }
+                _ => {
+                    log::warn!(
+                        "Failed to build file tree for project rules scan at {dir_path}; active_rule_files may be missing: {e}"
+                    );
+                }
+            }
+            return Err(e.into());
+        }
 
         // Filter files to only include those matching RULES_FILE_PATTERN
         for file_metadata in files {
@@ -545,8 +572,10 @@ impl ProjectContextModel {
                     let content = match async_fs::read_to_string(&local_path).await {
                         Ok(content) => content,
                         Err(e) => {
-                            log::warn!("Failed to read rule file {}: {e}", file_metadata.path,);
-                            break;
+                            log::warn!(
+                                "Failed to read rule file {path}; continuing project rules scan; active_rule_files may be incomplete: {e}"
+                            );
+                            continue;
                         }
                     };
 
