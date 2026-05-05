@@ -459,8 +459,7 @@ impl InstallationModalBody {
             .on_click(|ctx, _, _| ctx.dispatch_typed_action(InstallationModalBodyAction::Cancel))
             .finish();
 
-        let accent_text_color =
-            appearance.theme().font_color(appearance.theme().accent());
+        let accent_text_color = appearance.theme().font_color(appearance.theme().accent());
 
         let corner_down_left_icon = Container::new(
             ConstrainedBox::new(
@@ -473,10 +472,9 @@ impl InstallationModalBody {
             .finish(),
         )
         .with_uniform_padding(2.)
-        .with_border(Border::all(1.).with_border_fill(coloru_with_opacity(
-            accent_text_color.into(),
-            60,
-        )))
+        .with_border(
+            Border::all(1.).with_border_fill(coloru_with_opacity(accent_text_color.into(), 60)),
+        )
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
         .finish();
 
