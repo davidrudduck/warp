@@ -113,6 +113,12 @@
 /app/assets/bundled/bootstrap/ @zachbai
 /crates/warp_completer/ @zachbai @szgupta @alokedesai
 
+# Repository bootstrap scripts
+/script/bootstrap @acarl005
+/script/linux/bootstrap @acarl005
+/script/macos/bootstrap @acarl005
+/script/windows/bootstrap.ps1 @acarl005
+
 # Agent mode
 /app/src/ai/agent/ @zachbai
 
