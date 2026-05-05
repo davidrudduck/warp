@@ -80,7 +80,7 @@ Do not display relative numbers for:
 - temporary removed diff blocks, which currently pass `None` to `render_gutter_element`
 - hidden-section controls, which use `construct_expand_hidden_section_gutter_element`
 - surfaces where `line_number_config` is `None`
-Diff hunk and comment interactions should continue to use `EditorLineLocation` and `line_range` exactly as they do today; only the text shown inside numbered gutter elements changes.
+For diff and review editors, preserve absolute numbering unless the cursor is active inside a specific diff section. Only numbered current-buffer lines in that active section should apply the selected Relative or Hybrid display; inactive sections should continue to display absolute line numbers so review context does not shift while the user is elsewhere. Diff hunk and comment interactions should continue to use `EditorLineLocation` and `line_range` exactly as they do today; only the text shown inside eligible numbered gutter elements changes.
 ### 6. Width and alignment
 The existing `GUTTER_WIDTH` is fixed and currently supports absolute numbers plus gutter controls. Do not change it unless testing shows three-digit or larger relative values clip in common cases. If adjustment is needed, prefer the smallest safe change within `app/src/code/editor/element.rs`, and verify diff/comment buttons still fit.
 ### 7. Do not wire terminal input or notebook editors
@@ -96,7 +96,7 @@ No changes are needed in `app/src/terminal/input/*`, `app/src/editor/view/mod.rs
 1. **Off-by-one errors between buffer rows and gutter `LineCount`.** Mitigate with focused tests for cursor on first, middle, and last lines in Relative and Hybrid modes, and with a code comment documenting the chosen convention.
 2. **Settings UI accidentally scopes the setting under Vim.** Mitigate by implementing a separate Text Editing widget rather than adding it to `VimModeWidget`’s conditional subgroup.
 3. **Open editors may not repaint when the setting changes.** `CodeEditorView::new` already subscribes to appearance and font settings; add or reuse an `AppEditorSettings` observation/subscription if necessary so setting changes notify code editor views.
-4. **Diff/review gutter regression.** The implementation touches the shared code editor wrapper used by code review surfaces. Mitigate with manual testing in a diff editor and by keeping `EditorLineLocation` unchanged.
+4. **Diff/review gutter regression.** The implementation touches the shared code editor wrapper used by code review surfaces. Mitigate with manual testing in a diff editor, keeping `EditorLineLocation` unchanged, and verifying inactive diff sections keep absolute numbering while relative or hybrid numbering is limited to the cursor-active section.
 5. **Multi-cursor ambiguity.** The product spec defines the primary selection head as the relative origin. Mitigate by using `selections(ctx).first().head`, which matches existing cursor-position helpers.
 ## Testing and validation
 1. Add or update code editor view/element tests to cover the number calculation helper:
@@ -110,7 +110,7 @@ No changes are needed in `app/src/terminal/input/*`, `app/src/editor/view/mod.rs
    - Behavior 1-7 in a normal code editor.
    - Behavior 8-10 with Vim disabled/enabled and with multiple cursors if available.
    - Behavior 11 with a soft-wrapped long line.
-   - Behavior 12-13 in code review/diff views with hidden sections and inline comments.
+   - Behavior 12-13 in code review/diff views with hidden sections and inline comments, including absolute numbering for inactive sections and relative or hybrid numbering only in the cursor-active section.
    - Behavior 16 in terminal input, AI input, and notebook editors.
 4. Run the repository’s standard formatting/check flow for touched Rust files. At minimum, run targeted Rust tests for settings and code editor modules; if feasible, run the broader app test command used by the repository before the implementation PR.
 ## Parallelization
