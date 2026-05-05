@@ -318,17 +318,23 @@ impl AgentNotificationsModel {
         let conversation = ai_history_model.conversation(&conversation_id);
         let is_child = conversation.is_some_and(|c| c.is_child_agent_conversation());
 
-        // For child conversations, check whether the parent conversation is open
-        // instead, since child agents don't have their own agent view — they are
-        // visible via the parent's ChildAgentStatusCard.
-        let is_open = if is_child {
-            conversation
-                .and_then(|c| c.parent_conversation_id())
-                .is_some_and(|parent_id| {
-                    ActiveAgentViewsModel::as_ref(ctx).is_conversation_open(parent_id, ctx)
-                })
+        let active_views = ActiveAgentViewsModel::as_ref(ctx);
+
+        // For child conversations, the child pane may be revealed (visible) or
+        // hidden. If the child's own conversation is open in an agent view,
+        // navigate to it directly. Otherwise, check whether the parent
+        // conversation is open (the child is visible via the parent's
+        // ChildAgentStatusCard). For non-child conversations, just check
+        // whether the conversation itself is open.
+        let (is_open, child_pane_is_revealed) = if is_child {
+            let child_open = active_views.is_conversation_open(conversation_id, ctx);
+            let parent_open = !child_open
+                && conversation
+                    .and_then(|c| c.parent_conversation_id())
+                    .is_some_and(|parent_id| active_views.is_conversation_open(parent_id, ctx));
+            (child_open || parent_open, child_open)
         } else {
-            ActiveAgentViewsModel::as_ref(ctx).is_conversation_open(conversation_id, ctx)
+            (active_views.is_conversation_open(conversation_id, ctx), false)
         };
 
         // If the conversation view is no longer open, don't create notifications for it
@@ -339,22 +345,27 @@ impl AgentNotificationsModel {
             return;
         }
 
-        // For child agent conversations, resolve the parent's terminal_view_id so that
-        // clicking the notification navigates to the parent's pane (the child's pane is
-        // hidden). Also use the child's agent_name as the notification title.
+        // For child agent conversations, use the child's own terminal_view_id
+        // if the child pane is revealed (visible), otherwise resolve the
+        // parent's terminal_view_id so clicking the notification navigates to
+        // the parent's pane. Also use the child's agent_name as the title.
         let (effective_terminal_view_id, title) = if is_child {
-            let parent_terminal_view_id = conversation
-                .and_then(|c| c.parent_conversation_id())
-                .and_then(|parent_id| {
-                    ai_history_model.terminal_view_id_for_conversation(&parent_id)
-                })
-                .unwrap_or(terminal_view_id);
+            let nav_terminal_view_id = if child_pane_is_revealed {
+                terminal_view_id
+            } else {
+                conversation
+                    .and_then(|c| c.parent_conversation_id())
+                    .and_then(|parent_id| {
+                        ai_history_model.terminal_view_id_for_conversation(&parent_id)
+                    })
+                    .unwrap_or(terminal_view_id)
+            };
             let child_name = conversation
                 .and_then(|c| c.agent_name())
                 .map(|name| name.to_owned())
                 .or(latest_query)
                 .unwrap_or_else(|| "Child agent".to_owned());
-            (parent_terminal_view_id, child_name)
+            (nav_terminal_view_id, child_name)
         } else {
             let title = latest_query.unwrap_or_else(|| "Agent task".to_owned());
             (terminal_view_id, title)
