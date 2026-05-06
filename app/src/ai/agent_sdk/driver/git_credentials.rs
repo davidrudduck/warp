@@ -256,9 +256,12 @@ pub(crate) fn configure_git_identity(credentials: &[GitCredential]) {
 /// execution future via `futures::select!` and dropped when the harness
 /// completes.
 pub(crate) async fn refresh_loop(task_id: String, ai_client: Arc<dyn AIClient>) {
+    eprintln!("\n🔄🔄🔄 [GIT-CRED-REFRESH] Starting git credentials refresh loop for task {task_id} (interval={GIT_CREDENTIALS_REFRESH_INTERVAL:?}) 🔄🔄🔄\n");
+    log::info!("Starting git credentials refresh loop for task {task_id}");
     loop {
         warpui::r#async::Timer::after(GIT_CREDENTIALS_REFRESH_INTERVAL).await;
 
+        eprintln!("\n🔑🔑🔑 [GIT-CRED-REFRESH] Refreshing git credentials for task {task_id} (interval={GIT_CREDENTIALS_REFRESH_INTERVAL:?}) 🔑🔑🔑\n");
         log::info!("Refreshing git credentials for task {task_id}");
 
         // Issue a fresh workload token for this refresh call.
@@ -289,8 +292,10 @@ pub(crate) async fn refresh_loop(task_id: String, ai_client: Arc<dyn AIClient>) 
         }
 
         if let Err(e) = write_git_credentials(&credentials) {
+            eprintln!("\n❌❌❌ [GIT-CRED-REFRESH] Failed to write refreshed git credentials: {e:#} ❌❌❌\n");
             log::warn!("Failed to write refreshed git credentials: {e:#}");
         } else {
+            eprintln!("\n✅✅✅ [GIT-CRED-REFRESH] Git credentials refreshed successfully for task {task_id} ✅✅✅\n");
             log::info!("Git credentials refreshed successfully");
         }
     }
