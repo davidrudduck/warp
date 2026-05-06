@@ -1935,10 +1935,15 @@ impl TeamsWidget {
                 }),
                 ..Default::default()
             };
+            let cta_variant = if is_almost_full {
+                ButtonVariant::Secondary
+            } else {
+                ButtonVariant::Outlined
+            };
             let cta_button = if is_business {
                 self.render_button(
                     "Contact sales",
-                    ButtonVariant::Secondary,
+                    cta_variant,
                     self.mouse_state_handles.contact_sales_button.clone(),
                     Some(TeamsPageAction::ContactSales),
                     cta_styles,
@@ -1947,7 +1952,7 @@ impl TeamsWidget {
             } else {
                 self.render_button(
                     "Upgrade",
-                    ButtonVariant::Secondary,
+                    cta_variant,
                     self.mouse_state_handles.seat_cap_upgrade_button.clone(),
                     Some(TeamsPageAction::GenerateUpgradeLink { team_uid: team.uid }),
                     cta_styles,
