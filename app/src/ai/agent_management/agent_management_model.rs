@@ -320,40 +320,18 @@ impl AgentNotificationsModel {
 
         let active_views = ActiveAgentViewsModel::as_ref(ctx);
 
-        // For child conversations, the child pane may be revealed (visible) or
-        // hidden. If the child's own conversation is open in an agent view,
-        // navigate to it directly. Otherwise, check whether the parent
+        // For child conversations, check if the child's own conversation is
+        // open in an agent view (navigate directly) or if the parent
         // conversation is open (the child is visible via the parent's
-        // ChildAgentStatusCard). For non-child conversations, just check
-        // whether the conversation itself is open.
-        let (is_open, child_pane_is_revealed) = if is_child {
+        // ChildAgentStatusCard — navigate to the parent's pane). For non-child
+        // conversations, just check whether the conversation itself is open.
+        let (is_open, effective_terminal_view_id, title) = if is_child {
             let child_open = active_views.is_conversation_open(conversation_id, ctx);
             let parent_open = !child_open
                 && conversation
                     .and_then(|c| c.parent_conversation_id())
                     .is_some_and(|parent_id| active_views.is_conversation_open(parent_id, ctx));
-            (child_open || parent_open, child_open)
-        } else {
-            (
-                active_views.is_conversation_open(conversation_id, ctx),
-                false,
-            )
-        };
-
-        // If the conversation view is no longer open, don't create notifications for it
-        // (there's nothing to navigate to when clicking them).
-        if !is_open {
-            self.pending_artifacts.remove(&conversation_id);
-            self.remove_notification_by_source(origin, ctx);
-            return;
-        }
-
-        // For child agent conversations, use the child's own terminal_view_id
-        // if the child pane is revealed (visible), otherwise resolve the
-        // parent's terminal_view_id so clicking the notification navigates to
-        // the parent's pane. Also use the child's agent_name as the title.
-        let (effective_terminal_view_id, title) = if is_child {
-            let nav_terminal_view_id = if child_pane_is_revealed {
+            let nav_terminal_view_id = if child_open {
                 terminal_view_id
             } else {
                 conversation
@@ -368,11 +346,23 @@ impl AgentNotificationsModel {
                 .map(|name| name.to_owned())
                 .or(latest_query)
                 .unwrap_or_else(|| "Child agent".to_owned());
-            (nav_terminal_view_id, child_name)
+            (child_open || parent_open, nav_terminal_view_id, child_name)
         } else {
             let title = latest_query.unwrap_or_else(|| "Agent task".to_owned());
-            (terminal_view_id, title)
+            (
+                active_views.is_conversation_open(conversation_id, ctx),
+                terminal_view_id,
+                title,
+            )
         };
+
+        // If the conversation view is no longer open, don't create notifications for it
+        // (there's nothing to navigate to when clicking them).
+        if !is_open {
+            self.pending_artifacts.remove(&conversation_id);
+            self.remove_notification_by_source(origin, ctx);
+            return;
+        }
 
         let metadata = TerminalViewMetadata::lookup(effective_terminal_view_id, ctx);
         let oz_agent = NotificationSourceAgent::Oz {
