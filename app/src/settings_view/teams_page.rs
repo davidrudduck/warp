@@ -1935,30 +1935,46 @@ impl TeamsWidget {
                 }),
                 ..Default::default()
             };
-            let cta_variant = if is_almost_full {
-                ButtonVariant::Secondary
-            } else {
-                ButtonVariant::Outlined
-            };
-            let cta_button = if is_business {
-                self.render_button(
+            let (cta_label, cta_action, cta_mouse_state) = if is_business {
+                (
                     "Contact sales",
-                    cta_variant,
+                    TeamsPageAction::ContactSales,
                     self.mouse_state_handles.contact_sales_button.clone(),
-                    Some(TeamsPageAction::ContactSales),
-                    cta_styles,
-                    appearance,
                 )
             } else {
-                self.render_button(
+                (
                     "Upgrade",
-                    cta_variant,
+                    TeamsPageAction::GenerateUpgradeLink { team_uid: team.uid },
                     self.mouse_state_handles.seat_cap_upgrade_button.clone(),
-                    Some(TeamsPageAction::GenerateUpgradeLink { team_uid: team.uid }),
-                    cta_styles,
-                    appearance,
                 )
             };
+            // Both banner states use the Secondary variant so idle styling
+            // stays consistent. On the at/over-cap (red) banner the
+            // Secondary variant's default surface_3 hover background reads
+            // as a grey rectangle that clashes with the red panel; override
+            // the hover styles so hovering instead intensifies the red tint.
+            let mut cta_builder = appearance
+                .ui_builder()
+                .button(ButtonVariant::Secondary, cta_mouse_state)
+                .with_style(cta_styles)
+                .with_centered_text_label(cta_label.to_owned());
+            if !is_almost_full {
+                let error_color = theme.ui_error_color();
+                cta_builder = cta_builder.with_hovered_styles(UiComponentStyles {
+                    background: Some(
+                        themes::theme::Fill::from(error_color)
+                            .with_opacity(20)
+                            .into(),
+                    ),
+                    border_color: Some(themes::theme::Fill::from(error_color).into()),
+                    ..Default::default()
+                });
+            }
+            let cta_button = cta_builder
+                .build()
+                .with_cursor(Cursor::PointingHand)
+                .on_click(move |ctx, _, _| ctx.dispatch_typed_action(cta_action.clone()))
+                .finish();
             content_row =
                 content_row.with_child(Container::new(cta_button).with_margin_left(16.).finish());
         }
