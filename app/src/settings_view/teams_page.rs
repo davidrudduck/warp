@@ -1958,16 +1958,28 @@ impl TeamsWidget {
                 content_row.with_child(Container::new(cta_button).with_margin_left(16.).finish());
         }
 
-        // Wrap in a container with styling similar to Alert (matches the per-seat cost banner)
+        // Wrap in a container with styling similar to Alert.
+        // The almost-full state matches the per-seat cost banner styling (neutral),
+        // while the at/over-cap state uses a soft red error tint with a saturated
+        // border, mirroring the cloud-mode error panel in render_cloud_mode_error_screen.
+        let (background_fill, border_fill) = if is_almost_full {
+            (
+                themes::theme::Fill::from(internal_colors::neutral_4(theme)),
+                themes::theme::Fill::from(internal_colors::neutral_3(theme)),
+            )
+        } else {
+            let error_color = theme.ui_error_color();
+            (
+                themes::theme::Fill::from(error_color).with_opacity(10),
+                themes::theme::Fill::from(error_color),
+            )
+        };
         Container::new(content_row.finish())
             .with_vertical_padding(12.)
             .with_horizontal_padding(horizontal_padding)
-            .with_background(themes::theme::Fill::from(internal_colors::neutral_4(theme)))
+            .with_background(background_fill)
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
-            .with_border(
-                Border::all(1.)
-                    .with_border_fill(themes::theme::Fill::from(internal_colors::neutral_3(theme))),
-            )
+            .with_border(Border::all(1.).with_border_fill(border_fill))
             .finish()
     }
 
