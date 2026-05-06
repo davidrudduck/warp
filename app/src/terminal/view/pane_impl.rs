@@ -6,32 +6,32 @@ use super::{Event, PaneConfiguration, TerminalAction, TerminalViewState, Viewer}
 use crate::ai::agent::conversation::{
     AIConversation, ConversationStatus, ServerAIConversationMetadata,
 };
+use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::ai::blocklist::agent_view::agent_view_bg_fill;
 use crate::ai::blocklist::agent_view::orchestration_conversation_links::parent_conversation_navigation_card;
 use crate::ai::blocklist::agent_view::render_orchestration_breadcrumbs;
-use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::appearance::Appearance;
 use crate::drive::sharing::ShareableObject;
 use crate::features::FeatureFlag;
 use crate::menu::{MenuItem, MenuItemFields};
 use crate::pane_group::focus_state::{PaneFocusHandle, PaneGroupFocusEvent, PaneGroupFocusState};
-use crate::pane_group::pane::view::header::components::{
-    header_edge_min_width, render_pane_header_buttons, render_pane_header_title_text,
-    render_three_column_header, CenteredHeaderEdgeWidth,
-};
-use crate::pane_group::pane::view::header::PANE_HEADER_HEIGHT;
 use crate::pane_group::pane::PaneStack;
-use crate::pane_group::{pane::view, pane::view::PaneHeaderAction, BackingView, SplitPaneState};
+use crate::pane_group::pane::view::header::PANE_HEADER_HEIGHT;
+use crate::pane_group::pane::view::header::components::{
+    CenteredHeaderEdgeWidth, header_edge_min_width, render_pane_header_buttons,
+    render_pane_header_title_text, render_three_column_header,
+};
+use crate::pane_group::{BackingView, SplitPaneState, pane::view, pane::view::PaneHeaderAction};
 use crate::settings::app_installation_detection::{
     UserAppInstallDetectionSettings, UserAppInstallStatus,
 };
-use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
-use crate::terminal::model::terminal_model::ConversationTranscriptViewerStatus;
-use crate::terminal::shared_session::participant_avatar_view::render_participants_and_role_elements;
-use crate::terminal::shared_session::render_util::shared_session_indicator_color;
-use crate::terminal::shared_session::SharedSessionActionSource;
 use crate::terminal::TerminalManager;
 use crate::terminal::TerminalView;
+use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
+use crate::terminal::model::terminal_model::ConversationTranscriptViewerStatus;
+use crate::terminal::shared_session::SharedSessionActionSource;
+use crate::terminal::shared_session::participant_avatar_view::render_participants_and_role_elements;
+use crate::terminal::shared_session::render_util::shared_session_indicator_color;
 use crate::ui_components::agent_icon::terminal_view_agent_icon_variant;
 use crate::ui_components::blended_colors;
 use crate::ui_components::buttons::icon_button_with_color;
@@ -40,6 +40,7 @@ use crate::ui_components::icons;
 use crate::workspace::tab_settings::TabSettings;
 use settings::Setting as _;
 use warp_core::context_flag::ContextFlag;
+use warpui::WeakModelHandle;
 use warpui::elements::{
     ConstrainedBox, CrossAxisAlignment, Flex, MainAxisAlignment, MainAxisSize, ParentElement,
     Shrinkable,
@@ -49,7 +50,6 @@ use warpui::text_layout::ClipConfig;
 use warpui::ui_components::components::UiComponent;
 #[cfg(not(target_arch = "wasm32"))]
 use warpui::ui_components::components::UiComponentStyles;
-use warpui::WeakModelHandle;
 use warpui::{AppContext, Element, ModelHandle, SingletonEntity, TypedActionView, ViewContext};
 
 /// Total size of the agent icon-with-status component rendered in the pane header.
@@ -57,6 +57,11 @@ use warpui::{AppContext, Element, ModelHandle, SingletonEntity, TypedActionView,
 /// Sized so the component fits comfortably within `PANE_HEADER_HEIGHT` (34px) with a
 /// few pixels of vertical buffer.
 const PANE_HEADER_AGENT_SIZE: f32 = 26.;
+/// Width reserved for the fullscreen agent-view back button (`ESC for terminal`).
+/// This keeps the left edge column wide enough for the button before the title
+/// starts shrinking, matching the normal pane-title behavior where header
+/// controls do not intrude into text.
+const AGENT_VIEW_BACK_BUTTON_MIN_WIDTH: f32 = 136.;
 
 impl TerminalView {
     /// Returns a reference to the focus handle if one has been set.
@@ -236,11 +241,9 @@ impl TerminalView {
             .map_or(SplitPaneState::NotInSplitPane, |h| h.split_pane_state(app))
     }
 
-    /// Renders the back button for the pane header, or an empty element if the
-    /// back button should not be shown.
-    fn maybe_render_header_back_button(&self, app: &AppContext) -> Box<dyn Element> {
+    fn should_render_agent_view_back_button(&self, app: &AppContext) -> bool {
         if !FeatureFlag::AgentView.is_enabled() || warpui::platform::is_mobile_device() {
-            return Flex::row().finish();
+            return false;
         }
 
         let in_nav_stack = self
@@ -255,22 +258,28 @@ impl TerminalView {
             || (!is_ambient_agent && !is_transcript_viewer);
         let is_fullscreen_agent_view = self.agent_view_controller.as_ref(app).is_fullscreen();
 
-        if in_nav_stack || (is_fullscreen_agent_view && has_parent_terminal) {
-            if FeatureFlag::Orchestration.is_enabled() {
-                Flex::row()
-                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                    .with_child(ChildView::new(&self.agent_view_back_button).finish())
-                    .finish()
-            } else {
-                Flex::column()
-                    .with_main_axis_alignment(MainAxisAlignment::Center)
-                    .with_cross_axis_alignment(CrossAxisAlignment::Start)
-                    .with_main_axis_size(MainAxisSize::Max)
-                    .with_child(ChildView::new(&self.agent_view_back_button).finish())
-                    .finish()
-            }
+        in_nav_stack || (is_fullscreen_agent_view && has_parent_terminal)
+    }
+
+    /// Renders the back button for the pane header, or an empty element if the
+    /// back button should not be shown.
+    fn maybe_render_header_back_button(&self, app: &AppContext) -> Box<dyn Element> {
+        if !self.should_render_agent_view_back_button(app) {
+            return Flex::row().finish();
+        }
+
+        if FeatureFlag::Orchestration.is_enabled() {
+            Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_child(ChildView::new(&self.agent_view_back_button).finish())
+                .finish()
         } else {
-            Flex::row().finish()
+            Flex::column()
+                .with_main_axis_alignment(MainAxisAlignment::Center)
+                .with_cross_axis_alignment(CrossAxisAlignment::Start)
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_child(ChildView::new(&self.agent_view_back_button).finish())
+                .finish()
         }
     }
 
@@ -582,13 +591,18 @@ impl TerminalView {
         let left = self.maybe_render_header_back_button(app);
         let center = self.render_header_title(is_fullscreen_agent_view, header_ctx, app);
         let (right, min_actions_width) = self.render_header_actions(header_ctx, app);
+        let min_edge_width = if self.should_render_agent_view_back_button(app) {
+            min_actions_width.max(AGENT_VIEW_BACK_BUTTON_MIN_WIDTH)
+        } else {
+            min_actions_width
+        };
 
         let header = render_three_column_header(
             left,
             center,
             right,
             CenteredHeaderEdgeWidth {
-                min: min_actions_width,
+                min: min_edge_width,
                 max: 200.0,
             },
             header_ctx.header_left_inset,
