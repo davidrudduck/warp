@@ -27,8 +27,13 @@ def run(cmd: list[str], *, check: bool = True) -> str:
     return result.stdout.strip()
 
 
-def get_merge_commits(base_ref: str, head_ref: str) -> list[str]:
-    """Return SHAs of merge commits between base and head."""
+def get_commits(base_ref: str, head_ref: str) -> list[str]:
+    """Return SHAs of commits between base and head.
+
+    Tries merge commits first (for repos using merge-commit strategy).
+    Falls back to all first-parent commits (for repos using squash merges).
+    """
+    # Try merge commits first
     log = run(
         [
             "git",
@@ -39,16 +44,31 @@ def get_merge_commits(base_ref: str, head_ref: str) -> list[str]:
             f"{base_ref}..{head_ref}",
         ]
     )
+    if log:
+        return log.splitlines()
+
+    # Fall back to all first-parent commits (squash merge workflow)
+    log = run(
+        [
+            "git",
+            "log",
+            "--first-parent",
+            "--format=%H",
+            f"{base_ref}..{head_ref}",
+        ]
+    )
     if not log:
         return []
     return log.splitlines()
 
 
-def extract_pr_number_from_merge(sha: str) -> int | None:
-    """Extract PR number from a merge commit message like 'Merge pull request #1234 ...'
-    or 'feat: something (#1234)'."""
+def extract_pr_number(sha: str) -> int | None:
+    """Extract PR number from a commit subject line.
+
+    Handles both merge commits ('Merge pull request #1234 ...') and
+    squash commits ('feat: something (#1234)').
+    """
     msg = run(["git", "log", "-1", "--format=%s", sha])
-    # GitHub merge commit style
     m = re.search(r"#(\d+)", msg)
     if m:
         return int(m.group(1))
@@ -91,13 +111,13 @@ def main() -> None:
     parser.add_argument("--head-ref", required=True, help="Current release tag")
     args = parser.parse_args()
 
-    merge_shas = get_merge_commits(args.base_ref, args.head_ref)
+    commit_shas = get_commits(args.base_ref, args.head_ref)
 
     seen_prs: set[int] = set()
     prs: list[dict] = []
 
-    for sha in merge_shas:
-        pr_num = extract_pr_number_from_merge(sha)
+    for sha in commit_shas:
+        pr_num = extract_pr_number(sha)
         if pr_num is None or pr_num in seen_prs:
             continue
         seen_prs.add(pr_num)
