@@ -91,14 +91,14 @@ impl<T> Sender<T> {
     /// This works the same way as [`mpsc::Sender::send`]. After sending the
     /// value, it wakes upthe [`mio::poll::Poll`].
     ///
-    /// Note that I/O errors from waking up the [`mio::poll::Poll`] are
-    /// swallowed.
     pub fn send(&self, t: T) -> Result<(), SendError<T>> {
         self.tx.send(t)?;
 
         let mut state = self.state.lock().unwrap();
         if let Some(waker) = &mut state.waker {
-            let _ = waker.wake();
+            if let Err(e) = waker.wake() {
+                log::error!("PTY mio Waker::wake() failed: {e:?}; event loop may not wake up to process shutdown");
+            }
         } else {
             state.needs_wake_on_register = true;
         }
