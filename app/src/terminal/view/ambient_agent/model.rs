@@ -19,6 +19,8 @@ use crate::ai::ambient_agents::{
 };
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::blocklist::handoff::touched_repos::TouchedWorkspace;
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+use crate::ai::blocklist::handoff::CloudLaunchAttachments;
 use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::ai::execution_profiles::{CloudAgentComputerUseState, ComputerUsePermission};
@@ -35,9 +37,7 @@ use crate::server::server_api::ai::{
 use crate::server::server_api::{
     AIApiError, ClientError, CloudAgentCapacityError, ServerApiProvider,
 };
-use crate::terminal::view::ambient_agent::{
-    CloudLaunchAttachments, SetupCommandGroupId, SetupCommandState,
-};
+use crate::terminal::view::ambient_agent::{SetupCommandGroupId, SetupCommandState};
 use crate::terminal::CLIAgent;
 
 use super::AmbientAgentProgressUIState;
@@ -76,7 +76,7 @@ pub enum SessionStartupKind {
 /// Gates `submit_handoff` against double-submits.
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub enum HandoffSubmissionState {
+pub(crate) enum HandoffSubmissionState {
     #[default]
     Idle,
     Queued,
@@ -86,7 +86,7 @@ pub enum HandoffSubmissionState {
 /// Outcome of the chip-click async snapshot upload.
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub enum SnapshotUploadStatus {
+pub(crate) enum SnapshotUploadStatus {
     /// Upload is still in flight, or has not started yet.
     #[default]
     Pending,
