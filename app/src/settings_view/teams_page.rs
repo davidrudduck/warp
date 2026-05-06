@@ -1847,12 +1847,28 @@ impl TeamsWidget {
             .finish()
     }
 
-    /// Renders the seat-cap alert that swaps in for the per-seat cost banner.
-    /// `is_almost_full` distinguishes the at-N-1 state from the at-or-over-cap state.
-    /// Title/body/CTA vary by plan tier and admin permissions:
-    ///   - non-admin: muted body asking the team admin to add more seats; no CTA.
-    ///   - admin on Build Business: "Contact sales" CTA opening mailto:sales@warp.dev.
-    ///   - admin on any other capped tier: "Upgrade" CTA opening /upgrade.
+    fn seat_cap_alert_body_text(
+        has_admin_permissions: bool,
+        is_almost_full: bool,
+        is_business: bool,
+    ) -> String {
+        if !has_admin_permissions {
+            return "Contact a team admin to add more seats.".to_string();
+        }
+
+        let cta_sentence = if is_business {
+            "Contact sales to upgrade and add more seats."
+        } else {
+            "Upgrade to add more seats."
+        };
+
+        if is_almost_full {
+            return cta_sentence.to_string();
+        }
+
+        format!("You've used all of your team's seats. {cta_sentence}")
+    }
+
     fn render_seat_cap_alert(
         &self,
         is_almost_full: bool,
@@ -1885,20 +1901,8 @@ impl TeamsWidget {
         let title_element = self.render_subsection_header(title_text, appearance);
 
         let is_business = team.billing_metadata.is_on_build_business_plan();
-        let body_text = if !has_admin_permissions {
-            "Contact a team admin to add more seats.".to_string()
-        } else if is_almost_full {
-            if is_business {
-                "Contact sales to upgrade and add more seats.".to_string()
-            } else {
-                "Upgrade to add more seats.".to_string()
-            }
-        } else if is_business {
-            "You've used all of your team's seats. Contact sales to upgrade and add more seats."
-                .to_string()
-        } else {
-            "You've used all of your team's seats. Upgrade to add more seats.".to_string()
-        };
+        let body_text =
+            Self::seat_cap_alert_body_text(has_admin_permissions, is_almost_full, is_business);
 
         let body = self.render_sub_text(body_text, appearance, None);
         let title_container = Container::new(title_element)
@@ -1948,11 +1952,6 @@ impl TeamsWidget {
                     self.mouse_state_handles.seat_cap_upgrade_button.clone(),
                 )
             };
-            // Both banner states use the Secondary variant so idle styling
-            // stays consistent. On the at/over-cap (red) banner the
-            // Secondary variant's default surface_3 hover background reads
-            // as a grey rectangle that clashes with the red panel; override
-            // the hover styles so hovering instead intensifies the red tint.
             let mut cta_builder = appearance
                 .ui_builder()
                 .button(ButtonVariant::Secondary, cta_mouse_state)
@@ -1979,10 +1978,6 @@ impl TeamsWidget {
                 content_row.with_child(Container::new(cta_button).with_margin_left(16.).finish());
         }
 
-        // Wrap in a container with styling similar to Alert.
-        // The almost-full state matches the per-seat cost banner styling (neutral),
-        // while the at/over-cap state uses a soft red error tint with a saturated
-        // border, mirroring the cloud-mode error panel in render_cloud_mode_error_screen.
         let (background_fill, border_fill) = if is_almost_full {
             (
                 themes::theme::Fill::from(internal_colors::neutral_4(theme)),
@@ -2445,11 +2440,7 @@ impl TeamsWidget {
 
         // When the team is at or near its seat cap, the per-seat cost callout is
         // less pressing than the cap-approaching/cap-reached warning, so we swap them out.
-        let team_size_i64: i64 = team_metadata
-            .members
-            .len()
-            .try_into()
-            .expect("team size should be within max i64 range");
+        let team_size_i64 = i64::try_from(team_metadata.members.len()).unwrap_or(i64::MAX);
         let is_full =
             !workspace_size_policy.is_unlimited && team_size_i64 >= workspace_size_policy.limit;
         let is_almost_full = !workspace_size_policy.is_unlimited
@@ -2626,14 +2617,8 @@ impl TeamsWidget {
 
         match team.billing_metadata.delinquency_status {
             DelinquencyStatus::Unknown | DelinquencyStatus::NoDelinquency => {
-                if policy.is_unlimited
-                    || policy.limit
-                        > team
-                            .members
-                            .len()
-                            .try_into()
-                            .expect("team size should be within max i64 range")
-                {
+                let team_size_i64 = i64::try_from(team.members.len()).unwrap_or(i64::MAX);
+                if policy.is_unlimited || policy.limit > team_size_i64 {
                     // Instruction text for invite by email expiry
                     section.add_child(
                         Container::new(self.render_sub_text(
