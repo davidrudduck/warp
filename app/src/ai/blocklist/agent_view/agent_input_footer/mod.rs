@@ -2542,7 +2542,7 @@ pub enum AgentInputFooterEvent {
     #[cfg(not(target_family = "wasm"))]
     OpenPluginInstructionsPane(CLIAgent, PluginModalKind),
     /// Local-to-cloud handoff chip clicked. The terminal `Input` subscriber
-    /// forwards this to `WorkspaceAction::OpenLocalToCloudHandoffPane`.
+    /// activates `&` handoff-compose mode on the local input.
     OpenHandoffPane,
 }
 
