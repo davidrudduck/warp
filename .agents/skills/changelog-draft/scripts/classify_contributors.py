@@ -34,14 +34,28 @@ def run(cmd: list[str], *, check: bool = True) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, capture_output=True, text=True, check=check)
 
 
-def is_org_member(org: str, username: str) -> bool:
-    """Check if a user is a member of the given GitHub org via gh api."""
+def check_org_membership(org: str, username: str) -> str:
+    """Check if a user is a member of the given GitHub org via gh api.
+
+    Returns:
+        'internal' if the user is an org member (HTTP 204),
+        'external' if the user is confirmed not a member (HTTP 404),
+        'unknown' if the check failed due to auth/permission issues.
+    """
     result = run(
         ["gh", "api", f"orgs/{org}/members/{username}", "--silent"],
         check=False,
     )
-    # 204 No Content = is a member, 302/404 = not a member
-    return result.returncode == 0
+    if result.returncode == 0:
+        return "internal"
+    # Distinguish auth failures from genuine "not a member" responses.
+    # gh api exits non-zero for both 404 (not a member) and 403/401 (no
+    # read:org scope).  When the token lacks permissions, stderr typically
+    # contains "403" or "401".  If we can't tell, be conservative.
+    stderr = result.stderr.lower()
+    if "403" in stderr or "401" in stderr or "saml" in stderr:
+        return "unknown"
+    return "external"
 
 
 def main() -> None:
@@ -59,16 +73,21 @@ def main() -> None:
     internal: list[str] = []
     external: list[str] = []
     bot: list[str] = []
+    unknown: list[str] = []
 
     for author in authors:
         if author.lower() in KNOWN_BOTS or author.endswith("[bot]"):
             bot.append(author)
-        elif is_org_member(args.org, author):
-            internal.append(author)
         else:
-            external.append(author)
+            status = check_org_membership(args.org, author)
+            if status == "internal":
+                internal.append(author)
+            elif status == "unknown":
+                unknown.append(author)
+            else:
+                external.append(author)
 
-    output = {"internal": internal, "external": external, "bot": bot}
+    output = {"internal": internal, "external": external, "bot": bot, "unknown": unknown}
     json.dump(output, sys.stdout, indent=2)
     print()
 

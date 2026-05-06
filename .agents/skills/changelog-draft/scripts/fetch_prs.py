@@ -76,8 +76,8 @@ def extract_pr_number(sha: str) -> int | None:
 
 
 def fetch_pr_data(repo: str, pr_number: int) -> dict | None:
-    """Fetch PR metadata via gh CLI."""
-    fields = "number,title,author,body,labels,mergedAt"
+    """Fetch PR metadata and changed file paths via gh CLI."""
+    fields = "number,title,author,body,labels,mergedAt,files"
     raw = run(
         ["gh", "pr", "view", str(pr_number), "--repo", repo, "--json", fields],
         check=False,
@@ -142,6 +142,11 @@ def main() -> None:
         body = data.get("body", "") or ""
         explicit_entries = extract_markers(body)
 
+        file_paths = []
+        for f in data.get("files", []) or []:
+            if isinstance(f, dict):
+                file_paths.append(f.get("path", ""))
+
         prs.append(
             {
                 "number": data.get("number", pr_num),
@@ -151,6 +156,7 @@ def main() -> None:
                 "labels": label_names,
                 "merged_at": data.get("mergedAt", ""),
                 "explicit_entries": explicit_entries,
+                "changed_files": file_paths,
             }
         )
 

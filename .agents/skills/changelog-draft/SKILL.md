@@ -52,7 +52,8 @@ The script outputs JSON to stdout with this structure:
       "merged_at": "2026-05-01T...",
       "explicit_entries": [
         { "category": "NEW-FEATURE", "text": "Added dark mode" }
-      ]
+      ],
+      "changed_files": ["app/src/ai/agent.rs", "crates/warp_features/src/lib.rs"]
     }
   ]
 }
@@ -73,7 +74,8 @@ Output JSON:
 {
   "internal": ["author1"],
   "external": ["author3"],
-  "bot": ["author2"]
+  "bot": ["author2"],
+  "unknown": []
 }
 ```
 
@@ -121,6 +123,10 @@ For each unmarked PR, produce a classification:
 - PRs behind preview flags → `include: false` for stable, `include: true` for preview
 - When in doubt, set `needs_review: true` and `confidence: "low"`
 - Bot PRs (dependabot, renovate, etc.) → `include: false`
+
+**Feature-flag detection:** Use the `changed_files` list from Step 2 to check if any PR touches `crates/warp_features/src/lib.rs` or references a `FeatureFlag` variant in its title/body. Cross-reference with the flag lists from Step 4 to determine channel visibility.
+
+**Unknown contributors:** Authors in the `unknown` bucket (org membership check failed due to auth) should be treated conservatively — do not attribute them as external. Note them in the output for manual verification.
 
 ### Step 6 — Assemble the draft
 
