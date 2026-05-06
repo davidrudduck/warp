@@ -334,7 +334,10 @@ impl AgentNotificationsModel {
                     .is_some_and(|parent_id| active_views.is_conversation_open(parent_id, ctx));
             (child_open || parent_open, child_open)
         } else {
-            (active_views.is_conversation_open(conversation_id, ctx), false)
+            (
+                active_views.is_conversation_open(conversation_id, ctx),
+                false,
+            )
         };
 
         // If the conversation view is no longer open, don't create notifications for it
