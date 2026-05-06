@@ -1455,8 +1455,6 @@ impl AgentDriver {
             }
         }
 
-        // Fetch task_id and AI client once for the refresh loop. Both are needed to call
-        // `taskGitCredentials` periodically to keep credential files fresh.
         let (task_id_for_refresh, ai_client_for_refresh) = foreground
             .spawn(|me, ctx| {
                 let task_id = me.task_id.map(|id| id.to_string());

@@ -1058,9 +1058,6 @@ impl AgentDriverRunner {
             }
         }
 
-        // Write git credentials to ~/.git-credentials and ~/.config/gh/hosts.yaml,
-        // and run one-time git config setup. Non-fatal: errors are logged and the
-        // run continues without file-based git authentication.
         match git_credentials_result {
             Ok(credentials) if !credentials.is_empty() => {
                 driver::git_credentials::setup_git_config(&credentials);

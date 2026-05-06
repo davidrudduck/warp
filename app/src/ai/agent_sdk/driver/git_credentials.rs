@@ -24,13 +24,9 @@ use command::blocking::Command as BlockingCommand;
 /// well ahead of the one-hour GitHub token expiry).
 pub(crate) const GIT_CREDENTIALS_REFRESH_INTERVAL: Duration = Duration::from_secs(50 * 60);
 
-/// Fallback git user name when the server returns no username.
 const DEFAULT_GIT_NAME: &str = "Oz";
-
-/// Fallback git user email when the server returns no email.
 const DEFAULT_GIT_EMAIL: &str = "oz-agent@warp.dev";
 
-/// Returns the home directory path, or an error if it cannot be determined.
 fn home_dir() -> Result<PathBuf> {
     dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))
 }
@@ -149,8 +145,6 @@ fn write_gh_hosts_yaml(credentials: &[GitCredential]) -> Result<()> {
     Ok(())
 }
 
-/// Write credential files for both `git` (`~/.git-credentials`) and the `gh`
-/// CLI (`~/.config/gh/hosts.yaml`).
 pub(crate) fn write_git_credentials(credentials: &[GitCredential]) -> Result<()> {
     write_git_credentials_file(credentials)?;
     write_gh_hosts_yaml(credentials)?;
@@ -293,8 +287,6 @@ pub(crate) async fn refresh_loop(task_id: String, ai_client: Arc<dyn AIClient>) 
 
         log::info!("Refreshing git credentials for task {task_id}");
 
-        // Retry with exponential backoff on transient failures: 1 min, 2 min, 4 min.
-        // All retries fit within the ~10-minute buffer before the one-hour token expires.
         let backoff_delays = [
             Duration::from_secs(60),
             Duration::from_secs(2 * 60),
