@@ -240,6 +240,36 @@ pub(crate) fn configure_git_identity(credentials: &[GitCredential]) {
     run_git_config("user.email", email);
 }
 
+/// Perform one git credentials refresh attempt.
+///
+/// Returns `Ok(())` on success (including when the server returns no
+/// credentials). Returns `Err` when the workload-token issuance or the server
+/// API call fails — these are transient failures worth retrying.
+async fn try_refresh(task_id: &str, ai_client: &Arc<dyn AIClient>) -> Result<()> {
+    let workload_token =
+        warp_isolation_platform::issue_workload_token(Some(Duration::from_mins(5)))
+            .await
+            .context("Failed to issue workload token for git credentials refresh")?
+            .token;
+
+    let credentials = ai_client
+        .get_task_git_credentials(task_id.to_string(), workload_token)
+        .await
+        .context("Failed to fetch git credentials from server")?;
+
+    if credentials.is_empty() {
+        log::debug!("No git credentials returned during refresh; skipping file write");
+        return Ok(());
+    }
+
+    if let Err(e) = write_git_credentials(&credentials) {
+        log::warn!("Failed to write refreshed git credentials: {e:#}");
+    } else {
+        log::info!("Git credentials refreshed successfully");
+    }
+    Ok(())
+}
+
 /// Infinite async loop that refreshes git credentials every
 /// [`GIT_CREDENTIALS_REFRESH_INTERVAL`].
 ///
@@ -248,55 +278,51 @@ pub(crate) fn configure_git_identity(credentials: &[GitCredential]) {
 /// 2. Call `taskGitCredentials` to get a fresh token from the server.
 /// 3. Overwrite `~/.git-credentials` and `~/.config/gh/hosts.yaml`.
 ///
-/// If any step fails, a warning is logged and the loop continues with the
-/// next interval. The existing credential files remain valid until the token
-/// actually expires (~10 minutes of buffer remain when we retry).
+/// On transient failure, the refresh is retried up to three times with
+/// exponential backoff (1 min, 2 min, 4 min), keeping all retries within the
+/// ~10-minute buffer before the one-hour token expires. If all retries fail,
+/// a warning is logged and the next refresh is scheduled after the normal
+/// interval.
 ///
 /// This future never resolves — it is designed to be raced with the harness
 /// execution future via `futures::select!` and dropped when the harness
 /// completes.
 pub(crate) async fn refresh_loop(task_id: String, ai_client: Arc<dyn AIClient>) {
-    eprintln!("\n🔄🔄🔄 [GIT-CRED-REFRESH] Starting git credentials refresh loop for task {task_id} (interval={GIT_CREDENTIALS_REFRESH_INTERVAL:?}) 🔄🔄🔄\n");
-    log::info!("Starting git credentials refresh loop for task {task_id}");
     loop {
         warpui::r#async::Timer::after(GIT_CREDENTIALS_REFRESH_INTERVAL).await;
 
-        eprintln!("\n🔑🔑🔑 [GIT-CRED-REFRESH] Refreshing git credentials for task {task_id} (interval={GIT_CREDENTIALS_REFRESH_INTERVAL:?}) 🔑🔑🔑\n");
         log::info!("Refreshing git credentials for task {task_id}");
 
-        // Issue a fresh workload token for this refresh call.
-        let workload_token =
-            match warp_isolation_platform::issue_workload_token(Some(Duration::from_mins(5))).await
-            {
-                Ok(token) => token.token,
-                Err(e) => {
-                    log::warn!("Failed to issue workload token for git credentials refresh: {e}");
-                    continue;
+        // Retry with exponential backoff on transient failures: 1 min, 2 min, 4 min.
+        // All retries fit within the ~10-minute buffer before the one-hour token expires.
+        let backoff_delays = [
+            Duration::from_secs(60),
+            Duration::from_secs(2 * 60),
+            Duration::from_secs(4 * 60),
+        ];
+        let mut attempt = 0usize;
+        loop {
+            match try_refresh(&task_id, &ai_client).await {
+                Ok(()) => break,
+                Err(e) if attempt < backoff_delays.len() => {
+                    let delay = backoff_delays[attempt];
+                    log::warn!(
+                        "Git credentials refresh failed (attempt {}): {e:#}; retrying in {}s",
+                        attempt + 1,
+                        delay.as_secs()
+                    );
+                    warpui::r#async::Timer::after(delay).await;
+                    attempt += 1;
                 }
-            };
-
-        let credentials = match ai_client
-            .get_task_git_credentials(task_id.clone(), workload_token)
-            .await
-        {
-            Ok(creds) => creds,
-            Err(e) => {
-                log::warn!("Failed to refresh git credentials: {e:#}");
-                continue;
+                Err(e) => {
+                    log::warn!(
+                        "Git credentials refresh failed after {} attempts: {e:#}; \
+                         credentials may expire before next refresh cycle",
+                        attempt + 1
+                    );
+                    break;
+                }
             }
-        };
-
-        if credentials.is_empty() {
-            log::debug!("No git credentials returned during refresh; skipping file write");
-            continue;
-        }
-
-        if let Err(e) = write_git_credentials(&credentials) {
-            eprintln!("\n❌❌❌ [GIT-CRED-REFRESH] Failed to write refreshed git credentials: {e:#} ❌❌❌\n");
-            log::warn!("Failed to write refreshed git credentials: {e:#}");
-        } else {
-            eprintln!("\n✅✅✅ [GIT-CRED-REFRESH] Git credentials refreshed successfully for task {task_id} ✅✅✅\n");
-            log::info!("Git credentials refreshed successfully");
         }
     }
 }
