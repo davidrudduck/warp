@@ -88,16 +88,15 @@ pub struct Sender<T> {
 impl<T> Sender<T> {
     /// Try to send a value.
     ///
-    /// This works the same way as [`mpsc::Sender::send`]. After sending the
-    /// value, it wakes upthe [`mio::poll::Poll`].
-    ///
+    /// This works the same way as [`mpsc::Sender::send`]. After sending the value, it wakes up the
+    /// [`mio::poll::Poll`].
     pub fn send(&self, t: T) -> Result<(), SendError<T>> {
         self.tx.send(t)?;
 
         let mut state = self.state.lock().unwrap();
         if let Some(waker) = &mut state.waker {
             if let Err(e) = waker.wake() {
-                log::error!("PTY mio Waker::wake() failed: {e:?}; event loop may not wake up to process shutdown");
+                log::error!("PTY mio Waker::wake() failed: {e:#}");
             }
         } else {
             state.needs_wake_on_register = true;
