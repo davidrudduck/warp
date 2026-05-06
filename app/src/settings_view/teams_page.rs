@@ -199,6 +199,7 @@ pub enum TeamsPageAction {
         team_uid: ServerId,
     },
     ContactSupport,
+    ContactSales,
     /// This action is for toggling the discoverability checkbox before a team is created.
     ToggleTeamDiscoverabilityBeforeCreation,
     /// This action is for toggling the discoverability toggle after a team has been created.
@@ -243,6 +244,7 @@ impl TeamsPageAction {
                 | GenerateStripeBillingPortalLink { .. }
                 | OpenAdminPanel { .. }
                 | ContactSupport
+                | ContactSales
                 | ToggleTeamDiscoverabilityBeforeCreation
                 | ToggleTeamDiscoverability { .. }
                 | JoinTeamWithTeamDiscovery { .. }
@@ -266,6 +268,7 @@ impl From<&TeamsPageAction> for LoginGatedFeature {
             GenerateStripeBillingPortalLink { .. } => "Generate Stripe Billing Portal Link",
             OpenAdminPanel { .. } => "Open Admin Panel",
             ContactSupport => "Contact Support",
+            ContactSales => "Contact Sales",
             ToggleTeamDiscoverability { .. } | ToggleTeamDiscoverabilityBeforeCreation => {
                 "Toggle Team Discoverability"
             }
@@ -322,6 +325,8 @@ struct TeamsWidgetMouseHandles {
     discoverable_team_toggle_state: SwitchStateHandle,
     checkbox_mouse_state: MouseStateHandle,
     admin_panel_button: MouseStateHandle,
+    contact_sales_button: MouseStateHandle,
+    seat_cap_upgrade_button: MouseStateHandle,
 }
 
 /// TeamsInviteOption is whether the user is looking at invite-by-link or invite-by-email.
@@ -547,6 +552,9 @@ impl TypedActionView for TeamsPageView {
             }
             TeamsPageAction::ContactSupport => {
                 AdminActions::contact_support(ctx);
+            }
+            TeamsPageAction::ContactSales => {
+                AdminActions::contact_sales(ctx);
             }
             TeamsPageAction::ToggleTeamDiscoverability {
                 team_uid,
@@ -1839,6 +1847,130 @@ impl TeamsWidget {
             .finish()
     }
 
+    /// Renders the seat-cap alert that swaps in for the per-seat cost banner.
+    /// `is_almost_full` distinguishes the at-N-1 state from the at-or-over-cap state.
+    /// Title/body/CTA vary by plan tier and admin permissions:
+    ///   - non-admin: muted body asking the team admin to add more seats; no CTA.
+    ///   - admin on Build Business: "Contact sales" CTA opening mailto:sales@warp.dev.
+    ///   - admin on any other capped tier: "Upgrade" CTA opening /upgrade.
+    fn render_seat_cap_alert(
+        &self,
+        is_almost_full: bool,
+        team: &Team,
+        has_admin_permissions: bool,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let horizontal_padding = 16.;
+        let theme = appearance.theme();
+        let active_text = theme.active_ui_text_color();
+
+        let alert_icon = Container::new(
+            ConstrainedBox::new(
+                Icon::AlertCircle
+                    .to_warpui_icon(active_text.with_opacity(90))
+                    .finish(),
+            )
+            .with_max_height(20.)
+            .with_max_width(20.)
+            .finish(),
+        )
+        .with_margin_right(horizontal_padding)
+        .finish();
+
+        let title_text = if is_almost_full {
+            "Your team is almost full \u{2013} 1 seat remaining".to_string()
+        } else {
+            "Your team is full".to_string()
+        };
+        let title_element = self.render_subsection_header(title_text, appearance);
+
+        let is_business = team.billing_metadata.is_on_build_business_plan();
+        let body_text = if !has_admin_permissions {
+            "Contact a team admin to add more seats.".to_string()
+        } else if is_almost_full {
+            if is_business {
+                "Contact sales to upgrade and add more seats.".to_string()
+            } else {
+                "Upgrade to add more seats.".to_string()
+            }
+        } else if is_business {
+            "You've used all of your team's seats. Contact sales to upgrade and add more seats."
+                .to_string()
+        } else {
+            "You've used all of your team's seats. Upgrade to add more seats.".to_string()
+        };
+
+        let body = self.render_sub_text(body_text, appearance, None);
+        let title_container = Container::new(title_element)
+            .with_margin_bottom(4.)
+            .finish();
+        let text_column = Flex::column()
+            .with_child(title_container)
+            .with_child(body)
+            .finish();
+        let left_content = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(alert_icon)
+            .with_child(Shrinkable::new(1., text_column).finish())
+            .finish();
+
+        let mut content_row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_child(Shrinkable::new(1., left_content).finish());
+
+        // Admins get a CTA button. The label and action depend on whether the
+        // team is on Business (contact sales) or any other capped tier (upgrade).
+        if has_admin_permissions {
+            let cta_styles = UiComponentStyles {
+                font_weight: Some(Weight::Medium),
+                font_size: Some(13.),
+                height: Some(32.),
+                padding: Some(Coords {
+                    top: 6.,
+                    bottom: 6.,
+                    left: 14.,
+                    right: 14.,
+                }),
+                ..Default::default()
+            };
+            let cta_button = if is_business {
+                self.render_button(
+                    "Contact sales",
+                    ButtonVariant::Secondary,
+                    self.mouse_state_handles.contact_sales_button.clone(),
+                    Some(TeamsPageAction::ContactSales),
+                    cta_styles,
+                    appearance,
+                )
+            } else {
+                self.render_button(
+                    "Upgrade",
+                    ButtonVariant::Secondary,
+                    self.mouse_state_handles.seat_cap_upgrade_button.clone(),
+                    Some(TeamsPageAction::GenerateUpgradeLink { team_uid: team.uid }),
+                    cta_styles,
+                    appearance,
+                )
+            };
+            content_row =
+                content_row.with_child(Container::new(cta_button).with_margin_left(16.).finish());
+        }
+
+        // Wrap in a container with styling similar to Alert (matches the per-seat cost banner)
+        Container::new(content_row.finish())
+            .with_vertical_padding(12.)
+            .with_horizontal_padding(horizontal_padding)
+            .with_background(themes::theme::Fill::from(internal_colors::neutral_4(theme)))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+            .with_border(
+                Border::all(1.)
+                    .with_border_fill(themes::theme::Fill::from(internal_colors::neutral_3(theme))),
+            )
+            .finish()
+    }
+
     fn render_team_management_page(
         &self,
         team_metadata: &Team,
@@ -2278,8 +2410,30 @@ impl TeamsWidget {
     ) -> Box<dyn Element> {
         let mut invitation_section = Flex::column();
 
-        let pricing_info_model = view.pricing_info_model.as_ref(app);
-        if team_metadata.billing_metadata.is_on_stripe_paid_plan() {
+        // When the team is at or near its seat cap, the per-seat cost callout is
+        // less pressing than the cap-approaching/cap-reached warning, so we swap them out.
+        let team_size_i64: i64 = team_metadata
+            .members
+            .len()
+            .try_into()
+            .expect("team size should be within max i64 range");
+        let is_full =
+            !workspace_size_policy.is_unlimited && team_size_i64 >= workspace_size_policy.limit;
+        let is_almost_full = !workspace_size_policy.is_unlimited
+            && workspace_size_policy.limit >= 1
+            && team_size_i64 == workspace_size_policy.limit - 1;
+
+        if is_full || is_almost_full {
+            let cap_alert = self.render_seat_cap_alert(
+                is_almost_full,
+                team_metadata,
+                has_admin_permissions,
+                appearance,
+            );
+            invitation_section
+                .add_child(Container::new(cap_alert).with_padding_bottom(24.).finish());
+        } else if team_metadata.billing_metadata.is_on_stripe_paid_plan() {
+            let pricing_info_model = view.pricing_info_model.as_ref(app);
             let pricing_alert = self.render_team_member_cost_info(
                 team_metadata,
                 pricing_info_model,
