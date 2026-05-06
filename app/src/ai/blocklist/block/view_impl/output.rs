@@ -3507,9 +3507,19 @@ fn render_collapsible_header(
         ));
     });
 
-    Container::new(Flex::row().with_child(expandable.finish()).finish())
+    let container = Container::new(Flex::row().with_child(expandable.finish()).finish())
         .with_horizontal_margin(CONTENT_HORIZONTAL_PADDING + icon_size + 16.)
-        .finish()
+        .finish();
+
+    #[cfg(feature = "integration_tests")]
+    {
+        use warpui::elements::SavePosition;
+        let position_id = format!("collapsible_header:{}", message_id);
+        return SavePosition::new(container, &position_id).finish();
+    }
+
+    #[allow(unreachable_code)]
+    container
 }
 
 pub fn are_all_text_sections_empty(text_sections: &[AIAgentTextSection]) -> bool {
