@@ -3108,7 +3108,7 @@ impl TypedActionView for FileTreeView {
                 };
 
                 input_view.update(ctx, |input_view, ctx| {
-                    input_view.handle_drag_and_drop_files(vec![path], ctx);
+                    input_view.handle_drag_and_drop_files(&[path], ctx);
                 });
             }
             FileTreeAction::ItemDroppedOnTerminal { id, terminal_view } => {

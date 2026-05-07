@@ -7580,13 +7580,10 @@ impl TerminalView {
         }
     }
 
-    /// Handles a file-tree drag-and-drop onto the terminal by piping the dropped text
-    /// through the same path as user-typed characters for the active command.
-    pub fn handle_file_tree_drop_on_active_command(
-        &mut self,
-        text: &str,
-        ctx: &mut ViewContext<Self>,
-    ) {
+    /// Pipes the given text into the active command as if the user had typed it.
+    /// Used by callers that need to inject text (e.g. a file path or a
+    /// file-path-with-line-range from code review) into a long-running command.
+    pub fn insert_text_into_active_command(&mut self, text: &str, ctx: &mut ViewContext<Self>) {
         self.typed_characters_on_terminal(text, ctx);
     }
 

@@ -7619,7 +7619,7 @@ impl Input {
     /// the editor's DragAndDropFiles action. This ensures consistent behavior with
     /// Finder drops: image detection, shell escaping, and path transformation all
     /// apply uniformly.
-    pub fn handle_drag_and_drop_files(&mut self, paths: Vec<String>, ctx: &mut ViewContext<Self>) {
+    pub fn handle_drag_and_drop_files(&mut self, paths: &[String], ctx: &mut ViewContext<Self>) {
         self.editor.update(ctx, |editor, ctx| {
             let user_paths: Vec<UserInput<String>> =
                 paths.iter().map(|p| UserInput::new(p.as_str())).collect();
