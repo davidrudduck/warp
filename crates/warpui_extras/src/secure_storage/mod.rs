@@ -5,6 +5,8 @@
 //! utilities, and extension traits to improve ergonomics of using the APIs.
 
 #[cfg(not(target_family = "wasm"))]
+mod file;
+#[cfg(not(target_family = "wasm"))]
 #[cfg_attr(target_os = "macos", path = "mac.rs")]
 #[cfg_attr(any(target_os = "linux", target_os = "freebsd"), path = "linux.rs")]
 #[cfg_attr(target_os = "windows", path = "windows.rs")]
@@ -58,6 +60,23 @@ pub fn register(service_name: &str, ctx: &mut warpui::AppContext) {
 /// Registers a no-op Secure Storage provider with the application.
 pub fn register_noop(service_name: &str, ctx: &mut warpui::AppContext) {
     ctx.add_singleton_model(|_| -> Model { Box::new(noop::SecureStorage::new(service_name)) });
+}
+
+/// Registers a file-based Secure Storage provider with the application.
+///
+/// Secrets are stored as plain files in the given directory. This is intended
+/// for local development builds where the OS keychain is impractical (e.g.
+/// macOS debug builds whose binary signature changes on every recompile,
+/// causing repeated Keychain password prompts).
+#[cfg(not(target_family = "wasm"))]
+pub fn register_file_based(
+    service_name: &str,
+    storage_dir: std::path::PathBuf,
+    ctx: &mut warpui::AppContext,
+) {
+    ctx.add_singleton_model(|_| -> Model {
+        Box::new(file::SecureStorage::new(service_name, storage_dir))
+    });
 }
 
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]

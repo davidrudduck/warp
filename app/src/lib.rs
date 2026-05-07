@@ -1074,6 +1074,12 @@ pub(crate) fn initialize_app(
             warpui_extras::secure_storage::register_with_fallback(&data_domain, warp_core::paths::state_dir(), ctx)
         } else if #[cfg(target_os = "windows")] {
             warpui_extras::secure_storage::register_with_dir(&data_domain, warp_core::paths::state_dir(), ctx)
+        } else if #[cfg(all(target_os = "macos", debug_assertions))] {
+            // Debug builds produce a different binary signature on every
+            // recompile, which invalidates macOS Keychain ACL entries and
+            // causes repeated password prompts. Use file-based storage
+            // instead so developers aren't interrupted on every launch.
+            warpui_extras::secure_storage::register_file_based(&data_domain, warp_core::paths::state_dir(), ctx);
         } else {
             warpui_extras::secure_storage::register(&data_domain, ctx);
         }
