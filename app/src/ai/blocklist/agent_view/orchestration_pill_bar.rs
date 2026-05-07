@@ -85,6 +85,26 @@ fn pill_initial(name: &str) -> char {
         .unwrap_or('A')
 }
 
+fn descendant_conversation_ids_in_spawn_order(
+    history: &BlocklistAIHistoryModel,
+    parent_id: AIConversationId,
+) -> Vec<AIConversationId> {
+    let mut descendants = Vec::new();
+    collect_descendant_conversation_ids_in_spawn_order(history, parent_id, &mut descendants);
+    descendants
+}
+
+fn collect_descendant_conversation_ids_in_spawn_order(
+    history: &BlocklistAIHistoryModel,
+    parent_id: AIConversationId,
+    descendants: &mut Vec<AIConversationId>,
+) {
+    for child_id in history.child_conversation_ids_of(&parent_id) {
+        descendants.push(*child_id);
+        collect_descendant_conversation_ids_in_spawn_order(history, *child_id, descendants);
+    }
+}
+
 /// What kind of pill we are rendering, which determines click behavior.
 #[derive(Clone, Copy)]
 enum PillKind {
@@ -448,8 +468,8 @@ impl OrchestrationPillBar {
         if let Some(parent_id) = parent_conversation_id(active_conversation, ctx) {
             alive.insert(parent_id);
         }
-        for child in history.child_conversations_of(orchestrator_id) {
-            alive.insert(child.id());
+        for child_id in descendant_conversation_ids_in_spawn_order(history, orchestrator_id) {
+            alive.insert(child_id);
         }
         let mut mouse_states = self.mouse_states.borrow_mut();
         let mut overflow_states = self.overflow_button_mouse_states.borrow_mut();
@@ -489,14 +509,15 @@ impl OrchestrationPillBar {
         let orchestrator_id = parent_conversation_id(active_conversation, app).unwrap_or(active_id);
         let orchestrator = history.conversation(&orchestrator_id)?;
 
-        // `child_conversations_of` returns children in registration order
-        // (i.e. the order they were spawned by the orchestrator), which is
-        // the stable ordering we want for the pills. Don't re-sort by
-        // `first_exchange().start_time`: children whose first exchange
-        // hasn't started yet would otherwise sort to the front (because
-        // `Option::None < Option::Some`) and pop into their time-based
-        // position once they begin streaming, reshuffling the bar.
-        let children = history.child_conversations_of(orchestrator_id);
+        // Walk the full descendant tree in pre-order, preserving each
+        // parent's child registration order. That keeps a nested branch
+        // contiguous in the row (A, then A's child C, then sibling B) and,
+        // crucially, surfaces grandchildren started under an in-progress
+        // child instead of dropping them from the pill bar entirely.
+        let children: Vec<_> = descendant_conversation_ids_in_spawn_order(history, orchestrator_id)
+            .into_iter()
+            .filter_map(|id| history.conversation(&id))
+            .collect();
 
         // Nothing to show if the orchestrator has no children yet.
         if children.is_empty() {
@@ -521,7 +542,7 @@ impl OrchestrationPillBar {
             pin_state: PillPinState::Unpinned,
         });
 
-        // Then a pill per child agent.
+        // Then a pill per descendant child agent conversation.
         //
         // V2-of-V2 NOTE: pin detection is intentionally disabled here. The
         // intended signal was "this child has an active agent view in some
@@ -2093,3 +2114,7 @@ fn build_crumb_inner(
     }
     container.finish()
 }
+
+#[cfg(test)]
+#[path = "orchestration_pill_bar_tests.rs"]
+mod tests;
