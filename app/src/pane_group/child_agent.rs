@@ -166,9 +166,10 @@ pub(crate) fn create_error_child_agent_conversation(
     parent_pane_id: PaneId,
     name: String,
     parent_conversation_id: AIConversationId,
+    request_id: Option<crate::ai::blocklist::StartAgentRequestId>,
     error_message: String,
     ctx: &mut ViewContext<PaneGroup>,
-) {
+) -> Option<AIConversationId> {
     let Some((terminal_view, terminal_view_id, conversation_id)) =
         create_error_child_agent_conversation_context(
             group,
@@ -181,9 +182,18 @@ pub(crate) fn create_error_child_agent_conversation(
         log::error!(
             "Failed to surface local child harness error for parent conversation {parent_conversation_id:?}: {error_message}"
         );
-        return;
+        return None;
     };
 
+    if let Some(request_id) = request_id {
+        BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
+            history_model.record_new_conversation_request_complete(
+                request_id,
+                conversation_id,
+                ctx,
+            );
+        });
+    }
     if let Some(terminal_view) = terminal_view {
         terminal_view.update(ctx, |terminal_view, ctx| {
             terminal_view.enter_agent_view(
@@ -204,4 +214,5 @@ pub(crate) fn create_error_child_agent_conversation(
             ctx,
         );
     });
+    Some(conversation_id)
 }

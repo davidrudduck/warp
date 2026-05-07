@@ -3041,23 +3041,44 @@ impl PaneGroup {
         pane_group
     }
 
-    /// Returns the pane currently owning `conversation_id`, if that conversation
-    /// is live in this pane group.
+    /// Returns the terminal view currently owning `conversation_id`, even if
+    /// that owner lives outside this pane group.
+    fn terminal_view_id_for_owned_conversation(
+        &self,
+        conversation_id: AIConversationId,
+        ctx: &AppContext,
+    ) -> Option<EntityId> {
+        BlocklistAIHistoryModel::as_ref(ctx).terminal_view_id_for_conversation(&conversation_id)
+    }
+
     fn pane_id_for_owned_conversation(
         &self,
         conversation_id: AIConversationId,
         ctx: &AppContext,
     ) -> Option<PaneId> {
-        BlocklistAIHistoryModel::as_ref(ctx)
-            .terminal_view_id_for_conversation(&conversation_id)
+        self.terminal_view_id_for_owned_conversation(conversation_id, ctx)
             .and_then(|terminal_view_id| self.find_pane_id_for_terminal_view(terminal_view_id, ctx))
+    }
+    fn is_conversation_owned_outside_pane(
+        &self,
+        conversation_id: AIConversationId,
+        pane_id: PaneId,
+        ctx: &AppContext,
+    ) -> bool {
+        self.terminal_view_id_for_owned_conversation(conversation_id, ctx)
+            .is_some_and(|terminal_view_id| {
+                match self.find_pane_id_for_terminal_view(terminal_view_id, ctx) {
+                    Some(owner_pane_id) => owner_pane_id != pane_id,
+                    None => true,
+                }
+            })
     }
 
     /// Lazily restores hidden child panes for the given parent conversation.
     ///
     /// Unlike the old startup sweep, this runs only when the parent agent view
     /// is actually restored or entered. Children that already belong to some
-    /// other pane are left alone.
+    /// other pane or tab are left alone.
     fn restore_missing_child_agent_panes_for_parent(
         &mut self,
         parent_conversation_id: AIConversationId,
@@ -3077,10 +3098,7 @@ impl PaneGroup {
                 continue;
             }
 
-            if self
-                .pane_id_for_owned_conversation(child_id, ctx)
-                .is_some_and(|pane_id| pane_id != parent_pane_id)
-            {
+            if self.is_conversation_owned_outside_pane(child_id, parent_pane_id, ctx) {
                 continue;
             }
 
@@ -3132,17 +3150,18 @@ impl PaneGroup {
 
         let Some(parent_conversation_id) = parent_conversation_id else {
             return self
-                .pane_id_for_owned_conversation(child_conversation_id, ctx)
+                .terminal_view_id_for_owned_conversation(child_conversation_id, ctx)
                 .is_some();
         };
 
-        let owner_pane_id = self.pane_id_for_owned_conversation(child_conversation_id, ctx);
+        let child_owner_terminal_view_id =
+            self.terminal_view_id_for_owned_conversation(child_conversation_id, ctx);
         let Some(parent_pane_id) = self.pane_id_for_owned_conversation(parent_conversation_id, ctx)
         else {
-            return owner_pane_id.is_some();
+            return child_owner_terminal_view_id.is_some();
         };
 
-        if owner_pane_id.is_some_and(|pane_id| pane_id != parent_pane_id) {
+        if self.is_conversation_owned_outside_pane(child_conversation_id, parent_pane_id, ctx) {
             return true;
         }
 
@@ -3155,9 +3174,7 @@ impl PaneGroup {
         self.child_agent_panes
             .get(&child_conversation_id)
             .is_some_and(|pane_id| self.has_pane_id(*pane_id))
-            || self
-                .pane_id_for_owned_conversation(child_conversation_id, ctx)
-                .is_some_and(|pane_id| pane_id != parent_pane_id)
+            || self.is_conversation_owned_outside_pane(child_conversation_id, parent_pane_id, ctx)
     }
 
     /// Creates a hidden child agent pane for an existing child conversation,
@@ -5949,9 +5966,7 @@ impl PaneGroup {
         );
 
         // Use replace_pane to swap loading pane with new terminal pane
-        let success = self.replace_pane(loading_pane_id, pane_data, false, ctx);
-
-        success
+        self.replace_pane(loading_pane_id, pane_data, false, ctx)
     }
 
     #[allow(clippy::too_many_arguments)]

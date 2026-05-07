@@ -646,10 +646,7 @@ fn test_entering_parent_agent_view_lazily_restores_hidden_child_pane() {
                 let initial_pane_count = panes.pane_count();
                 let initial_visible_pane_count = panes.visible_pane_count();
 
-                assert!(panes
-                    .child_agent_panes
-                    .get(&child_conversation_id)
-                    .is_none());
+                assert!(!panes.child_agent_panes.contains_key(&child_conversation_id));
 
                 enter_agent_view_for_conversation(
                     panes,
@@ -693,10 +690,7 @@ fn test_ensure_hidden_child_agent_pane_materializes_missing_child_pane() {
                 restore_child_conversation(panes, parent_pane_id, parent_conversation_id, ctx);
             let initial_pane_count = panes.pane_count();
 
-            assert!(panes
-                .child_agent_panes
-                .get(&child_conversation_id)
-                .is_none());
+            assert!(!panes.child_agent_panes.contains_key(&child_conversation_id));
             assert!(
                 panes.ensure_hidden_child_agent_pane_for_conversation(child_conversation_id, ctx),
                 "navigation fallback should materialize the missing child pane on demand"
@@ -752,11 +746,99 @@ fn test_entering_parent_agent_view_skips_child_owned_by_another_pane() {
             });
 
         pane_group.update(&mut app, |panes, _ctx| {
-            assert!(panes
-                .child_agent_panes
-                .get(&child_conversation_id)
-                .is_none());
+            assert!(!panes.child_agent_panes.contains_key(&child_conversation_id));
             assert_eq!(panes.pane_count(), initial_pane_count);
+        });
+    });
+}
+
+#[test]
+fn test_ensure_hidden_child_agent_pane_skips_child_owned_by_another_pane_group() {
+    let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let parent_pane_group = mock_pane_group(&mut app, Default::default());
+        let other_pane_group = mock_pane_group(&mut app, Default::default());
+
+        let parent_conversation_id = parent_pane_group.update(&mut app, |panes, ctx| {
+            let parent_pane_id = get_newly_created_pane_id(panes, &[]);
+            start_parent_conversation(panes, parent_pane_id, ctx)
+        });
+        let (child_conversation_id, child_owner_terminal_view_id) =
+            other_pane_group.update(&mut app, |panes, ctx| {
+                let child_pane_id = get_newly_created_pane_id(panes, &[]);
+                let child_conversation_id =
+                    restore_child_conversation(panes, child_pane_id, parent_conversation_id, ctx);
+                let initial_owner_terminal_view_id = panes
+                    .terminal_view_from_pane_id(child_pane_id, ctx)
+                    .expect("child pane should have a terminal view")
+                    .id();
+
+                enter_agent_view_for_conversation(panes, child_pane_id, child_conversation_id, ctx);
+                (child_conversation_id, initial_owner_terminal_view_id)
+            });
+
+        parent_pane_group.update(&mut app, |panes, ctx| {
+            let initial_pane_count = panes.pane_count();
+
+            assert!(
+                panes.ensure_hidden_child_agent_pane_for_conversation(child_conversation_id, ctx),
+                "cross-tab child ownership should be treated as already reachable"
+            );
+            assert!(!panes.child_agent_panes.contains_key(&child_conversation_id));
+            assert_eq!(panes.pane_count(), initial_pane_count);
+            assert_eq!(
+                BlocklistAIHistoryModel::as_ref(ctx)
+                    .terminal_view_id_for_conversation(&child_conversation_id),
+                Some(child_owner_terminal_view_id)
+            );
+        });
+    });
+}
+
+#[test]
+fn test_entering_parent_agent_view_skips_child_owned_by_another_pane_group() {
+    let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let parent_pane_group = mock_pane_group(&mut app, Default::default());
+        let other_pane_group = mock_pane_group(&mut app, Default::default());
+
+        let (parent_conversation_id, parent_pane_id) =
+            parent_pane_group.update(&mut app, |panes, ctx| {
+                let parent_pane_id = get_newly_created_pane_id(panes, &[]);
+                let parent_conversation_id = start_parent_conversation(panes, parent_pane_id, ctx);
+                (parent_conversation_id, parent_pane_id)
+            });
+        let (child_conversation_id, child_owner_terminal_view_id) =
+            other_pane_group.update(&mut app, |panes, ctx| {
+                let child_pane_id = get_newly_created_pane_id(panes, &[]);
+                let child_conversation_id =
+                    restore_child_conversation(panes, child_pane_id, parent_conversation_id, ctx);
+                let initial_owner_terminal_view_id = panes
+                    .terminal_view_from_pane_id(child_pane_id, ctx)
+                    .expect("child pane should have a terminal view")
+                    .id();
+
+                enter_agent_view_for_conversation(panes, child_pane_id, child_conversation_id, ctx);
+                (child_conversation_id, initial_owner_terminal_view_id)
+            });
+        let initial_pane_count = parent_pane_group.update(&mut app, |panes, ctx| {
+            let initial_pane_count = panes.pane_count();
+            enter_agent_view_for_conversation(panes, parent_pane_id, parent_conversation_id, ctx);
+            initial_pane_count
+        });
+
+        parent_pane_group.update(&mut app, |panes, ctx| {
+            assert!(!panes.child_agent_panes.contains_key(&child_conversation_id));
+            assert_eq!(panes.pane_count(), initial_pane_count);
+            assert_eq!(
+                BlocklistAIHistoryModel::as_ref(ctx)
+                    .terminal_view_id_for_conversation(&child_conversation_id),
+                Some(child_owner_terminal_view_id)
+            );
         });
     });
 }

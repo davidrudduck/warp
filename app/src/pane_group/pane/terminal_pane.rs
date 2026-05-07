@@ -1286,11 +1286,12 @@ fn dispatch_start_agent_conversation(
         }
         #[cfg(target_family = "wasm")]
         StartAgentExecutionMode::Local { .. } => {
-            create_error_child_agent_conversation(
+            let _ = create_error_child_agent_conversation(
                 group,
                 parent_pane_id,
                 request.name,
                 request.parent_conversation_id,
+                Some(request.id),
                 "Local harness child agents are not supported in WASM builds.".to_string(),
                 ctx,
             );
@@ -1477,22 +1478,24 @@ fn launch_local_harness_child(
                         );
                     });
                 } else {
-                    create_error_child_agent_conversation(
+                    let _ = create_error_child_agent_conversation(
                         group,
                         parent_pane_id,
                         request_name,
                         parent_conversation_id,
+                        Some(request_id),
                         "Failed to create a hidden pane for the local child harness.".to_string(),
                         ctx,
                     );
                 }
             }
             Err(error_message) => {
-                create_error_child_agent_conversation(
+                let _ = create_error_child_agent_conversation(
                     group,
                     parent_pane_id,
                     request_name,
                     parent_conversation_id,
+                    Some(request_id),
                     error_message,
                     ctx,
                 );

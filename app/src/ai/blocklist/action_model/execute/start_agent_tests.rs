@@ -118,6 +118,80 @@ fn execute_returns_error_when_child_startup_is_blocked_before_initialization() {
 }
 
 #[test]
+fn execute_resolves_error_when_request_linkage_happens_after_child_already_failed() {
+    App::test((), |mut app| async move {
+        let _orchestration_v2 = FeatureFlag::OrchestrationV2.override_enabled(true);
+        let terminal_view_id = EntityId::new();
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
+        let executor = app.add_model(StartAgentExecutor::new);
+        let parent_conversation_id = history_model.update(&mut app, |history_model, ctx| {
+            history_model.start_new_conversation(terminal_view_id, false, false, ctx)
+        });
+        let action = build_start_agent_action(
+            StartAgentVersion::V1,
+            StartAgentExecutionMode::local_with_defaults(),
+        );
+
+        let execution = executor.update(&mut app, |executor, ctx| {
+            let input = ExecuteActionInput {
+                action: &action,
+                conversation_id: parent_conversation_id,
+            };
+            let result: AnyActionExecution = executor.execute(input, ctx).into();
+            result
+        });
+
+        let AnyActionExecution::Async {
+            execute_future,
+            on_complete,
+        } = execution
+        else {
+            panic!("expected async execution");
+        };
+
+        let child_conversation_id = history_model.update(&mut app, |history_model, ctx| {
+            history_model.start_new_child_conversation(
+                terminal_view_id,
+                "Agent 1".to_string(),
+                parent_conversation_id,
+                ctx,
+            )
+        });
+
+        history_model.update(&mut app, |history_model, ctx| {
+            history_model.update_conversation_status_with_error_message(
+                terminal_view_id,
+                child_conversation_id,
+                ConversationStatus::Error,
+                Some("'codex' CLI not found on your machine.".to_string()),
+                ctx,
+            );
+        });
+
+        history_model.update(&mut app, |model, ctx| {
+            model.record_new_conversation_request_complete(
+                FIRST_REQUEST_ID,
+                child_conversation_id,
+                ctx,
+            );
+        });
+
+        let async_result = execute_future.await;
+        let result = app.update(|ctx| on_complete(async_result, ctx));
+        assert!(matches!(
+            result,
+            AIAgentActionResultType::StartAgent(StartAgentResult::Error { error, version })
+                if error == "'codex' CLI not found on your machine."
+                    && version == StartAgentVersion::V1
+        ));
+
+        executor.read(&app, |executor, _| {
+            assert!(executor.pending.is_empty());
+        });
+    });
+}
+
+#[test]
 fn execute_returns_detailed_error_when_child_startup_fails_before_initialization() {
     App::test((), |mut app| async move {
         let _orchestration_v2 = FeatureFlag::OrchestrationV2.override_enabled(true);
