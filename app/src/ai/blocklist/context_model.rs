@@ -358,9 +358,15 @@ impl BlocklistAIContextModel {
     }
 
     /// Returns `true` if the next AI query has any context that should force the input to be
-    /// locked in AI mode (skipping NLD): a pending image or file attachment, or a pending block.
+    /// locked in AI mode (skipping NLD): a pending image or file attachment.
+    ///
+    /// Note: blocks in `pending_context_block_ids` are intentionally NOT considered here.
+    /// Selecting a block (e.g. by clicking it) populates that set but should not by itself
+    /// suppress NLD — the user has not declared intent to talk to the agent. The paperclip
+    /// "attach to input" button explicitly locks the input via `ask_blocklist_ai`, so it does
+    /// not need to rely on this predicate either.
     pub fn has_locking_attachment(&self) -> bool {
-        !self.pending_context_block_ids.is_empty() || !self.pending_attachments.is_empty()
+        !self.pending_attachments.is_empty()
     }
 
     /// Returns the set `BlockId`s corresponding to blocks to be included as context with the next
