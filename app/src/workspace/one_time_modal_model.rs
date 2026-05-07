@@ -23,7 +23,6 @@ pub struct OneTimeModalModel {
     is_oz_launch_modal_open: bool,
     /// Whether the OpenWarp launch modal is currently being shown.
     is_openwarp_launch_modal_open: bool,
-    /// Whether the orchestration launch modal is currently being shown.
     is_orchestration_launch_modal_open: bool,
     /// Whether the HOA onboarding flow is currently being shown.
     is_hoa_onboarding_open: bool,
@@ -119,7 +118,6 @@ impl OneTimeModalModel {
         self.set_openwarp_launch_modal_open(false, ctx);
     }
 
-    /// Returns whether the orchestration launch modal is currently open.
     pub fn is_orchestration_launch_modal_open(&self) -> bool {
         self.is_orchestration_launch_modal_open && self.target_window_id.is_some()
     }
