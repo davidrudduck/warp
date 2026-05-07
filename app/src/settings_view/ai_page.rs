@@ -56,7 +56,7 @@ use warp_core::ui::theme::color::internal_colors;
 use warpui::elements::{
     Border, ChildView, Clipped, ConstrainedBox, CornerRadius, CrossAxisAlignment, Dismiss,
     Expanded, Fill, HyperlinkLens, MainAxisAlignment, MainAxisSize, MouseStateHandle, Radius,
-    Shrinkable, Text,
+    Shrinkable, Text, Wrap,
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::id;
@@ -1075,13 +1075,12 @@ impl AISettingsPageView {
                     // empty (Default), always update so the settings page
                     // reflects changes made via natural language or other
                     // external sources.
-                    me.spinner_verb_mode = if was_editing_custom
-                        && new_spinner_verb_mode == SpinnerVerbMode::Custom
-                    {
-                        SpinnerVerbMode::Custom
-                    } else {
-                        new_spinner_verb_mode
-                    };
+                    me.spinner_verb_mode =
+                        if was_editing_custom && new_spinner_verb_mode == SpinnerVerbMode::Custom {
+                            SpinnerVerbMode::Custom
+                        } else {
+                            new_spinner_verb_mode
+                        };
                     if !was_editing_custom && new_spinner_verb_mode == SpinnerVerbMode::Custom {
                         let editor_text = custom_warping_verbs.join(", ");
                         if me.custom_warping_verb_editor.as_ref(ctx).buffer_text(ctx) != editor_text
