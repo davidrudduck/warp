@@ -1395,7 +1395,10 @@ impl AgentDriver {
 
         let (task_id_for_refresh, ai_client_for_refresh) = foreground
             .spawn(|me, ctx| {
-                let task_id = me.task_id.map(|id| id.to_string());
+                let task_id = FeatureFlag::GitCredentialRefresh
+                    .is_enabled()
+                    .then(|| me.task_id.map(|id| id.to_string()))
+                    .flatten();
                 let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client().clone();
                 (task_id, ai_client)
             })

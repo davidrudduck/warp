@@ -999,6 +999,10 @@ impl AgentDriverRunner {
         let git_creds_ai_client = ai_client.clone();
         let git_creds_task_id = task_id_str.clone();
         let git_credentials = async move {
+            if !FeatureFlag::GitCredentialRefresh.is_enabled() {
+                log::debug!("Skipping git credentials fetch: feature flag disabled");
+                return Ok(vec![]);
+            }
             let workload_token = match warp_isolation_platform::issue_workload_token(Some(
                 std::time::Duration::from_mins(5),
             ))
