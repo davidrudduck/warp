@@ -14,6 +14,9 @@ if (-not $gitBinDir) {
     exit 1
 }
 
+# Configure Windows OpenSSH agent so Git SSH keys with passphrases just work.
+& "$PSScriptRoot\setup_ssh_agent.ps1"
+
 if (-not (Get-Command -Name cargo -Type Application -ErrorAction SilentlyContinue)) {
     Write-Output 'Installing rust...'
     Invoke-WebRequest -Uri 'https://win.rustup.rs/x86_64' -OutFile "$env:Temp\rustup-init.exe"
