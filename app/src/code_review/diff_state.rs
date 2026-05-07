@@ -32,7 +32,6 @@ use crate::util::git::get_pr_for_branch;
 use crate::util::git::{
     detect_current_branch, detect_main_branch, get_unpushed_commits, Commit, PrInfo,
 };
-#[cfg(feature = "local_fs")]
 use warp_util::git::run_git_command;
 
 use super::diff_size_limits::compute_diff_size;

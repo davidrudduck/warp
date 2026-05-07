@@ -14,7 +14,9 @@ use warp_util::standardized_path::StandardizedPath;
 use warpui::r#async::{BoxFuture, SpawnedFutureHandle};
 #[cfg(feature = "local_fs")]
 use warpui::SingletonEntity;
-use warpui::{Entity, ModelContext, ModelHandle, WeakModelHandle};
+#[cfg(feature = "local_fs")]
+use warpui::WeakModelHandle;
+use warpui::{Entity, ModelContext, ModelHandle};
 
 #[cfg(feature = "local_fs")]
 use crate::watcher::DirectoryWatcher;
@@ -86,6 +88,7 @@ pub struct Repository {
 pub(crate) struct TrackedRemoteRef {
     full_ref_name: String,
 }
+
 #[cfg(feature = "local_fs")]
 impl TrackedRemoteRef {
     pub(crate) fn from_full_ref_name(full_ref_name: impl Into<String>) -> Option<Self> {
