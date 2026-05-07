@@ -18476,8 +18476,28 @@ impl TerminalView {
             return;
         }
 
+        // The paperclip "attach to input" button is the explicit signal that the user wants
+        // to talk to the agent about this block. Lock the input to AI mode so NLD doesn't get
+        // a chance to reclassify the buffer back to shell. This used to be inferred from
+        // `has_locking_attachment` returning true once the block landed in pending context,
+        // but that conflated this path with plain block selection (clicking the block itself),
+        // so the lock is now applied explicitly here.
+        let is_input_buffer_empty = self
+            .input
+            .as_ref(ctx)
+            .editor()
+            .as_ref(ctx)
+            .buffer_text(ctx)
+            .is_empty();
         self.ai_input_model.update(ctx, |ai_input, ctx| {
-            ai_input.set_input_type(InputType::AI, ctx);
+            ai_input.set_input_config(
+                InputConfig {
+                    input_type: InputType::AI,
+                    is_locked: true,
+                },
+                is_input_buffer_empty,
+                ctx,
+            );
         });
 
         if !context_block_indices.is_empty() {
