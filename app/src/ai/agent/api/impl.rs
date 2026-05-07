@@ -160,7 +160,6 @@ fn get_supported_tools(params: &RequestParams) -> Vec<api::ToolType> {
         api::ToolType::InitProject,
         api::ToolType::OpenCodeReview,
         api::ToolType::RunShellCommand,
-        api::ToolType::SuggestNewConversation,
         api::ToolType::Subagent,
         api::ToolType::WriteToLongRunningShellCommand,
         api::ToolType::ReadShellCommandOutput,
@@ -169,6 +168,12 @@ fn get_supported_tools(params: &RequestParams) -> Vec<api::ToolType> {
         api::ToolType::EditDocuments,
         api::ToolType::SuggestPrompt,
     ];
+
+    // Cloud agents run autonomously and can't present the new-conversation speedbump UI.
+    let is_ambient_agent = params.ambient_agent_task_id.is_some();
+    if !is_ambient_agent {
+        supported_tools.push(api::ToolType::SuggestNewConversation);
+    }
 
     if FeatureFlag::ConversationsAsContext.is_enabled() {
         supported_tools.push(api::ToolType::FetchConversation);

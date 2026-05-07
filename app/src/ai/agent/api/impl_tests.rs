@@ -80,3 +80,26 @@ fn supported_tools_omit_upload_artifact_when_feature_flag_is_disabled() {
 
     assert!(!supported_tools.contains(&api::ToolType::UploadFileArtifact));
 }
+
+#[test]
+fn supported_tools_include_suggest_new_conversation_for_local_conversations() {
+    let params = request_params_with_ask_user_question_enabled(false);
+    let supported_tools = get_supported_tools(&params);
+
+    assert!(supported_tools.contains(&api::ToolType::SuggestNewConversation));
+}
+
+#[test]
+fn supported_tools_omit_suggest_new_conversation_for_ambient_agent() {
+    use crate::ai::ambient_agents::AmbientAgentTaskId;
+
+    let mut params = request_params_with_ask_user_question_enabled(false);
+    params.ambient_agent_task_id = Some(
+        "00000000-0000-0001-0000-000000000001"
+            .parse::<AmbientAgentTaskId>()
+            .unwrap(),
+    );
+    let supported_tools = get_supported_tools(&params);
+
+    assert!(!supported_tools.contains(&api::ToolType::SuggestNewConversation));
+}
