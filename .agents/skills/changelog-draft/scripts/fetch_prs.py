@@ -17,7 +17,7 @@ import sys
 
 # Matches lines like: CHANGELOG-NEW-FEATURE: Added dark mode
 MARKER_RE = re.compile(
-    r"^CHANGELOG-(NEW-FEATURE|IMPROVEMENT|BUG-FIX|IMAGE|OZ)\s*:\s*(.+)$",
+    r"^CHANGELOG-(NEW-FEATURE|IMPROVEMENT|BUG-FIX|IMAGE|OZ|NONE)\s*:?\s*(.*)$",
     re.MULTILINE,
 )
 
@@ -28,26 +28,7 @@ def run(cmd: list[str], *, check: bool = True) -> str:
 
 
 def get_commits(base_ref: str, head_ref: str) -> list[str]:
-    """Return SHAs of commits between base and head.
-
-    Tries merge commits first (for repos using merge-commit strategy).
-    Falls back to all first-parent commits (for repos using squash merges).
-    """
-    # Try merge commits first
-    log = run(
-        [
-            "git",
-            "log",
-            "--merges",
-            "--first-parent",
-            "--format=%H",
-            f"{base_ref}..{head_ref}",
-        ]
-    )
-    if log:
-        return log.splitlines()
-
-    # Fall back to all first-parent commits (squash merge workflow)
+    """Return SHAs of first-parent commits between base and head."""
     log = run(
         [
             "git",
@@ -63,10 +44,9 @@ def get_commits(base_ref: str, head_ref: str) -> list[str]:
 
 
 def extract_pr_number(sha: str) -> int | None:
-    """Extract PR number from a commit subject line.
+    """Extract PR number from a squash-merge commit subject line.
 
-    Handles both merge commits ('Merge pull request #1234 ...') and
-    squash commits ('feat: something (#1234)').
+    Expects the GitHub squash format: 'feat: something (#1234)'.
     """
     msg = run(["git", "log", "-1", "--format=%s", sha])
     m = re.search(r"#(\d+)", msg)
@@ -95,12 +75,21 @@ def extract_markers(body: str) -> list[dict]:
     if not body:
         return []
     entries = []
+    has_opt_out = False
     for m in MARKER_RE.finditer(body):
+        category = m.group(1)
         text = m.group(2).strip()
-        # Skip template placeholders
-        if text.startswith("{{") or text.startswith("{text"):
+        # CHANGELOG-NONE is an explicit opt-out — skip all other markers
+        if category == "NONE":
+            has_opt_out = True
             continue
-        entries.append({"category": m.group(1), "text": text})
+        # Skip template placeholders
+        if text.startswith("{{") or text.startswith("{text") or not text:
+            continue
+        entries.append({"category": category, "text": text})
+    # If the PR explicitly opted out, return a special marker
+    if has_opt_out:
+        return [{"category": "NONE", "text": ""}]
     return entries
 
 

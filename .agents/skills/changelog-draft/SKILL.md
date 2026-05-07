@@ -18,14 +18,21 @@ description: Generate a reviewable changelog draft from PRs merged in a release 
 
 ### Step 1 — Determine the release range
 
-Infer the previous release tag for comparison. Release tags follow the pattern `v0.YYYY.MM.DD.HH.MM.<channel>_NN`. The previous tag is the most recent tag on the same channel before the given `release_tag`.
+Infer the previous release **cut** for comparison. Release tags follow the pattern `v0.YYYY.MM.DD.HH.MM.<channel>_NN`, where `_NN` is the RC/hotfix number within that release cut. Multiple tags can share the same date prefix (e.g. `_00`, `_01`, `_02` are all part of one release cut).
+
+The base tag must be the `_00` tag of the **previous** release cut (i.e. a different date), not just the previous tag. For example, if generating a changelog for `v0.2026.04.29.08.57.stable_01`, the base should be `v0.2026.04.22.08.57.stable_00`, not `v0.2026.04.29.08.57.stable_00`.
 
 ```bash
-# List tags for the channel, sorted by version, pick the one immediately before release_tag
-git tag --list "v0.*.${channel}*" --sort=-version:refname
+# 1. Extract the date prefix from the release_tag (everything before _NN)
+release_date_prefix="${release_tag%_*}"
+
+# 2. List all _00 tags for the channel (these are release cut points), sorted descending
+git tag --list "v0.*.${channel}_00" --sort=-version:refname
+
+# 3. Pick the first _00 tag whose date prefix differs from release_date_prefix
 ```
 
-Record the range as `previous_tag..release_tag`.
+Record the range as `previous_cut_tag..release_tag`.
 
 ### Step 2 — Fetch PR data
 
@@ -136,7 +143,8 @@ Combine explicit entries (Step 2) and inferred entries (Step 5) into the final r
 2. `IMPROVEMENT` — Improvements
 3. `BUG-FIX` — Bug Fixes
 4. `OZ` — Oz Updates
-5. `IMAGE` — Images (these are GCP URLs, list them separately)
+
+PRs marked with `CHANGELOG-NONE` are explicitly opted out and should appear in the skipped section with reason "opted out".
 
 ### Step 7 — Write output files
 
@@ -151,31 +159,32 @@ Write two files to `output_dir`:
 **Generated:** 2026-05-06T15:00:00Z
 
 ## New Features
-- Added dark mode (#1234) — @external-contributor ✨
+- Added dark mode ([#1234](https://github.com/warpdotdev/warp/pull/1234)) — @external-contributor ✨
 
 ## Improvements
-- Faster tab switching (#1235)
+- Faster tab switching ([#1235](https://github.com/warpdotdev/warp/pull/1235))
 
 ## Bug Fixes
-- Fixed crash on startup (#1236)
+- Fixed crash on startup ([#1236](https://github.com/warpdotdev/warp/pull/1236))
 
 ## Oz Updates
-- Improved agent memory (#1237)
+- Improved agent memory ([#1237](https://github.com/warpdotdev/warp/pull/1237))
 
 ---
 
 ## Needs Review
 These entries have low confidence or are behind feature flags:
-- [ ] (#1238) "Some change" — confidence: low, reason: ambiguous scope
+- [ ] ([#1238](https://github.com/warpdotdev/warp/pull/1238)) "Some change" — confidence: low, reason: ambiguous scope
 
 ## Skipped PRs
 | PR | Author | Reason |
 |----|--------|--------|
-| #1239 | dependabot | bot |
-| #1240 | internal-dev | CI/test only |
+| [#1239](https://github.com/warpdotdev/warp/pull/1239) | dependabot | bot |
+| [#1240](https://github.com/warpdotdev/warp/pull/1240) | internal-dev | CI/test only |
+| [#1241](https://github.com/warpdotdev/warp/pull/1241) | internal-dev | opted out (CHANGELOG-NONE) |
 
 ## External Contributors
-- @contributor1 — #1234
+- @contributor1 — [#1234](https://github.com/warpdotdev/warp/pull/1234)
 ```
 
 **`changelog-draft.json`** — Machine-readable audit artifact:

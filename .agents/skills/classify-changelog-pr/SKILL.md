@@ -13,11 +13,11 @@ This document provides classification rules for PRs that lack explicit `CHANGELO
 - **IMPROVEMENT** — Enhances an existing feature in a way users would notice (performance, UX, new options).
 - **BUG-FIX** — Fixes a user-visible bug or regression.
 - **OZ** — Changes to Oz / AI agent capabilities. At most 4 per release in the stable changelog.
-- **IMAGE** — A GCP-hosted image URL for the release. Rare; only include if explicitly provided.
 
 ## Decision rules
 
 ### Always exclude
+- PRs with an explicit `CHANGELOG-NONE` marker (contributor opted out)
 - PRs authored by known bots (dependabot, renovate, github-actions, codecov)
 - PRs that exclusively modify CI workflows (`.github/workflows/`), test files, or dev tooling
 - PRs that only update internal docs, comments, or README files

@@ -1,6 +1,8 @@
 name: Changelog Draft
 
 on:
+  # workflow_dispatch is restricted to users with write access to the repo.
+  # External contributors (fork-based) cannot trigger this workflow.
   workflow_dispatch:
     inputs:
       channel:
