@@ -21,7 +21,8 @@ use crate::{
         },
         ambient_agents::{task::HarnessConfig, AgentConfigSnapshot},
         blocklist::{
-            agent_view::AgentViewEntryOrigin, orchestration_events::OrchestrationEventService,
+            agent_view::{AgentViewControllerEvent, AgentViewEntryOrigin},
+            orchestration_events::OrchestrationEventService,
             BlocklistAIHistoryModel, StartAgentRequest,
         },
         llms::LLMPreferences,
@@ -351,6 +352,22 @@ impl PaneContent for TerminalPane {
         agent_view_controller.update(ctx, |controller, _ctx| {
             controller.set_pane_group_id(pane_group_id);
         });
+        ctx.subscribe_to_model(&agent_view_controller, move |group, _, event, ctx| {
+            if let AgentViewControllerEvent::EnteredAgentView {
+                conversation_id,
+                display_mode,
+                ..
+            } = event
+            {
+                if display_mode.is_fullscreen() {
+                    group.restore_missing_child_agent_panes_for_parent(
+                        *conversation_id,
+                        terminal_pane_id.into(),
+                        ctx,
+                    );
+                }
+            }
+        });
         let active_session = terminal_view.as_ref(ctx).active_session().clone();
         ActiveAgentViewsModel::handle(ctx).update(ctx, |model, ctx| {
             model.register_agent_view_controller(
@@ -411,6 +428,13 @@ impl PaneContent for TerminalPane {
         ctx.unsubscribe_to_model(&pane_stack);
 
         ctx.unsubscribe_to_view(&self.view);
+        ctx.unsubscribe_to_model(
+            &self
+                .terminal_view(ctx)
+                .as_ref(ctx)
+                .agent_view_controller()
+                .clone(),
+        );
 
         ctx.unsubscribe_to_model(&Manager::handle(ctx));
 
@@ -1131,20 +1155,26 @@ fn handle_terminal_view_event(
                 // start is empty — its terminal model never accumulated
                 // rendered AI blocks for the conversation — so revealing
                 // it would surface a blank pane next to the real one.
-                // The entry in `child_agent_panes` is never cleaned up
-                // when the child is split off, so we cannot rely on its
-                // presence as a signal that no visible pane exists.
                 if let Some(visible_pane_id) =
                     group.find_visible_terminal_pane_for_conversation(*conversation_id, ctx)
                 {
                     group.focus_pane(visible_pane_id.into(), true, ctx);
-                } else if let Some(&child_pane_id) = group.child_agent_panes.get(conversation_id) {
-                    // No visible pane has the conversation yet — reveal
-                    // the hidden child pane that was registered when the
-                    // child agent was first started.
-                    group.panes.show_pane_for_child_agent(child_pane_id);
-                    group.handle_pane_count_change(ctx);
-                    group.focus_pane(child_pane_id, true, ctx);
+                } else if group
+                    .ensure_hidden_child_agent_pane_for_conversation(*conversation_id, ctx)
+                {
+                    if let Some(&child_pane_id) = group.child_agent_panes.get(conversation_id) {
+                        // No visible pane has the conversation yet — reveal
+                        // the hidden child pane that was registered when the
+                        // child agent was first started, or lazily restored
+                        // after the parent re-entered agent view.
+                        group.panes.show_pane_for_child_agent(child_pane_id);
+                        group.handle_pane_count_change(ctx);
+                        group.focus_pane(child_pane_id, true, ctx);
+                    } else {
+                        log::warn!(
+                            "Child conversation {conversation_id:?} is loaded but has no hidden pane to reveal"
+                        );
+                    }
                 } else {
                     log::warn!("No pane found for child conversation {conversation_id:?}");
                 }
@@ -1154,9 +1184,15 @@ fn handle_terminal_view_event(
                 // can. Forward the request upward so `WorkspaceView` can
                 // create a fresh tab and switch its agent view to this
                 // child conversation.
-                ctx.emit(pane_group::Event::OpenChildAgentInNewTab {
-                    conversation_id: *conversation_id,
-                });
+                if group.ensure_hidden_child_agent_pane_for_conversation(*conversation_id, ctx) {
+                    ctx.emit(pane_group::Event::OpenChildAgentInNewTab {
+                        conversation_id: *conversation_id,
+                    });
+                } else {
+                    log::warn!(
+                        "OpenChildAgentInNewTab: failed to materialize child conversation {conversation_id:?}"
+                    );
+                }
             }
             Event::OpenChildAgentInNewPane { conversation_id } => {
                 // Split a fresh terminal pane to the right and load the
@@ -1170,22 +1206,32 @@ fn handle_terminal_view_event(
                 // show an empty transcript. Going through a fresh terminal
                 // view forces the cloud load+restore path, which mirrors
                 // what "Open in new tab" already does.
-                let new_pane_id =
-                    group.add_terminal_pane(Direction::Right, None /* chosen_shell */, ctx);
-                if let Some(new_terminal_view) = group.terminal_view_from_pane_id(new_pane_id, ctx)
-                {
-                    let conversation_id = *conversation_id;
-                    new_terminal_view.update(ctx, |terminal_view, ctx| {
-                        terminal_view.enter_agent_view_for_conversation(
-                            None,
-                            AgentViewEntryOrigin::OrchestrationPillBar,
-                            conversation_id,
-                            ctx,
+                if group.ensure_hidden_child_agent_pane_for_conversation(*conversation_id, ctx) {
+                    let new_pane_id = group.add_terminal_pane(
+                        Direction::Right,
+                        None, /* chosen_shell */
+                        ctx,
+                    );
+                    if let Some(new_terminal_view) =
+                        group.terminal_view_from_pane_id(new_pane_id, ctx)
+                    {
+                        let conversation_id = *conversation_id;
+                        new_terminal_view.update(ctx, |terminal_view, ctx| {
+                            terminal_view.enter_agent_view_for_conversation(
+                                None,
+                                AgentViewEntryOrigin::OrchestrationPillBar,
+                                conversation_id,
+                                ctx,
+                            );
+                        });
+                    } else {
+                        log::warn!(
+                            "OpenChildAgentInNewPane: failed to resolve terminal view for newly created pane (conversation {conversation_id:?})"
                         );
-                    });
+                    }
                 } else {
                     log::warn!(
-                        "OpenChildAgentInNewPane: failed to resolve terminal view for newly created pane (conversation {conversation_id:?})"
+                        "OpenChildAgentInNewPane: failed to materialize child conversation {conversation_id:?}"
                     );
                 }
             }

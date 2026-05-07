@@ -58,7 +58,7 @@ use warp_terminal::shell::{ShellName, ShellType};
 
 use std::any::Any;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -2062,7 +2062,8 @@ impl PaneGroup {
                             if self.panes.is_hidden_closed_pane(pane_id) {
                                 // Don't snapshot hidden panes (undo, move, job,
                                 // child agent, etc.). Child agent panes are
-                                // recreated from the history model on startup.
+                                // restored lazily once their parent agent view
+                                // is re-entered.
                                 return None;
                             }
                         }
@@ -3037,65 +3038,52 @@ impl PaneGroup {
         }
         ctx.notify();
 
-        // Recreate hidden child agent panes for any child conversations
-        // discovered via the parent→child index.  Child panes are excluded
-        // from snapshots and always rebuilt here on startup.
-        let pane_ids: Vec<PaneId> = pane_group.pane_contents.keys().copied().collect();
-        for pane_id in pane_ids {
-            pane_group.create_missing_child_agent_panes(pane_id, ctx);
-        }
-
         pane_group
     }
 
-    /// Startup restoration: for each parent conversation on this pane, creates
-    /// hidden child panes for any children not yet tracked in `child_agent_panes`.
-    /// Child panes are excluded from snapshots; children are discovered via the
-    /// `children_by_parent` index on the history model and their conversation
-    /// data is taken from `RestoredAgentConversations`.
-    fn create_missing_child_agent_panes(&mut self, pane_id: PaneId, ctx: &mut ViewContext<Self>) {
-        let Some(terminal_pane) = self
-            .pane_contents
-            .get(&pane_id)
-            .and_then(|c| c.as_any().downcast_ref::<TerminalPane>())
-        else {
-            return;
-        };
-        let terminal_view_id = terminal_pane.terminal_view(ctx).id();
+    /// Returns the pane currently owning `conversation_id`, if that conversation
+    /// is live in this pane group.
+    fn pane_id_for_owned_conversation(
+        &self,
+        conversation_id: AIConversationId,
+        ctx: &AppContext,
+    ) -> Option<PaneId> {
+        BlocklistAIHistoryModel::as_ref(ctx)
+            .terminal_view_id_for_conversation(&conversation_id)
+            .and_then(|terminal_view_id| self.find_pane_id_for_terminal_view(terminal_view_id, ctx))
+    }
 
-        // Collect child IDs from both in-memory conversations and the startup
-        // index.  The index covers children that haven't been loaded into
-        // conversations_by_id yet (because their pane was not snapshotted).
-        let mut children_to_create: HashSet<AIConversationId> = HashSet::new();
-        let history_model = BlocklistAIHistoryModel::as_ref(ctx);
-        for conversation in history_model.all_live_conversations_for_terminal_view(terminal_view_id)
-        {
-            if conversation.is_child_agent_conversation() {
+    /// Lazily restores hidden child panes for the given parent conversation.
+    ///
+    /// Unlike the old startup sweep, this runs only when the parent agent view
+    /// is actually restored or entered. Children that already belong to some
+    /// other pane are left alone.
+    fn restore_missing_child_agent_panes_for_parent(
+        &mut self,
+        parent_conversation_id: AIConversationId,
+        parent_pane_id: PaneId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let child_ids = BlocklistAIHistoryModel::as_ref(ctx)
+            .child_conversation_ids_of(&parent_conversation_id)
+            .to_vec();
+
+        for child_id in child_ids {
+            if self
+                .child_agent_panes
+                .get(&child_id)
+                .is_some_and(|pane_id| self.has_pane_id(*pane_id))
+            {
                 continue;
             }
-            let parent_id = conversation.id();
 
-            // Check in-memory children (live conversations).
-            for child in history_model.child_conversations_of(parent_id) {
-                let child_id = child.id();
-                if !self.child_agent_panes.contains_key(&child_id) {
-                    children_to_create.insert(child_id);
-                }
+            if self
+                .pane_id_for_owned_conversation(child_id, ctx)
+                .is_some_and(|pane_id| pane_id != parent_pane_id)
+            {
+                continue;
             }
 
-            // Check the startup index for children not yet in memory.
-            for &child_id in history_model.child_conversation_ids_of(&parent_id) {
-                if !self.child_agent_panes.contains_key(&child_id) {
-                    children_to_create.insert(child_id);
-                }
-            }
-        }
-
-        // TODO(QUALITY-378): Lazily restore child conversations/panes on demand (for example, on
-        // reveal/message) instead of eagerly materializing every child pane at startup.
-        let created_any = !children_to_create.is_empty();
-        for child_id in children_to_create {
-            // Try in-memory first, then fall back to RestoredAgentConversations.
             let child_conversation = BlocklistAIHistoryModel::as_ref(ctx)
                 .conversation(&child_id)
                 .cloned()
@@ -3107,12 +3095,69 @@ impl PaneGroup {
                 log::warn!("Child conversation {child_id:?} not found in memory or restored store");
                 continue;
             };
-            self.create_hidden_child_agent_pane(child_conversation, pane_id, ctx);
+
+            self.create_hidden_child_agent_pane(child_conversation, parent_pane_id, ctx);
+        }
+    }
+
+    /// Ensures `child_conversation_id` has a hidden child pane if it still
+    /// belongs under a parent conversation in this pane group.
+    ///
+    /// Returns true if the conversation is already reachable through an
+    /// existing pane or if lazy restoration successfully materialized the child
+    /// pane.
+    fn ensure_hidden_child_agent_pane_for_conversation(
+        &mut self,
+        child_conversation_id: AIConversationId,
+        ctx: &mut ViewContext<Self>,
+    ) -> bool {
+        if self
+            .child_agent_panes
+            .get(&child_conversation_id)
+            .is_some_and(|pane_id| self.has_pane_id(*pane_id))
+        {
+            return true;
         }
 
-        if created_any {
-            self.focus_pane(pane_id, true, ctx);
+        let parent_conversation_id = BlocklistAIHistoryModel::as_ref(ctx)
+            .conversation(&child_conversation_id)
+            .and_then(|conversation| conversation.parent_conversation_id())
+            .or_else(|| {
+                RestoredAgentConversations::handle(ctx).read(ctx, |store, _| {
+                    store
+                        .get_conversation(&child_conversation_id)
+                        .and_then(|conversation| conversation.parent_conversation_id())
+                })
+            });
+
+        let Some(parent_conversation_id) = parent_conversation_id else {
+            return self
+                .pane_id_for_owned_conversation(child_conversation_id, ctx)
+                .is_some();
+        };
+
+        let owner_pane_id = self.pane_id_for_owned_conversation(child_conversation_id, ctx);
+        let Some(parent_pane_id) = self.pane_id_for_owned_conversation(parent_conversation_id, ctx)
+        else {
+            return owner_pane_id.is_some();
+        };
+
+        if owner_pane_id.is_some_and(|pane_id| pane_id != parent_pane_id) {
+            return true;
         }
+
+        self.restore_missing_child_agent_panes_for_parent(
+            parent_conversation_id,
+            parent_pane_id,
+            ctx,
+        );
+
+        self.child_agent_panes
+            .get(&child_conversation_id)
+            .is_some_and(|pane_id| self.has_pane_id(*pane_id))
+            || self
+                .pane_id_for_owned_conversation(child_conversation_id, ctx)
+                .is_some_and(|pane_id| pane_id != parent_pane_id)
     }
 
     /// Creates a hidden child agent pane for an existing child conversation,
@@ -5895,7 +5940,6 @@ impl PaneGroup {
             ctx,
         );
 
-        let terminal_view_id = view.id();
         let pane_data = TerminalPane::new(
             uuid.as_bytes().to_vec(),
             terminal_manager,
@@ -5906,15 +5950,6 @@ impl PaneGroup {
 
         // Use replace_pane to swap loading pane with new terminal pane
         let success = self.replace_pane(loading_pane_id, pane_data, false, ctx);
-
-        // The new terminal view was created before pane-group subscriptions
-        // were set up, so scan its conversations for child agent panes now.
-        if success {
-            let new_pane_id = self
-                .find_pane_id_for_terminal_view(terminal_view_id, ctx)
-                .unwrap_or(loading_pane_id);
-            self.create_missing_child_agent_panes(new_pane_id, ctx);
-        }
 
         success
     }
