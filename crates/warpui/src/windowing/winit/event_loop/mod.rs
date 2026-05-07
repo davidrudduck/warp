@@ -1310,33 +1310,14 @@ impl EventLoop {
                         && !is_synthetic
                         && event_state == ElementState::Pressed =>
                     {
-                        // Fallback for synthetic WM_CHAR messages injected by non-IME input
-                        // methods (e.g. Unikey/EVKey on Windows for Vietnamese Telex/VNI).
-                        // These input methods hook the keyboard at a low level and inject
-                        // pre-composed characters via `SendInput` instead of going through
-                        // the standard IME pipeline. The resulting key event has
-                        // `logical_key == Key::Unidentified(...)`, which causes
-                        // `convert_keyboard_input_event` to return `None`, but `event.text`
-                        // still carries the composed character (e.g. "ư", "ế").
-                        //
-                        // Without this branch the character is silently dropped, producing
-                        // the well-known "Vietnamese characters disappear while typing" bug
-                        // reported by users of Unikey, EVKey and similar IMEs on Windows.
-                        // Dispatching it as a `TypedCharacters` event lets the downstream
-                        // pipeline (terminal input, editor) receive the character.
-                        //
-                        // The arm guard ensures the fallback only runs for the intended
-                        // unidentified-key case:
-                        //   * `!is_synthetic` and `Pressed` mirror the early returns in
-                        //     `convert_keyboard_input_event`, so we don't re-introduce the
-                        //     focus-keypress bugs those checks exist to suppress (e.g.
-                        //     alt-tab inserting a `tab`, hotkey re-triggering window open).
-                        //   * `is_unidentified_key` excludes intentionally ignored
-                        //     identified keystrokes (`KEYS_TO_IGNORE`, e.g. `cmdorctrl-v`
-                        //     on web that needs to fall through to the browser paste
-                        //     handler) which also cause the converter to return `None`.
+                        // Fallback for synthetic WM_CHAR messages injected by non-IME input methods
+                        // (e.g. Unikey/EVKey on Windows for Vietnamese Telex/VNI). These input
+                        // methods hook the keyboard at a low level and inject pre-composed
+                        // characters via `SendInput` instead of going through the standard IME
+                        // pipeline. The resulting key event has
+                        // `logical_key == Key::Unidentified(...)`
                         event_text.map(|chars| {
-                            ConvertedEvent::Event(crate::event::Event::TypedCharacters { chars })
+                            ConvertedEvent::Event(TypedCharacters { chars })
                         })
                     }
                     None => None,
