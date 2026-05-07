@@ -729,7 +729,8 @@ impl TerminalView {
             let model = self.model.lock();
             FeatureFlag::CloudModeSetupV2.is_enabled()
                 && model.is_shared_ambient_agent_session()
-                && viewed_ambient_task_id_owned_by_current_user.is_none()
+                && (viewed_ambient_task_id_owned_by_current_user.is_none()
+                    || !FeatureFlag::HandoffCloudCloud.is_enabled())
                 && self.conversation_ended_tombstone_view_id.is_none()
                 && !model.is_receiving_agent_conversation_replay()
         };
@@ -772,7 +773,9 @@ impl TerminalView {
         });
 
         if self.pending_cloud_followup_task_id.is_none() {
-            if let Some(task_id) = viewed_ambient_task_id_owned_by_current_user {
+            if let Some(task_id) = viewed_ambient_task_id_owned_by_current_user
+                .filter(|_| FeatureFlag::HandoffCloudCloud.is_enabled())
+            {
                 self.enable_owned_cloud_followup_input(task_id, ctx);
             } else if self.model.lock().shared_session_status().is_viewer() {
                 // When the session is ended, the input should be uneditable iff this is a viewer.
@@ -811,18 +814,19 @@ impl TerminalView {
             });
         }
         self.refresh_conversation_details_panel_if_open(ctx);
-        if !FeatureFlag::HandoffCloudCloud.is_enabled()
-            || !FeatureFlag::CloudModeSetupV2.is_enabled()
+        if !FeatureFlag::CloudModeSetupV2.is_enabled()
             || self.conversation_ended_tombstone_view_id.is_some()
             || self.pending_cloud_followup_task_id.is_some()
         {
             return;
         }
-        if let Some(task_id) = self.owned_ambient_agent_task_id(ctx) {
-            if !has_live_shared_session {
-                self.enable_owned_cloud_followup_input(task_id, ctx);
+        if FeatureFlag::HandoffCloudCloud.is_enabled() {
+            if let Some(task_id) = self.owned_ambient_agent_task_id(ctx) {
+                if !has_live_shared_session {
+                    self.enable_owned_cloud_followup_input(task_id, ctx);
+                }
+                return;
             }
-            return;
         }
 
         self.insert_conversation_ended_tombstone(ctx);

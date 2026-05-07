@@ -6949,13 +6949,14 @@ impl TerminalView {
             if self.pending_cloud_followup_task_id == Some(task_id) {
                 return;
             }
-            if self.owned_ambient_agent_task_id(ctx).is_some() {
-                if FeatureFlag::HandoffCloudCloud.is_enabled()
-                    && !self
-                        .model
-                        .lock()
-                        .shared_session_status()
-                        .is_sharer_or_viewer()
+            if self.owned_ambient_agent_task_id(ctx).is_some()
+                && FeatureFlag::HandoffCloudCloud.is_enabled()
+            {
+                if !self
+                    .model
+                    .lock()
+                    .shared_session_status()
+                    .is_sharer_or_viewer()
                 {
                     self.enable_owned_cloud_followup_input(task_id, ctx);
                 }
