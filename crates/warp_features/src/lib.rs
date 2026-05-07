@@ -859,6 +859,11 @@ pub enum FeatureFlag {
     /// conversation into a fresh cloud agent run with the current workspace
     /// snapshot attached. Requires `OzHandoff` to also be enabled.
     HandoffLocalCloud,
+
+    /// Enables a user-editable list of custom "warping" spinner verbs that
+    /// replace the default "Warping..." spinner when the Warp agent or an Oz
+    /// cloud agent is in the generic in-progress state.
+    CustomWarpingVerbs,
 }
 
 static FLAG_STATES: [AtomicBool; cardinality::<FeatureFlag>()] =
@@ -941,6 +946,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::CloudModeInputV2,
     FeatureFlag::HandoffLocalCloud,
     FeatureFlag::DragTabsToWindows,
+    FeatureFlag::CustomWarpingVerbs,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).
