@@ -1170,8 +1170,6 @@ define_settings_group!(AISettings, settings: [
         private: true,
     }
 
-    // This is not a user-visible setting - it's merely a one-time flag to track if the orchestration
-    // launch modal has been shown to the user.
     did_check_to_trigger_orchestration_launch_modal: DidShowOrchestrationLaunchModal {
         type: bool,
         default: false,
