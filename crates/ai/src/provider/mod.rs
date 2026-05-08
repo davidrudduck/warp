@@ -1,8 +1,10 @@
 pub mod error;
 pub mod mock;
+pub mod openai;
 pub mod types;
 
 pub use error::ProviderError;
+pub use openai::OpenAIProvider;
 pub use types::{
     ChatMessage, ChatOptions, ChatRequest, ChatResponse, ContentBlock, FinishReason,
     ImageMediaType, StreamEvent, TokenUsage, Tool, ToolCall, ToolResultContent,

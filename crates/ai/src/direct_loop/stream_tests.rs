@@ -1,8 +1,9 @@
 use super::*;
 use crate::provider::{
     agent_event_channel, mock::MockLlmProvider, AgentEvent, ChatMessage, ChatOptions, ChatRequest,
-    ContentBlock, FinishReason, SharedProvider, StreamEvent, ToolCall,
+    ContentBlock, FinishReason, ProviderError, SharedProvider, StreamEvent, ToolCall,
 };
+use futures::FutureExt;
 use std::sync::Arc;
 
 fn make_request() -> ChatRequest {
@@ -26,13 +27,16 @@ async fn collect_text_chunks_emits_text_events() {
     ];
     let provider: SharedProvider = Arc::new(MockLlmProvider::new().with_stream(events));
     let (tx, mut rx) = agent_event_channel(16);
+    let (_cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
+    let mut cancel_signal = cancel_rx.fuse();
 
-    let result = collect_and_emit_stream(&provider, make_request(), &tx).await;
+    let result = collect_and_emit_stream(&provider, make_request(), &tx, &mut cancel_signal).await;
     drop(tx);
 
     assert!(result.is_ok());
-    let (finish_reason, _usage) = result.unwrap();
+    let (finish_reason, _usage, tool_calls) = result.unwrap();
     assert_eq!(finish_reason, FinishReason::Stop);
+    assert!(tool_calls.is_empty());
 
     let mut received = vec![];
     while let Some(ev) = rx.recv().await {
@@ -73,11 +77,18 @@ async fn collect_tool_call_ready_forwarded() {
     ];
     let provider: SharedProvider = Arc::new(MockLlmProvider::new().with_stream(events));
     let (tx, mut rx) = agent_event_channel(16);
+    let (_cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
+    let mut cancel_signal = cancel_rx.fuse();
 
-    collect_and_emit_stream(&provider, make_request(), &tx)
+    let result = collect_and_emit_stream(&provider, make_request(), &tx, &mut cancel_signal)
         .await
         .unwrap();
     drop(tx);
+
+    let (_finish_reason, _usage, tool_calls_returned) = result;
+    assert_eq!(tool_calls_returned.len(), 1);
+    assert_eq!(tool_calls_returned[0].name, "ReadFile");
+    assert_eq!(tool_calls_returned[0].id, "c1");
 
     let mut received = vec![];
     while let Some(ev) = rx.recv().await {
@@ -119,11 +130,18 @@ async fn collect_tool_call_chunks_assembled() {
     ];
     let provider: SharedProvider = Arc::new(MockLlmProvider::new().with_stream(events));
     let (tx, mut rx) = agent_event_channel(16);
+    let (_cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
+    let mut cancel_signal = cancel_rx.fuse();
 
-    collect_and_emit_stream(&provider, make_request(), &tx)
+    let result = collect_and_emit_stream(&provider, make_request(), &tx, &mut cancel_signal)
         .await
         .unwrap();
     drop(tx);
+
+    let (_finish_reason, _usage, tool_calls_returned) = result;
+    assert_eq!(tool_calls_returned.len(), 1);
+    assert_eq!(tool_calls_returned[0].name, "Grep");
+    assert_eq!(tool_calls_returned[0].input["pattern"], "foo");
 
     let mut received = vec![];
     while let Some(ev) = rx.recv().await {
@@ -150,8 +168,10 @@ async fn collect_stream_error_propagated() {
             // No End event — stream terminates early.
     );
     let (tx, mut rx) = agent_event_channel(16);
+    let (_cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
+    let mut cancel_signal = cancel_rx.fuse();
 
-    let result = collect_and_emit_stream(&provider, make_request(), &tx).await;
+    let result = collect_and_emit_stream(&provider, make_request(), &tx, &mut cancel_signal).await;
     drop(tx);
 
     assert!(result.is_err());
@@ -164,4 +184,33 @@ async fn collect_stream_error_propagated() {
     assert!(received
         .iter()
         .any(|ev| matches!(ev, AgentEvent::Error(_))));
+}
+
+#[tokio::test]
+async fn collect_stream_respects_cancel_signal() {
+    let events = vec![
+        StreamEvent::Start,
+        StreamEvent::TextChunk("Hello".into()),
+        StreamEvent::TextChunk(", world".into()),
+        StreamEvent::End {
+            finish_reason: FinishReason::Stop,
+            usage: None,
+        },
+    ];
+    let provider: SharedProvider = Arc::new(MockLlmProvider::new().with_stream(events));
+    let (tx, _rx) = agent_event_channel(16);
+    let (cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
+    let mut cancel_signal = cancel_rx.fuse();
+
+    // Cancel immediately.
+    let _ = cancel_tx.send(());
+
+    let result = collect_and_emit_stream(&provider, make_request(), &tx, &mut cancel_signal).await;
+
+    assert!(result.is_err());
+    if let Err(ProviderError::Cancelled) = result {
+        // Expected.
+    } else {
+        panic!("Expected ProviderError::Cancelled, got {result:?}");
+    }
 }

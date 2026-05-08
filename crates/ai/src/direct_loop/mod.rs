@@ -1,82 +1,122 @@
 use crate::provider::{
-    AgentEvent, AgentEventSender, ChatMessage, ChatRequest, FinishReason, ProviderError,
-    SharedProvider, StreamEvent, ToolCall, TokenUsage,
+    AgentEvent, AgentEventSender, ChatMessage, ChatRequest, ContentBlock, FinishReason,
+    ProviderError, SharedProvider, StreamEvent, Tool, ToolCall, TokenUsage,
 };
-use futures::StreamExt;
+use futures::{FutureExt, StreamExt};
+use tokio::sync::mpsc;
+
+type FusedCancel = futures::future::Fuse<futures::channel::oneshot::Receiver<()>>;
+
+/// Placeholder type for conversation ID (actual implementation is in app crate).
+/// This module will accept it as a generic parameter in production.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct AIConversationId(uuid::Uuid);
+
+impl AIConversationId {
+    pub fn new() -> Self {
+        Self(uuid::Uuid::new_v4())
+    }
+}
+
+impl Default for AIConversationId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Request to dispatch a tool call on the main thread.
+/// Background task sends this; main thread executor receives and processes.
+#[derive(Debug)]
+pub struct ToolDispatchRequest {
+    pub tool_call: ToolCall,
+    pub index: usize,
+    pub conversation_id: AIConversationId,
+    pub result_tx: futures::channel::oneshot::Sender<Result<ContentBlock, ProviderError>>,
+}
 
 /// Drain a `ChatStream` produced by the provider, assemble `ToolCallReady`
 /// events from `ToolCallChunk` fragments, and forward `AgentEvent`s to
-/// `sender`.  Returns the finish reason and optional token usage when the
-/// stream ends normally.
+/// `sender`.  Returns the finish reason, optional token usage, and collected
+/// tool calls when the stream ends normally.
 pub async fn collect_and_emit_stream(
     provider: &SharedProvider,
     request: ChatRequest,
     sender: &AgentEventSender,
-) -> Result<(FinishReason, Option<TokenUsage>), ProviderError> {
+    mut cancel: &mut FusedCancel,
+) -> Result<(FinishReason, Option<TokenUsage>, Vec<ToolCall>), ProviderError> {
     let mut stream = provider.chat_stream(request).await?;
 
     // Accumulate tool-call fragments keyed by index.
     let mut pending_tool_calls: Vec<(String, String, String)> = Vec::new(); // (id, name, args)
+    let mut collected_tool_calls: Vec<ToolCall> = Vec::new();
 
-    while let Some(event) = stream.next().await {
-        match event? {
-            StreamEvent::Start => {}
-            StreamEvent::TextChunk(text) => {
-                let _ = sender.send(AgentEvent::TextChunk(text)).await;
-            }
-            StreamEvent::ToolCallChunk {
-                index,
-                id,
-                name,
-                args_fragment,
-            } => {
-                if index >= pending_tool_calls.len() {
-                    pending_tool_calls.resize(index + 1, (String::new(), String::new(), String::new()));
+    loop {
+        futures::select! {
+            _ = cancel => return Err(ProviderError::Cancelled),
+            event = stream.next().fuse() => match event {
+                Some(Ok(StreamEvent::Start)) => {}
+                Some(Ok(StreamEvent::TextChunk(text))) => {
+                    let _ = sender.send(AgentEvent::TextChunk(text)).await;
                 }
-                let entry = &mut pending_tool_calls[index];
-                if !id.is_empty() {
-                    entry.0 = id;
-                }
-                if !name.is_empty() {
-                    entry.1 = name;
-                }
-                entry.2.push_str(&args_fragment);
-            }
-            StreamEvent::ToolCallReady(tc) => {
-                let _ = sender.send(AgentEvent::ToolCallReady(tc)).await;
-            }
-            StreamEvent::End {
-                finish_reason,
-                usage,
-            } => {
-                // Flush any fragment-assembled tool calls.
-                for (id, name, args_str) in pending_tool_calls.drain(..) {
-                    if id.is_empty() && name.is_empty() {
-                        continue;
+                Some(Ok(StreamEvent::ToolCallChunk {
+                    index,
+                    id,
+                    name,
+                    args_fragment,
+                })) => {
+                    if index >= pending_tool_calls.len() {
+                        pending_tool_calls.resize(index + 1, (String::new(), String::new(), String::new()));
                     }
-                    let input = serde_json::from_str(&args_str).unwrap_or(serde_json::Value::Null);
-                    let _ = sender
-                        .send(AgentEvent::ToolCallReady(ToolCall { id, name, input }))
-                        .await;
+                    let entry = &mut pending_tool_calls[index];
+                    if !id.is_empty() {
+                        entry.0 = id;
+                    }
+                    if !name.is_empty() {
+                        entry.1 = name;
+                    }
+                    entry.2.push_str(&args_fragment);
                 }
-                let _ = sender
-                    .send(AgentEvent::Done {
-                        finish_reason,
-                        usage: usage.clone(),
-                    })
-                    .await;
-                return Ok((finish_reason, usage));
+                Some(Ok(StreamEvent::ToolCallReady(tc))) => {
+                    collected_tool_calls.push(tc.clone());
+                    let _ = sender.send(AgentEvent::ToolCallReady(tc)).await;
+                }
+                Some(Ok(StreamEvent::End {
+                    finish_reason,
+                    usage,
+                })) => {
+                    // Flush any fragment-assembled tool calls.
+                    for (id, name, args_str) in pending_tool_calls.drain(..) {
+                        if id.is_empty() && name.is_empty() {
+                            continue;
+                        }
+                        let input = serde_json::from_str(&args_str).unwrap_or(serde_json::Value::Null);
+                        let tc = ToolCall { id, name, input };
+                        collected_tool_calls.push(tc.clone());
+                        let _ = sender
+                            .send(AgentEvent::ToolCallReady(tc))
+                            .await;
+                    }
+                    let _ = sender
+                        .send(AgentEvent::Done {
+                            finish_reason,
+                            usage: usage.clone(),
+                        })
+                        .await;
+                    return Ok((finish_reason, usage, collected_tool_calls));
+                }
+                Some(Err(e)) => return Err(e),
+                None => {
+                    // Stream ended without an End event — treat as an error.
+                    let _ = sender
+                        .send(AgentEvent::Error("stream ended without End event".into()))
+                        .await;
+                    return Err(ProviderError::StreamParse(
+                        "stream ended without End event".into(),
+                    ));
+                }
             }
         }
     }
-
-    // Stream ended without an End event — treat as an error.
-    let _ = sender
-        .send(AgentEvent::Error("stream ended without End event".into()))
-        .await;
-    Err(ProviderError::StreamParse(
-        "stream ended without End event".into(),
-    ))
 }
 
 /// Returns `true` when the current tool calls should be presented to the user
@@ -180,6 +220,138 @@ pub fn trim_to_context_window(messages: Vec<ChatMessage>, limit: usize) -> Vec<C
     systems
 }
 
+/// Safety cap: prevent runaway agent loops from exhausting provider quota.
+pub const MAX_DIRECT_LOOP_TURNS: usize = 50;
+
+/// Main direct-mode agent loop.
+/// Runs chat_stream → collect events → dispatch tools → loop until Stop.
+pub async fn run(
+    provider: SharedProvider,
+    initial_messages: Vec<ChatMessage>,
+    tools: Vec<Tool>,
+    conversation_id: AIConversationId,
+    tx: AgentEventSender,
+    tool_req_tx: mpsc::Sender<ToolDispatchRequest>,
+    cancellation_rx: futures::channel::oneshot::Receiver<()>,
+) -> Result<(), ProviderError> {
+    let mut history = initial_messages;
+    let mut cancel = cancellation_rx.fuse();
+
+    loop {
+        let request = ChatRequest {
+            messages: trim_to_context_window(history.clone(), 100),
+            tools: tools.clone(),
+            options: Default::default(),
+        };
+
+        // Call collect_and_emit_stream, checking cancellation within it
+        let stream_result = collect_and_emit_stream(&provider, request, &tx, &mut cancel).await;
+
+        // Check if we were cancelled
+        if matches!(stream_result, Err(ProviderError::Cancelled)) {
+            return Ok(());
+        }
+
+        let (_finish_reason, _usage, tool_calls) = stream_result?;
+
+        // Build assistant message
+        history.push(ChatMessage::Assistant {
+            text: None,
+            tool_calls: tool_calls.clone(),
+        });
+
+        if tool_calls.is_empty() {
+            break;
+        }
+
+        // Enforce per-session safety cap before dispatching tools
+        if history.len() > MAX_DIRECT_LOOP_TURNS {
+            let _ = tx
+                .send(AgentEvent::Error(
+                    "Direct-mode agent reached the maximum turn limit.".into(),
+                ))
+                .await;
+            break;
+        }
+
+        // Pre-classify tool calls: if any require confirmation, serialize all
+        let (confirm_calls, parallel_calls): (Vec<_>, Vec<_>) = tool_calls
+            .into_iter()
+            .partition(|tc| tool_requires_confirmation(&tc.name));
+
+        let mut results: Vec<(usize, ContentBlock)> = Vec::new();
+
+        if !confirm_calls.is_empty() {
+            // Serialize all calls (confirmation batch must be sequential)
+            for (i, tc) in confirm_calls.into_iter().chain(parallel_calls).enumerate() {
+                let block = dispatch_one(tc, i, conversation_id, &tool_req_tx).await?;
+                results.push(block);
+            }
+        } else {
+            // Safe to dispatch concurrently with FuturesUnordered
+            use futures::stream::FuturesUnordered;
+
+            let mut pending: FuturesUnordered<_> = parallel_calls
+                .into_iter()
+                .enumerate()
+                .map(|(i, tc)| {
+                    let tool_req_tx = tool_req_tx.clone();
+                    async move { dispatch_one(tc, i, conversation_id, &tool_req_tx).await }
+                })
+                .collect();
+
+            loop {
+                futures::select! {
+                    _ = cancel => return Ok(()),
+                    item = pending.next().fuse() => match item {
+                        Some(Ok(pair)) => results.push(pair),
+                        Some(Err(e)) => return Err(e),
+                        None => break,
+                    }
+                }
+            }
+        }
+
+        // Sort back to original call order
+        results.sort_by_key(|(i, _)| *i);
+        let result_blocks: Vec<ContentBlock> = results.into_iter().map(|(_, b)| b).collect();
+
+        // Single User message containing all tool results
+        history.push(ChatMessage::User(result_blocks));
+    }
+
+    Ok(())
+}
+
+/// Dispatch a single tool call and return the result as a ContentBlock.
+/// This is a mock implementation for Phase 4a - the real adapter layer doesn't exist yet.
+async fn dispatch_one(
+    tool_call: ToolCall,
+    index: usize,
+    conversation_id: AIConversationId,
+    tool_req_tx: &mpsc::Sender<ToolDispatchRequest>,
+) -> Result<(usize, ContentBlock), ProviderError> {
+    let (result_tx, result_rx) = futures::channel::oneshot::channel();
+
+    let req = ToolDispatchRequest {
+        tool_call: tool_call.clone(),
+        index,
+        conversation_id,
+        result_tx,
+    };
+
+    tool_req_tx
+        .send(req)
+        .await
+        .map_err(|_| ProviderError::StreamParse("tool dispatch channel closed".into()))?;
+
+    let result_block = result_rx
+        .await
+        .map_err(|_| ProviderError::StreamParse("tool result channel closed".into()))??;
+
+    Ok((index, result_block))
+}
+
 #[cfg(test)]
 #[path = "stream_tests.rs"]
 mod stream_tests;
@@ -187,3 +359,7 @@ mod stream_tests;
 #[cfg(test)]
 #[path = "trim_tests.rs"]
 mod trim_tests;
+
+#[cfg(test)]
+#[path = "run_tests.rs"]
+mod run_tests;
