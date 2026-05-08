@@ -1,0 +1,372 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1778194855152,
+  "projectRoot": "/Users/david/Code/warp",
+  "techStack": {
+    "languages": [
+      {
+        "name": "Rust",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "Cargo.toml"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "axum",
+        "version": null,
+        "category": "backend"
+      }
+    ],
+    "packageManager": "cargo",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "cargo build -p ai 2>&1 | tail -5",
+    "testCommand": "cargo test -p ai --lib direct_loop::stream_tests 2>&1 | grep -E \"test result:|test direct_loop::stream\"",
+    "lintCommand": "cargo clippy",
+    "devCommand": "cargo run",
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "app"
+    ],
+    "gitBranches": {
+      "defaultBranch": "master",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "app": {
+      "path": "app",
+      "purpose": "Application code",
+      "fileCount": 1,
+      "lastAccessed": 1778194855130,
+      "keyFiles": [
+        "Cargo.toml"
+      ]
+    },
+    "app/assets": {
+      "path": "app/assets",
+      "purpose": "Static assets",
+      "fileCount": 0,
+      "lastAccessed": 1778194855130,
+      "keyFiles": []
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "specs/direct-provider-api/PLAN.md",
+      "accessCount": 24,
+      "lastAccessed": 1778272241043,
+      "type": "file"
+    },
+    {
+      "path": "app/src/ai/agent/api/impl.rs",
+      "accessCount": 9,
+      "lastAccessed": 1778243158029,
+      "type": "file"
+    },
+    {
+      "path": "app/src/server/server_api/ai.rs",
+      "accessCount": 7,
+      "lastAccessed": 1778210916623,
+      "type": "file"
+    },
+    {
+      "path": "app/src/ai/llms.rs",
+      "accessCount": 7,
+      "lastAccessed": 1778242926915,
+      "type": "file"
+    },
+    {
+      "path": "app/src/ai/agent/api.rs",
+      "accessCount": 7,
+      "lastAccessed": 1778243161342,
+      "type": "file"
+    },
+    {
+      "path": "app/src/server/server_api.rs",
+      "accessCount": 5,
+      "lastAccessed": 1778210938405,
+      "type": "file"
+    },
+    {
+      "path": "crates/ai/src/api_keys.rs",
+      "accessCount": 5,
+      "lastAccessed": 1778241145159,
+      "type": "file"
+    },
+    {
+      "path": "crates/warpui_core/src/core/model/context.rs",
+      "accessCount": 5,
+      "lastAccessed": 1778243183123,
+      "type": "file"
+    },
+    {
+      "path": "app/src/ai/blocklist/action_model/execute.rs",
+      "accessCount": 4,
+      "lastAccessed": 1778242895712,
+      "type": "file"
+    },
+    {
+      "path": "crates/warp_features/src/lib.rs",
+      "accessCount": 4,
+      "lastAccessed": 1778242920016,
+      "type": "file"
+    },
+    {
+      "path": "app/src/ai/blocklist/controller/response_stream.rs",
+      "accessCount": 4,
+      "lastAccessed": 1778243178549,
+      "type": "file"
+    },
+    {
+      "path": "crates/persistence/src/schema.rs",
+      "accessCount": 4,
+      "lastAccessed": 1778244621068,
+      "type": "file"
+    },
+    {
+      "path": "crates/warpui_core/src/core/app.rs",
+      "accessCount": 3,
+      "lastAccessed": 1778243173294,
+      "type": "file"
+    },
+    {
+      "path": "crates/persistence/src/lib.rs",
+      "accessCount": 3,
+      "lastAccessed": 1778244508805,
+      "type": "file"
+    },
+    {
+      "path": "WARP.md",
+      "accessCount": 2,
+      "lastAccessed": 1778197634897,
+      "type": "file"
+    },
+    {
+      "path": "app/src/ai/request_usage_model.rs",
+      "accessCount": 2,
+      "lastAccessed": 1778210894981,
+      "type": "file"
+    },
+    {
+      "path": "app/src/workspaces/user_workspaces.rs",
+      "accessCount": 2,
+      "lastAccessed": 1778220222972,
+      "type": "file"
+    },
+    {
+      "path": "app/src/settings_view/ai_page.rs",
+      "accessCount": 2,
+      "lastAccessed": 1778238939414,
+      "type": "file"
+    },
+    {
+      "path": "crates/warpui_extras/src/secure_storage/mac.rs",
+      "accessCount": 2,
+      "lastAccessed": 1778238941279,
+      "type": "file"
+    },
+    {
+      "path": "crates/warpui_core/src/core/model/handle.rs",
+      "accessCount": 2,
+      "lastAccessed": 1778241144229,
+      "type": "file"
+    },
+    {
+      "path": "app/src/ai/blocklist/action_model.rs",
+      "accessCount": 2,
+      "lastAccessed": 1778242896644,
+      "type": "file"
+    },
+    {
+      "path": "app/src/ai/agent_sdk/mod.rs",
+      "accessCount": 2,
+      "lastAccessed": 1778242907807,
+      "type": "file"
+    },
+    {
+      "path": "Cargo.toml",
+      "accessCount": 2,
+      "lastAccessed": 1778242907943,
+      "type": "file"
+    },
+    {
+      "path": "crates/warp_core/src/features.rs",
+      "accessCount": 2,
+      "lastAccessed": 1778242910680,
+      "type": "file"
+    },
+    {
+      "path": "app/src/ai/llms_tests.rs",
+      "accessCount": 2,
+      "lastAccessed": 1778242914212,
+      "type": "file"
+    },
+    {
+      "path": "crates/ai/src/agent/action/mod.rs",
+      "accessCount": 2,
+      "lastAccessed": 1778242918799,
+      "type": "file"
+    },
+    {
+      "path": "crates/ai/src/llm_id.rs",
+      "accessCount": 2,
+      "lastAccessed": 1778242940595,
+      "type": "file"
+    },
+    {
+      "path": "app/src/ai/agent/conversation.rs",
+      "accessCount": 2,
+      "lastAccessed": 1778272225513,
+      "type": "file"
+    },
+    {
+      "path": ".clippy.toml",
+      "accessCount": 1,
+      "lastAccessed": 1778197474743,
+      "type": "file"
+    },
+    {
+      "path": ".config/nextest.toml",
+      "accessCount": 1,
+      "lastAccessed": 1778197474959,
+      "type": "file"
+    },
+    {
+      "path": "CLAUDE.md",
+      "accessCount": 1,
+      "lastAccessed": 1778197734309,
+      "type": "file"
+    },
+    {
+      "path": "app/src/ai/agent/api/convert_to.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778210939425,
+      "type": "file"
+    },
+    {
+      "path": "app/src/ai/agent/api/convert_from.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778210939634,
+      "type": "file"
+    },
+    {
+      "path": "crates/http_client/src/lib.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778210951887,
+      "type": "file"
+    },
+    {
+      "path": "crates/managed_secrets/src/manager.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778220280845,
+      "type": "file"
+    },
+    {
+      "path": "app/src/settings/ai.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778220281217,
+      "type": "file"
+    },
+    {
+      "path": "crates/warpui_extras/src/secure_storage/mod.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778220811144,
+      "type": "file"
+    },
+    {
+      "path": "app/src/ai/agent/mod.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778238937556,
+      "type": "file"
+    },
+    {
+      "path": "app/src/settings_view/mod.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778238938501,
+      "type": "file"
+    },
+    {
+      "path": "app/src/ai/blocklist/history_model.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778242906584,
+      "type": "file"
+    },
+    {
+      "path": "app/src/ai/agent_conversations_model_tests.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778242907961,
+      "type": "file"
+    },
+    {
+      "path": "app/Cargo.toml",
+      "accessCount": 1,
+      "lastAccessed": 1778242910312,
+      "type": "file"
+    },
+    {
+      "path": "app/src/ai/agent_tips.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778242913365,
+      "type": "file"
+    },
+    {
+      "path": "app/src/persistence/sqlite.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778242946515,
+      "type": "file"
+    },
+    {
+      "path": ".claude/worktrees/agent-a511c3981d629f99f/crates/ai/src/provider/mod.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778243554750,
+      "type": "file"
+    },
+    {
+      "path": ".claude/worktrees/agent-a511c3981d629f99f/crates/ai/src/provider/error.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778243568849,
+      "type": "file"
+    },
+    {
+      "path": ".claude/worktrees/agent-a511c3981d629f99f/crates/ai/src/provider/types.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778243569325,
+      "type": "file"
+    },
+    {
+      "path": ".claude/worktrees/agent-a511c3981d629f99f/crates/ai/src/provider/mock.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778243569858,
+      "type": "file"
+    },
+    {
+      "path": ".claude/worktrees/agent-a511c3981d629f99f/crates/ai/src/provider/error_tests.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778243576941,
+      "type": "file"
+    },
+    {
+      "path": ".claude/worktrees/agent-a511c3981d629f99f/crates/ai/src/provider/types_tests.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778243577869,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

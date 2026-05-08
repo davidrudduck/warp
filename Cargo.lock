@@ -333,6 +333,7 @@ dependencies = [
  "repo_metadata",
  "reqwest",
  "rmcp",
+ "rustls 0.23.39",
  "sentry",
  "serde",
  "serde_json",
