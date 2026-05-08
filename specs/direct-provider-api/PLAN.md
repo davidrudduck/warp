@@ -899,7 +899,7 @@ Add a log filter that strips any field matching `*api_key*`, `*Authorization*`, 
 - [ ] Tool batch context trim tests (batch is indivisible unit)
 - [ ] `tiktoken-rs` (cl100k_base) integrated behind `#[cfg(not(target_arch = "wasm32"))]`
 - [ ] `ApiKeys` extended with new provider fields (via `ApiKeyManager`, not new struct)
-- [ ] `genai` OR hand-rolled adapters wired behind `LlmProvider` trait (per evaluation memo decision)
+- [x] Hand-rolled OpenAI adapter wired behind `LlmProvider` trait — `crates/ai/src/provider/openai.rs`; SSE parsing, message conversion, 6 tests passing
 
 ### Phase 2 — Model Registry (Week 5–7)
 - [x] Diesel migration (in `crates/persistence/migrations/2026-05-08-000001_create_provider_model_records/`) + `schema.rs` updated + `ProviderModelRecord`/`NewProviderModelRecord` structs in `persistence/src/model.rs`
@@ -928,15 +928,15 @@ Add a log filter that strips any field matching `*api_key*`, `*Authorization*`, 
 - [x] `tool_requires_confirmation(name: &str)` per-tool mapping implemented — `crates/ai/src/direct_loop/mod.rs`; 5 tests; fail-safe (unknown = true)
 - [x] `batch_requires_confirmation(&[ToolCall])` — true if any tool in batch needs confirmation; 2 tests
 - [ ] `NeedsConfirmation` pre-classification and serialization flow (WarpUI integration)
-- [ ] `direct_loop::run` implemented with `FuturesUnordered` concurrent tool dispatch (parallel calls only)
-- [x] `collect_and_emit_stream` implemented — `crates/ai/src/direct_loop/mod.rs`; assembles `ToolCallChunk` fragments; 4 tests passing. NOTE: cancel signal not yet wired — outstanding task
-- [ ] Cancellation: fused `futures::channel::oneshot::Receiver` wired into `collect_and_emit_stream` and outer loop
-- [ ] `conversation_id: AIConversationId` in `run()` signature
+- [x] `direct_loop::run` implemented with `FuturesUnordered` concurrent tool dispatch (parallel calls only) — 4 tests passing (completion, tools, limit, cancellation)
+- [x] `collect_and_emit_stream` updated with cancel signal — `futures::select!` for cancellation, returns `(FinishReason, TokenUsage, Vec<ToolCall>)`; 5 tests passing (added cancel test)
+- [x] Cancellation: fused `futures::channel::oneshot::Receiver` wired into `collect_and_emit_stream` and outer loop
+- [x] `conversation_id: AIConversationId` in `run()` signature — placeholder struct defined in direct_loop module
 - [x] `trim_to_context_window` implemented — count-based trim preserving system messages; 6 tests. NOTE: token-based (tiktoken-rs) is a future enhancement; char/4 estimate acceptable for Phase 0 verification
-- [ ] All agent loop tests passing against `MockLlmProvider` (requires `direct_loop::run` skeleton)
+- [x] Agent loop tests passing against `MockLlmProvider` — 4 tests in `run_tests.rs` (completion, tools, turn limit, cancellation); uses mock `dispatch_one` helper for tool dispatch
 - [ ] **Phase 4b (Weeks 12–13):** Retry + exponential backoff with jitter + `Retry-After` header respect
 - [ ] Circuit breaker per endpoint
-- [ ] `MAX_DIRECT_LOOP_TURNS` cap (50) with user-visible error
+- [x] `MAX_DIRECT_LOOP_TURNS` cap (50) implemented in `direct_loop::run` — enforced before tool dispatch with error event emission
 - [ ] `ContextLengthExceeded` recovery (retry with trimmed history)
 - [ ] Prompt caching for Anthropic adapter (`cache_control: { type: "ephemeral" }` on system blocks)
 - [ ] **Phase 4c (Week 13):** `FeatureFlag::DirectApiCalls` added to `DOGFOOD_FLAGS`
