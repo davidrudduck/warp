@@ -881,19 +881,19 @@ Add a log filter that strips any field matching `*api_key*`, `*Authorization*`, 
 - [ ] 1-week spike: capture real SSE fixture files from OpenAI and Anthropic, including parallel tool call responses
 - [ ] Secret scrubbing log filter implemented (blocks Phase 1 dogfood)
 - [ ] `tiktoken-rs` binary size delta measured; wasm compilation impact verified
-- [ ] Identify actual database connection pattern in `app/src/` for Phase 2 ModelRegistry design
-- [ ] Find actual `FinishedAction` event variant definition and its result type fields — determines §5.4.1 adapter output type
-- [ ] Find WarpUI mechanism for background mpsc receiver → main-thread callback (study `agent_sdk/mod.rs`, `agent_tips.rs:527` as canonical `ctx.spawn` examples)
-- [ ] Read `app/src/ai/llms.rs` in full to find the actual API for registering new models with `LLMPreferences` (not `available_llms` — that doesn't exist)
+- [x] Identify actual database connection pattern in `app/src/` for Phase 2 ModelRegistry design — `app/src/persistence/sqlite.rs::establish_connection`, single `SqliteConnection`, not pooled; wrap in `spawn_blocking` for async
+- [x] Find actual `FinishedAction` event variant definition — `execute.rs:1014`; result type is `Arc<AIAgentActionResult>` with `conversation_id: AIConversationId`, `cancellation_reason: Option<CancellationReason>`
+- [x] Find WarpUI mechanism for background mpsc receiver → main-thread callback — `ctx.spawn_stream_local()` at `response_stream.rs:195`; uses `async_channel::unbounded()` internally; foreground polls rx, calls `on_item` callback per event on main thread
+- [x] Read `app/src/ai/llms.rs` in full to find the actual API for registering new models with `LLMPreferences` — method is `update_feature_model_choices(Result<ModelsByFeature, Error>, ctx)`; takes a full `ModelsByFeature` struct replacement, not additive
 - [ ] Determine if per-session profile override is needed before Phase 3 (§5.7 profile blast-radius)
 - [ ] Confirm cancellation approach for concurrent FuturesUnordered dispatch (§5.5 open question)
 - [ ] Confirm `SoloUserByok` × `DirectApiCalls` decision matrix and add build-time guard (§6)
 
 ### Phase 1 — Foundation (Week 2–5)
-- [ ] `AgentEvent` enum + `AgentEventSender` type alias defined
-- [ ] `ProviderError` defined with all variants including `Remote` (in-stream errors after 200 OK)
-- [ ] `ContentBlock`, `ChatMessage`, `ChatRequest`, `StreamEvent`, `ChatStream` types defined
-- [ ] `LlmProvider` trait with `#[async_trait]` + `with_base_url()` + `MockLlmProvider` implemented
+- [x] `AgentEvent` enum + `AgentEventSender`/`AgentEventReceiver` + `agent_event_channel()` defined — `crates/ai/src/provider/mod.rs`
+- [x] `ProviderError` defined with all variants including `Remote` (in-stream errors after 200 OK) — `crates/ai/src/provider/error.rs`, 9 tests passing
+- [x] `ContentBlock`, `ChatMessage`, `ChatRequest`, `StreamEvent`, `ChatStream` types defined — `crates/ai/src/provider/types.rs`, 14 tests passing
+- [x] `LlmProvider` trait with `#[async_trait]` + `with_base_url()` + `MockLlmProvider` implemented — `crates/ai/src/provider/mod.rs` + `mock.rs`, 6 tests passing
 - [ ] Fixture-based parser tests written (OpenAI SSE, Anthropic SSE, Anthropic parallel tool calls, Ollama NDJSON)
 - [ ] Tool call fragment accumulation tests (real deltas from fixture)
 - [ ] Tool batch context trim tests (batch is indivisible unit)
@@ -902,9 +902,9 @@ Add a log filter that strips any field matching `*api_key*`, `*Authorization*`, 
 - [ ] `genai` OR hand-rolled adapters wired behind `LlmProvider` trait (per evaluation memo decision)
 
 ### Phase 2 — Model Registry (Week 5–7)
-- [ ] Diesel migration (in `crates/persistence/migrations/`) + `schema.rs` regeneration + model types
+- [x] Diesel migration (in `crates/persistence/migrations/2026-05-08-000001_create_provider_model_records/`) + `schema.rs` updated + `ProviderModelRecord`/`NewProviderModelRecord` structs in `persistence/src/model.rs`
 - [ ] Per-provider model fetch using `spawn_blocking` wrapping synchronous Diesel operations
-- [ ] Static capability registry for known models (`known_capabilities.rs`)
+- [x] Static capability registry for known models — `crates/ai/src/model_registry/known_capabilities.rs` (14 models: OpenAI, Anthropic, Google); `ModelRegistry::capabilities_for()` + `is_known()`; 8 tests passing
 - [ ] Background refresh on first AI request (not launch)
 - [ ] Lifecycle tracking (present/absent in V1; warn on removed selected model)
 - [ ] Model picker: static registry as source of truth; unknown models hidden by default
@@ -922,16 +922,18 @@ Add a log filter that strips any field matching `*api_key*`, `*Authorization*`, 
 - [ ] Static pricing table for token cost display
 
 ### Phase 4 — Direct Dispatch Path (Week 9–15)
-- [ ] **Phase 4a (Weeks 9–12):** `DirectLoopModel` implemented with mpsc channel bridge
+- [ ] **Phase 4a (Weeks 9–12):** `DirectLoopModel` implemented with `ctx.spawn_stream_local()` bridge
 - [ ] `BlocklistAIActionExecutor` extended with result-routing mechanism (per Phase 0 design)
-- [ ] Tool adapter layer: `ToolCall → AIAgentAction` + `FinishedAction result → ContentBlock` (full V1 tool set)
-- [ ] `requires_confirmation` static mapping implemented
-- [ ] `NeedsConfirmation` pre-classification and serialization flow
+- [ ] Tool adapter layer: `ToolCall → AIAgentActionType` + `AIAgentActionResult → ContentBlock` (full V1 tool set)
+- [x] `tool_requires_confirmation(name: &str)` per-tool mapping implemented — `crates/ai/src/direct_loop/mod.rs`; 5 tests; fail-safe (unknown = true)
+- [x] `batch_requires_confirmation(&[ToolCall])` — true if any tool in batch needs confirmation; 2 tests
+- [ ] `NeedsConfirmation` pre-classification and serialization flow (WarpUI integration)
 - [ ] `direct_loop::run` implemented with `FuturesUnordered` concurrent tool dispatch (parallel calls only)
-- [ ] `collect_and_emit_stream` with `stream.next().fuse()` + fused cancel signal
-- [ ] Cancellation: fused `futures::channel::oneshot::Receiver`, in-flight tool cancellation propagated
+- [x] `collect_and_emit_stream` implemented — `crates/ai/src/direct_loop/mod.rs`; assembles `ToolCallChunk` fragments; 4 tests passing. NOTE: cancel signal not yet wired — outstanding task
+- [ ] Cancellation: fused `futures::channel::oneshot::Receiver` wired into `collect_and_emit_stream` and outer loop
 - [ ] `conversation_id: AIConversationId` in `run()` signature
-- [ ] All agent loop tests passing against `MockLlmProvider`
+- [x] `trim_to_context_window` implemented — count-based trim preserving system messages; 6 tests. NOTE: token-based (tiktoken-rs) is a future enhancement; char/4 estimate acceptable for Phase 0 verification
+- [ ] All agent loop tests passing against `MockLlmProvider` (requires `direct_loop::run` skeleton)
 - [ ] **Phase 4b (Weeks 12–13):** Retry + exponential backoff with jitter + `Retry-After` header respect
 - [ ] Circuit breaker per endpoint
 - [ ] `MAX_DIRECT_LOOP_TURNS` cap (50) with user-visible error

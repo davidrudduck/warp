@@ -1,4 +1,6 @@
 pub mod agent;
+pub mod direct_loop;
+pub mod model_registry;
 pub mod provider;
 pub mod api_keys;
 pub mod aws_credentials;

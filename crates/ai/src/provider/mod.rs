@@ -15,6 +15,32 @@ use std::sync::Arc;
 
 pub type ChatStream = Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>;
 
+/// High-level events emitted by the direct loop as it processes a stream.
+#[derive(Debug, Clone)]
+pub enum AgentEvent {
+    /// A text chunk arrived from the model.
+    TextChunk(String),
+    /// A tool call is fully assembled and ready to execute.
+    ToolCallReady(ToolCall),
+    /// The stream ended normally.
+    Done {
+        finish_reason: FinishReason,
+        usage: Option<TokenUsage>,
+    },
+    /// The loop is paused and waiting for user confirmation before executing tools.
+    ConfirmationRequired { tool_calls: Vec<ToolCall> },
+    /// An error occurred while reading the stream.
+    Error(String),
+}
+
+pub type AgentEventSender = tokio::sync::mpsc::Sender<AgentEvent>;
+pub type AgentEventReceiver = tokio::sync::mpsc::Receiver<AgentEvent>;
+
+/// Create a bounded channel for agent events.
+pub fn agent_event_channel(capacity: usize) -> (AgentEventSender, AgentEventReceiver) {
+    tokio::sync::mpsc::channel(capacity)
+}
+
 #[derive(Debug, Clone)]
 pub enum ProviderKind {
     OpenAI,
