@@ -8,6 +8,19 @@ diesel::table! {
 }
 
 diesel::table! {
+    provider_model_records (id) {
+        id -> Integer,
+        provider_kind -> Text,
+        model_id -> Text,
+        context_window -> Integer,
+        supports_tools -> Bool,
+        supports_vision -> Bool,
+        supports_streaming -> Bool,
+        last_fetched_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     agent_conversations (id) {
         id -> Integer,
         conversation_id -> Text,

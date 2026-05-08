@@ -14,9 +14,10 @@ use super::schema::{
     generic_string_objects, ignored_suggestions, mcp_environment_variables,
     mcp_server_installations, mcp_server_panes, notebook_panes, notebooks, object_actions,
     object_metadata, object_permissions, pane_branches, pane_leaves, pane_nodes, panels,
-    project_rules, projects, server_experiments, settings_panes, tabs, team_members, team_settings,
-    teams, terminal_panes, user_profiles, welcome_panes, windows, workflow_panes, workflows,
-    workspace_language_server, workspace_metadata, workspace_teams, workspaces,
+    project_rules, projects, provider_model_records, server_experiments, settings_panes, tabs,
+    team_members, team_settings, teams, terminal_panes, user_profiles, welcome_panes, windows,
+    workflow_panes, workflows, workspace_language_server, workspace_metadata, workspace_teams,
+    workspaces,
 };
 
 #[derive(Insertable)]
@@ -1436,4 +1437,30 @@ pub struct Panel {
     pub tab_id: i32,
     pub left_panel: Option<String>,
     pub right_panel: Option<String>,
+}
+
+/// A cached record of a model fetched from a provider, stored locally for offline access.
+#[derive(Debug, Clone, Identifiable, Queryable, Selectable)]
+#[diesel(table_name = provider_model_records)]
+pub struct ProviderModelRecord {
+    pub id: i32,
+    pub provider_kind: String,
+    pub model_id: String,
+    pub context_window: i32,
+    pub supports_tools: bool,
+    pub supports_vision: bool,
+    pub supports_streaming: bool,
+    pub last_fetched_at: NaiveDateTime,
+}
+
+#[derive(Debug, Clone, Insertable, AsChangeset)]
+#[diesel(table_name = provider_model_records)]
+pub struct NewProviderModelRecord {
+    pub provider_kind: String,
+    pub model_id: String,
+    pub context_window: i32,
+    pub supports_tools: bool,
+    pub supports_vision: bool,
+    pub supports_streaming: bool,
+    pub last_fetched_at: NaiveDateTime,
 }
