@@ -1,10 +1,47 @@
 use super::*;
+use crate::conversation::repository::ConversationRepository;
 use crate::provider::{
     agent_event_channel, mock::MockLlmProvider, AgentEvent, ChatMessage, ContentBlock,
-    FinishReason, ProviderError, SharedProvider, StreamEvent, ToolCall, ToolResultContent,
+    FinishReason, SharedProvider, StreamEvent, ToolCall, ToolResultContent,
 };
 use std::sync::Arc;
+use tempfile::tempdir;
 use tokio::sync::mpsc;
+
+/// Helper to initialize test database with schema
+fn init_test_db(db_path: &std::path::Path) {
+    use diesel::connection::SimpleConnection;
+    use diesel::prelude::*;
+    let mut conn = diesel::SqliteConnection::establish(db_path.to_str().unwrap()).unwrap();
+    conn.batch_execute(
+        r#"
+        CREATE TABLE direct_conversations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id TEXT NOT NULL UNIQUE,
+            provider_kind TEXT NOT NULL,
+            model_id TEXT NOT NULL,
+            created_at TIMESTAMP NOT NULL,
+            last_message_at TIMESTAMP NOT NULL,
+            title TEXT,
+            message_count INTEGER NOT NULL DEFAULT 0,
+            total_tokens INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE direct_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id TEXT NOT NULL,
+            message_index INTEGER NOT NULL,
+            role TEXT NOT NULL,
+            content_json TEXT NOT NULL,
+            tool_calls_json TEXT,
+            input_tokens INTEGER,
+            output_tokens INTEGER,
+            created_at TIMESTAMP NOT NULL,
+            UNIQUE(conversation_id, message_index)
+        );
+        "#,
+    )
+    .unwrap();
+}
 
 #[tokio::test]
 async fn run_no_tools_completes_immediately() {
@@ -18,7 +55,7 @@ async fn run_no_tools_completes_immediately() {
         },
     ];
     let provider: SharedProvider = Arc::new(MockLlmProvider::new().with_stream(events));
-    let (tx, mut rx) = agent_event_channel(16);
+    let (tx, rx) = agent_event_channel(16);
     let (tool_req_tx, _tool_req_rx) = mpsc::channel(16);
     let (_cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
 
@@ -33,6 +70,7 @@ async fn run_no_tools_completes_immediately() {
         tx,
         tool_req_tx,
         cancel_rx,
+        None, // No repository for existing tests
     )
     .await;
 
@@ -77,7 +115,7 @@ async fn run_with_tools_dispatches_and_continues() {
             .with_stream(events2),
     );
 
-    let (tx, _rx) = agent_event_channel(16);
+    let (tx, rx) = agent_event_channel(16);
     let (tool_req_tx, mut tool_req_rx) = mpsc::channel(16);
     let (_cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
 
@@ -94,12 +132,16 @@ async fn run_with_tools_dispatches_and_continues() {
             tx,
             tool_req_tx,
             cancel_rx,
+            None, // No repository for existing tests
         )
         .await
     });
 
     // Mock tool executor: receive dispatch request and send back result
-    let dispatch_req = tool_req_rx.recv().await.expect("should receive tool dispatch");
+    let dispatch_req = tool_req_rx
+        .recv()
+        .await
+        .expect("should receive tool dispatch");
     assert_eq!(dispatch_req.tool_call.name, "ReadFiles");
 
     let result_block = ContentBlock::ToolResult {
@@ -154,6 +196,7 @@ async fn run_respects_turn_limit() {
             tx,
             tool_req_tx,
             cancel_rx,
+            None, // No repository for existing tests
         )
         .await
     });
@@ -205,7 +248,7 @@ async fn run_cancelled_stops_cleanly() {
     ];
 
     let provider: SharedProvider = Arc::new(MockLlmProvider::new().with_stream(events));
-    let (tx, _rx) = agent_event_channel(16);
+    let (tx, rx) = agent_event_channel(16);
     let (tool_req_tx, _tool_req_rx) = mpsc::channel(16);
     let (cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
 
@@ -224,8 +267,127 @@ async fn run_cancelled_stops_cleanly() {
         tx,
         tool_req_tx,
         cancel_rx,
+        None, // No repository for existing tests
     )
     .await;
 
-    assert!(result.is_ok(), "run should return Ok when cancelled, got: {result:?}");
+    assert!(
+        result.is_ok(),
+        "run should return Ok when cancelled, got: {result:?}"
+    );
+}
+
+#[tokio::test]
+async fn run_persists_conversation_to_db() {
+    let temp_dir = tempdir().unwrap();
+    let db_path = temp_dir.path().join("test.db");
+
+    // Initialize test database with schema
+    init_test_db(&db_path);
+
+    let repo = Arc::new(ConversationRepository::new(db_path));
+
+    // Create initial conversation
+    let conv_id = repo.create_conversation("openai", "gpt-4o").await.unwrap();
+
+    let provider = Arc::new(MockLlmProvider::new().with_stream(vec![
+        StreamEvent::Start,
+        StreamEvent::TextChunk("Hello".into()),
+        StreamEvent::End {
+            finish_reason: FinishReason::Stop,
+            usage: None,
+        },
+    ]));
+
+    let initial_messages = vec![ChatMessage::User(vec![ContentBlock::Text("Hi".into())])];
+
+    let (tx, rx) = agent_event_channel(16);
+    let (tool_req_tx, _tool_req_rx) = mpsc::channel(16);
+    let (_cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
+
+    // Use the same conversation ID that was created in the repository
+    let conversation_id = AIConversationId::from_string(&conv_id).unwrap();
+
+    // Run with repository
+    run(
+        provider,
+        initial_messages,
+        vec![],
+        conversation_id,
+        tx,
+        tool_req_tx,
+        cancel_rx,
+        Some(repo.clone()), // NEW: optional repository parameter
+    )
+    .await
+    .unwrap();
+
+    // Verify conversation was saved
+    let messages = repo.load_messages(&conv_id).await.unwrap();
+    assert_eq!(messages.len(), 2); // User + Assistant
+}
+
+#[tokio::test]
+async fn run_resumes_from_saved_conversation() {
+    let temp_dir = tempdir().unwrap();
+    let db_path = temp_dir.path().join("test.db");
+
+    // Initialize test database with schema
+    init_test_db(&db_path);
+
+    let repo = Arc::new(ConversationRepository::new(db_path));
+
+    let conv_id = repo.create_conversation("openai", "gpt-4o").await.unwrap();
+
+    // Pre-populate with saved messages
+    let previous_messages = vec![
+        ChatMessage::User(vec![ContentBlock::Text("What is 2+2?".into())]),
+        ChatMessage::Assistant {
+            text: Some("4".into()),
+            tool_calls: vec![],
+        },
+    ];
+    repo.save_messages(&conv_id, &previous_messages)
+        .await
+        .unwrap();
+
+    // Resume with new message
+    let provider = Arc::new(MockLlmProvider::new().with_stream(vec![
+        StreamEvent::Start,
+        StreamEvent::TextChunk("It's still 4!".into()),
+        StreamEvent::End {
+            finish_reason: FinishReason::Stop,
+            usage: None,
+        },
+    ]));
+
+    // Load previous messages and continue
+    let mut initial_messages = repo.load_messages(&conv_id).await.unwrap();
+    initial_messages.push(ChatMessage::User(vec![ContentBlock::Text(
+        "Are you sure?".into(),
+    )]));
+
+    let (tx, rx) = agent_event_channel(16);
+    let (tool_req_tx, _tool_req_rx) = mpsc::channel(16);
+    let (_cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
+
+    // Use the same conversation ID
+    let conversation_id = AIConversationId::from_string(&conv_id).unwrap();
+
+    run(
+        provider,
+        initial_messages,
+        vec![],
+        conversation_id,
+        tx,
+        tool_req_tx,
+        cancel_rx,
+        Some(repo.clone()),
+    )
+    .await
+    .unwrap();
+
+    // Verify all messages saved
+    let final_messages = repo.load_messages(&conv_id).await.unwrap();
+    assert_eq!(final_messages.len(), 4); // 2 previous + 1 user + 1 assistant
 }

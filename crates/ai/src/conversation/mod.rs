@@ -10,11 +10,7 @@ pub fn serialize_chat_message(msg: &ChatMessage) -> (String, String, Option<Stri
             serde_json::to_string(&vec![ContentBlock::Text(text.clone())]).unwrap(),
             None,
         ),
-        ChatMessage::User(blocks) => (
-            "user".into(),
-            serde_json::to_string(blocks).unwrap(),
-            None,
-        ),
+        ChatMessage::User(blocks) => ("user".into(), serde_json::to_string(blocks).unwrap(), None),
         ChatMessage::Assistant { text, tool_calls } => {
             let content_blocks = if let Some(text) = text {
                 vec![ContentBlock::Text(text.clone())]

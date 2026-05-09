@@ -16,11 +16,7 @@ impl ConversationRepository {
         Self { db_path }
     }
 
-    pub async fn create_conversation(
-        &self,
-        provider: &str,
-        model: &str,
-    ) -> Result<String> {
+    pub async fn create_conversation(&self, provider: &str, model: &str) -> Result<String> {
         let db_path = self.db_path.clone();
         let provider = provider.to_string();
         let model = model.to_string();
@@ -69,11 +65,7 @@ impl ConversationRepository {
         .await?
     }
 
-    pub async fn save_messages(
-        &self,
-        conv_id: &str,
-        messages: &[ChatMessage],
-    ) -> Result<()> {
+    pub async fn save_messages(&self, conv_id: &str, messages: &[ChatMessage]) -> Result<()> {
         let db_path = self.db_path.clone();
         let conv_id = conv_id.to_string();
         let messages = messages.to_vec();

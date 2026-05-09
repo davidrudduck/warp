@@ -55,9 +55,13 @@ async fn collect_text_chunks_emits_text_events() {
         .collect();
 
     assert_eq!(text_chunks, vec!["Hello", ", world"]);
-    assert!(received
-        .iter()
-        .any(|ev| matches!(ev, AgentEvent::Done { finish_reason: FinishReason::Stop, .. })));
+    assert!(received.iter().any(|ev| matches!(
+        ev,
+        AgentEvent::Done {
+            finish_reason: FinishReason::Stop,
+            ..
+        }
+    )));
 }
 
 #[tokio::test]
@@ -163,9 +167,7 @@ async fn collect_tool_call_chunks_assembled() {
 #[tokio::test]
 async fn collect_stream_error_propagated() {
     let provider: SharedProvider = Arc::new(
-        MockLlmProvider::new()
-            .with_stream(vec![StreamEvent::Start])
-            // No End event — stream terminates early.
+        MockLlmProvider::new().with_stream(vec![StreamEvent::Start]), // No End event — stream terminates early.
     );
     let (tx, mut rx) = agent_event_channel(16);
     let (_cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
@@ -181,9 +183,7 @@ async fn collect_stream_error_propagated() {
     while let Some(ev) = rx.recv().await {
         received.push(ev);
     }
-    assert!(received
-        .iter()
-        .any(|ev| matches!(ev, AgentEvent::Error(_))));
+    assert!(received.iter().any(|ev| matches!(ev, AgentEvent::Error(_))));
 }
 
 #[tokio::test]

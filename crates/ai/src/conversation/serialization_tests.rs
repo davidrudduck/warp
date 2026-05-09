@@ -14,9 +14,7 @@ fn serialize_system_message() {
 
 #[test]
 fn serialize_user_message_with_text() {
-    let msg = ChatMessage::User(vec![
-        ContentBlock::Text("Hello".into()),
-    ]);
+    let msg = ChatMessage::User(vec![ContentBlock::Text("Hello".into())]);
     let (role, content_json, tool_calls_json) = serialize_chat_message(&msg);
 
     assert_eq!(role, "user");
@@ -45,9 +43,7 @@ fn serialize_assistant_message_with_tool_calls() {
 
 #[test]
 fn deserialize_roundtrip() {
-    let original = ChatMessage::User(vec![
-        ContentBlock::Text("Test message".into()),
-    ]);
+    let original = ChatMessage::User(vec![ContentBlock::Text("Test message".into())]);
 
     let (role, content_json, tool_calls_json) = serialize_chat_message(&original);
     let deserialized = deserialize_chat_message(&role, &content_json, tool_calls_json.as_deref());
@@ -60,7 +56,7 @@ fn deserialize_roundtrip() {
             } else {
                 panic!("Expected Text block");
             }
-        },
+        }
         _ => panic!("Expected User message"),
     }
 }

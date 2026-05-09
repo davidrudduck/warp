@@ -64,13 +64,7 @@ fn trim_drops_oldest_non_system_messages() {
 
 #[test]
 fn trim_preserves_all_system_messages() {
-    let msgs = vec![
-        sys("sys1"),
-        sys("sys2"),
-        user("u1"),
-        user("u2"),
-        user("u3"),
-    ];
+    let msgs = vec![sys("sys1"), sys("sys2"), user("u1"), user("u2"), user("u3")];
     // limit=4: keep 2 system + 2 most-recent non-system
     let result = trim_to_context_window(msgs, 4);
     assert_eq!(result.len(), 4);
@@ -130,8 +124,16 @@ fn tool_requires_confirmation_unknown_tool_fail_safe() {
 #[test]
 fn batch_requires_confirmation_true_when_any_needs_confirm() {
     let batch = vec![
-        ToolCall { id: "1".into(), name: "ReadFiles".into(), input: serde_json::json!({}) },
-        ToolCall { id: "2".into(), name: "RequestCommandOutput".into(), input: serde_json::json!({}) },
+        ToolCall {
+            id: "1".into(),
+            name: "ReadFiles".into(),
+            input: serde_json::json!({}),
+        },
+        ToolCall {
+            id: "2".into(),
+            name: "RequestCommandOutput".into(),
+            input: serde_json::json!({}),
+        },
     ];
     assert!(batch_requires_confirmation(&batch));
 }
@@ -139,8 +141,16 @@ fn batch_requires_confirmation_true_when_any_needs_confirm() {
 #[test]
 fn batch_requires_confirmation_false_when_all_safe() {
     let batch = vec![
-        ToolCall { id: "1".into(), name: "ReadFiles".into(), input: serde_json::json!({}) },
-        ToolCall { id: "2".into(), name: "Grep".into(), input: serde_json::json!({}) },
+        ToolCall {
+            id: "1".into(),
+            name: "ReadFiles".into(),
+            input: serde_json::json!({}),
+        },
+        ToolCall {
+            id: "2".into(),
+            name: "Grep".into(),
+            input: serde_json::json!({}),
+        },
     ];
     assert!(!batch_requires_confirmation(&batch));
 }

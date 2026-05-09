@@ -1,8 +1,10 @@
+use crate::conversation::repository::ConversationRepository;
 use crate::provider::{
     AgentEvent, AgentEventSender, ChatMessage, ChatRequest, ContentBlock, FinishReason,
-    ProviderError, SharedProvider, StreamEvent, Tool, ToolCall, TokenUsage,
+    ProviderError, SharedProvider, StreamEvent, TokenUsage, Tool, ToolCall,
 };
 use futures::{FutureExt, StreamExt};
+use std::sync::Arc;
 use tokio::sync::mpsc;
 
 type FusedCancel = futures::future::Fuse<futures::channel::oneshot::Receiver<()>>;
@@ -16,11 +18,21 @@ impl AIConversationId {
     pub fn new() -> Self {
         Self(uuid::Uuid::new_v4())
     }
+
+    pub fn from_string(s: &str) -> Result<Self, uuid::Error> {
+        Ok(Self(uuid::Uuid::parse_str(s)?))
+    }
 }
 
 impl Default for AIConversationId {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl std::fmt::Display for AIConversationId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -225,6 +237,7 @@ pub const MAX_DIRECT_LOOP_TURNS: usize = 50;
 
 /// Main direct-mode agent loop.
 /// Runs chat_stream → collect events → dispatch tools → loop until Stop.
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     provider: SharedProvider,
     initial_messages: Vec<ChatMessage>,
@@ -233,6 +246,7 @@ pub async fn run(
     tx: AgentEventSender,
     tool_req_tx: mpsc::Sender<ToolDispatchRequest>,
     cancellation_rx: futures::channel::oneshot::Receiver<()>,
+    repository: Option<Arc<ConversationRepository>>,
 ) -> Result<(), ProviderError> {
     let mut history = initial_messages;
     let mut cancel = cancellation_rx.fuse();
@@ -259,6 +273,14 @@ pub async fn run(
             text: None,
             tool_calls: tool_calls.clone(),
         });
+
+        // Save to repository if provided
+        if let Some(ref repo) = repository {
+            let conv_id_str = conversation_id.to_string();
+            repo.save_messages(&conv_id_str, &history)
+                .await
+                .map_err(|e| ProviderError::StreamParse(format!("Failed to save: {e}")))?;
+        }
 
         if tool_calls.is_empty() {
             break;
