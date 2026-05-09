@@ -2101,17 +2101,61 @@ impl DirectApiSettingsPageView {
 
 **Status**: ✅ Complete - users can view their API key configuration in Settings UI
 
-### Phase 2: Interactive Controls (Next)
+### Phase 2: Interactive Controls (Complete - Commit 5aed59e)
 
-**Planned Features**:
-- Provider selection dropdown (OpenAI, Anthropic, Gemini, Ollama)
-- API key input field with masking
-- "Test Connection" button (async validation)
-- "Save" button (writes to keychain)
-- Error feedback for invalid keys
-- Success confirmation on save
+**Implementation** (638 lines):
+```rust
+pub enum DirectApiPageAction {
+    SelectProvider(String),
+    TestConnection,
+    SaveApiKey,
+}
 
-**Design Pattern**: Follow existing WarpUI settings pages (appearance_page.rs, features_page.rs)
+pub struct DirectApiSettingsPageView {
+    page: PageType<Self>,
+    api_key_manager: ModelHandle<ApiKeyManager>,
+    provider_dropdown: ViewHandle<Dropdown<DirectApiPageAction>>,
+    api_key_editor: ViewHandle<EditorView>,
+    selected_provider: RefCell<ProviderType>,
+    test_result: RefCell<Option<Result<String, String>>>,
+    test_button: ViewHandle<ActionButton>,
+    save_button: ViewHandle<ActionButton>,
+}
+```
+
+**Features Implemented**:
+- ✅ Provider selection dropdown (OpenAI, Anthropic, Google Gemini, Ollama)
+- ✅ API key input field (EditorView-based, plain text for now)
+- ✅ "Test Connection" button (format validation: sk-, sk-ant-, non-empty)
+- ✅ "Save to Keychain" button (ApiKeyManager integration)
+- ✅ Real-time error feedback for invalid keys
+- ✅ Success confirmation on save
+
+**Provider-Specific Logic**:
+- OpenAI: Validates `sk-` prefix
+- Anthropic: Validates `sk-ant-` prefix
+- Google Gemini: Non-empty validation
+- Ollama: No API key required (local LLM)
+
+**Action Handlers**:
+- `handle_select_provider`: Updates selected provider, clears test result
+- `handle_test_connection`: Format validation, button disable during test
+- `handle_save_api_key`: Calls `ApiKeyManager::set_*_key()`, shows ✓ confirmation
+
+**Widgets** (6 total):
+1. TitleWidget - Feature description
+2. ProviderSelectorWidget - Dropdown (225px width)
+3. ApiKeyInputWidget - EditorView single-line
+4. ActionButtonsWidget - Test + Save buttons (NakedTheme)
+5. StatusWidget - Success/error message display
+6. ConfiguredKeysWidget - Current status (Phase 1)
+
+**Known Limitations** (future enhancements):
+- Password masking: Plain text input (EditorView limitation)
+- Async validation: Format-only (actual API calls need async spawning + spinner)
+- No visual loading indicator during test
+
+**Status**: ✅ Complete - OSS fork users can fully configure API keys via Settings UI
 
 ---
 
@@ -2149,11 +2193,15 @@ Before marking complete, verify:
   - [x] Shows configured API keys (OpenAI, Anthropic, Gemini)
   - [x] Integrated into Settings navigation
   - [x] Search/filter support
-  - [ ] Provider selection dropdown (Phase 2)
-  - [ ] API key input saves to keychain (Phase 2)
-  - [ ] Test connection validates keys (Phase 2)
-  - [ ] Conversation sidebar shows recent chats (Future)
-  - [ ] Click conversation resumes it (Future)
+
+- [x] **UI Phase 2** ✅ (Interactive controls - commit 5aed59e)
+  - [x] Provider selection dropdown (4 providers)
+  - [x] API key input field (EditorView)
+  - [x] Test connection validates keys (format validation)
+  - [x] Save to keychain button (ApiKeyManager integration)
+  - [x] Success/error feedback display
+  - [ ] Conversation sidebar shows recent chats (Future V2)
+  - [ ] Click conversation resumes it (Future V2)
 
 - [x] **E2E** ✅
   - [x] Full flow E2E test passes
