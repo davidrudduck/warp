@@ -10,14 +10,14 @@ use warp_multi_agent_api::{self as api, response_event::stream_finished};
 use super::schema::{
     active_mcp_servers, agent_conversations, agent_tasks, ai_document_panes, ai_memory_panes,
     ambient_agent_panes, app, blocks, cloud_objects_refreshes, code_pane_tabs, code_panes,
-    code_review_panes, commands, current_user_information, env_var_collection_panes, folders,
-    generic_string_objects, ignored_suggestions, mcp_environment_variables,
-    mcp_server_installations, mcp_server_panes, notebook_panes, notebooks, object_actions,
-    object_metadata, object_permissions, pane_branches, pane_leaves, pane_nodes, panels,
-    project_rules, projects, provider_model_records, server_experiments, settings_panes, tabs,
-    team_members, team_settings, teams, terminal_panes, user_profiles, welcome_panes, windows,
-    workflow_panes, workflows, workspace_language_server, workspace_metadata, workspace_teams,
-    workspaces,
+    code_review_panes, commands, current_user_information, direct_conversations, direct_messages,
+    env_var_collection_panes, folders, generic_string_objects, ignored_suggestions,
+    mcp_environment_variables, mcp_server_installations, mcp_server_panes, notebook_panes,
+    notebooks, object_actions, object_metadata, object_permissions, pane_branches, pane_leaves,
+    pane_nodes, panels, project_rules, projects, provider_model_records, server_experiments,
+    settings_panes, tabs, team_members, team_settings, teams, terminal_panes, user_profiles,
+    welcome_panes, windows, workflow_panes, workflows, workspace_language_server,
+    workspace_metadata, workspace_teams, workspaces,
 };
 
 #[derive(Insertable)]
@@ -1464,3 +1464,61 @@ pub struct NewProviderModelRecord {
     pub supports_streaming: bool,
     pub last_fetched_at: NaiveDateTime,
 }
+
+/// A conversation using direct LLM provider APIs (BYOK mode).
+#[derive(Debug, Clone, Identifiable, Queryable, Selectable)]
+#[diesel(table_name = direct_conversations)]
+pub struct DirectConversation {
+    pub id: i32,
+    pub conversation_id: String,
+    pub provider_kind: String,
+    pub model_id: String,
+    pub created_at: NaiveDateTime,
+    pub last_message_at: NaiveDateTime,
+    pub title: Option<String>,
+    pub message_count: i32,
+    pub total_tokens: i32,
+}
+
+#[derive(Debug, Clone, Insertable, AsChangeset)]
+#[diesel(table_name = direct_conversations)]
+pub struct NewDirectConversation {
+    pub conversation_id: String,
+    pub provider_kind: String,
+    pub model_id: String,
+    pub created_at: NaiveDateTime,
+    pub last_message_at: NaiveDateTime,
+    pub title: Option<String>,
+}
+
+/// A message in a direct-provider conversation.
+#[derive(Debug, Clone, Identifiable, Queryable, Selectable)]
+#[diesel(table_name = direct_messages)]
+pub struct DirectMessage {
+    pub id: i32,
+    pub conversation_id: String,
+    pub message_index: i32,
+    pub role: String,
+    pub content_json: String,
+    pub tool_calls_json: Option<String>,
+    pub input_tokens: Option<i32>,
+    pub output_tokens: Option<i32>,
+    pub created_at: NaiveDateTime,
+}
+
+#[derive(Debug, Clone, Insertable)]
+#[diesel(table_name = direct_messages)]
+pub struct NewDirectMessage {
+    pub conversation_id: String,
+    pub message_index: i32,
+    pub role: String,
+    pub content_json: String,
+    pub tool_calls_json: Option<String>,
+    pub input_tokens: Option<i32>,
+    pub output_tokens: Option<i32>,
+    pub created_at: NaiveDateTime,
+}
+
+#[cfg(test)]
+#[path = "direct_conversation_tests.rs"]
+mod direct_conversation_tests;
