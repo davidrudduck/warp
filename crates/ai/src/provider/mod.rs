@@ -1,9 +1,11 @@
 pub mod error;
+pub mod genai_adapter;
 pub mod mock;
 pub mod openai;
 pub mod types;
 
 pub use error::ProviderError;
+pub use genai_adapter::GenaiAdapter;
 pub use openai::OpenAIProvider;
 pub use types::{
     ChatMessage, ChatOptions, ChatRequest, ChatResponse, ContentBlock, FinishReason,
