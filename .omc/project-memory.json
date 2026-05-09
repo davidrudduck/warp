@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1778194855152,
+  "lastScanned": 1778299148466,
   "projectRoot": "/Users/david/Code/warp",
   "techStack": {
     "languages": [
@@ -24,8 +24,8 @@
     "runtime": null
   },
   "build": {
-    "buildCommand": "cargo build -p ai 2>&1 | tail -5",
-    "testCommand": "cargo test -p ai --lib direct_loop::stream_tests 2>&1 | grep -E \"test result:|test direct_loop::stream\"",
+    "buildCommand": "cargo build",
+    "testCommand": "cargo test -p ai --lib 2>&1 | tail -50",
     "lintCommand": "cargo clippy",
     "devCommand": "cargo run",
     "scripts": {}
@@ -40,7 +40,8 @@
     "isMonorepo": false,
     "workspaces": [],
     "mainDirectories": [
-      "app"
+      "app",
+      "assets"
     ],
     "gitBranches": {
       "defaultBranch": "master",
@@ -52,25 +53,127 @@
     "app": {
       "path": "app",
       "purpose": "Application code",
-      "fileCount": 1,
-      "lastAccessed": 1778194855130,
+      "fileCount": 2,
+      "lastAccessed": 1778299148454,
       "keyFiles": [
-        "Cargo.toml"
+        "Cargo.toml",
+        "build.rs"
+      ]
+    },
+    "assets": {
+      "path": "assets",
+      "purpose": "Static assets",
+      "fileCount": 0,
+      "lastAccessed": 1778299148454,
+      "keyFiles": []
+    },
+    "command-signatures-v2": {
+      "path": "command-signatures-v2",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1778299148455,
+      "keyFiles": []
+    },
+    "crates": {
+      "path": "crates",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1778299148455,
+      "keyFiles": []
+    },
+    "docker": {
+      "path": "docker",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1778299148455,
+      "keyFiles": []
+    },
+    "images": {
+      "path": "images",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1778299148455,
+      "keyFiles": [
+        "Built-With-Warp-Export@2x.png",
+        "Powered-By-Oz-Export@2x.png"
+      ]
+    },
+    "resources": {
+      "path": "resources",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1778299148455,
+      "keyFiles": []
+    },
+    "script": {
+      "path": "script",
+      "purpose": null,
+      "fileCount": 28,
+      "lastAccessed": 1778299148455,
+      "keyFiles": [
+        "Debug-Entitlements.plist",
+        "Entitlements.plist",
+        "bootstrap",
+        "bundle",
+        "check_license_config_sync"
+      ]
+    },
+    "specs": {
+      "path": "specs",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1778299148455,
+      "keyFiles": []
+    },
+    "target": {
+      "path": "target",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1778299148456,
+      "keyFiles": [
+        "CACHEDIR.TAG"
       ]
     },
     "app/assets": {
       "path": "app/assets",
       "purpose": "Static assets",
       "fileCount": 0,
-      "lastAccessed": 1778194855130,
+      "lastAccessed": 1778299148456,
+      "keyFiles": []
+    },
+    "app/examples": {
+      "path": "app/examples",
+      "purpose": "Example code",
+      "fileCount": 1,
+      "lastAccessed": 1778299148456,
+      "keyFiles": [
+        "generate_default_settings.rs"
+      ]
+    },
+    "app/src": {
+      "path": "app/src",
+      "purpose": "Source code",
+      "fileCount": 59,
+      "lastAccessed": 1778299148456,
+      "keyFiles": [
+        "alloc.rs",
+        "app_id_tests.rs",
+        "app_menus.rs"
+      ]
+    },
+    "app/tests": {
+      "path": "app/tests",
+      "purpose": "Test files",
+      "fileCount": 0,
+      "lastAccessed": 1778299148456,
       "keyFiles": []
     }
   },
   "hotPaths": [
     {
       "path": "specs/direct-provider-api/PLAN.md",
-      "accessCount": 24,
-      "lastAccessed": 1778272241043,
+      "accessCount": 30,
+      "lastAccessed": 1778272917023,
       "type": "file"
     },
     {

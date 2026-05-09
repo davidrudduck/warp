@@ -286,5 +286,37 @@
     "hook_event_name": "Notification",
     "message": "Claude is waiting for your input",
     "notification_type": "idle_prompt"
+  },
+  {
+    "session_id": "2fc518c5-be3a-4e6d-8565-630f8861e113",
+    "transcript_path": "/Users/david/.claude/projects/-Users-david-Code-warp/2fc518c5-be3a-4e6d-8565-630f8861e113.jsonl",
+    "cwd": "/Users/david/Code/warp",
+    "hook_event_name": "Notification",
+    "message": "Claude is waiting for your input",
+    "notification_type": "idle_prompt"
+  },
+  {
+    "session_id": "2fc518c5-be3a-4e6d-8565-630f8861e113",
+    "transcript_path": "/Users/david/.claude/projects/-Users-david-Code-warp/2fc518c5-be3a-4e6d-8565-630f8861e113.jsonl",
+    "cwd": "/Users/david/Code/warp",
+    "hook_event_name": "Notification",
+    "message": "Claude is waiting for your input",
+    "notification_type": "idle_prompt"
+  },
+  {
+    "session_id": "2fc518c5-be3a-4e6d-8565-630f8861e113",
+    "transcript_path": "/Users/david/.claude/projects/-Users-david-Code-warp/2fc518c5-be3a-4e6d-8565-630f8861e113.jsonl",
+    "cwd": "/Users/david/Code/warp",
+    "hook_event_name": "Notification",
+    "message": "Claude is waiting for your input",
+    "notification_type": "idle_prompt"
+  },
+  {
+    "session_id": "2fc518c5-be3a-4e6d-8565-630f8861e113",
+    "transcript_path": "/Users/david/.claude/projects/-Users-david-Code-warp/2fc518c5-be3a-4e6d-8565-630f8861e113.jsonl",
+    "cwd": "/Users/david/Code/warp",
+    "hook_event_name": "Notification",
+    "message": "Claude is waiting for your input",
+    "notification_type": "idle_prompt"
   }
 ]
