@@ -190,9 +190,9 @@ pub fn batch_requires_confirmation(batch: &[ToolCall]) -> bool {
 /// Trim a message list so that the total count does not exceed `limit`.
 /// System messages are always kept; the oldest non-system messages are
 /// dropped first.
-pub fn trim_to_context_window(messages: Vec<ChatMessage>, limit: usize) -> Vec<ChatMessage> {
+pub fn trim_to_context_window(messages: &[ChatMessage], limit: usize) -> Vec<ChatMessage> {
     if messages.len() <= limit {
-        return messages;
+        return messages.to_vec();
     }
 
     let system_count = messages
@@ -203,8 +203,9 @@ pub fn trim_to_context_window(messages: Vec<ChatMessage>, limit: usize) -> Vec<C
     // If the system messages alone fill the limit we can only keep those.
     if system_count >= limit {
         return messages
-            .into_iter()
+            .iter()
             .filter(|m| matches!(m, ChatMessage::System(_)))
+            .cloned()
             .collect();
     }
 
@@ -217,9 +218,9 @@ pub fn trim_to_context_window(messages: Vec<ChatMessage>, limit: usize) -> Vec<C
 
     for msg in messages {
         if matches!(msg, ChatMessage::System(_)) {
-            systems.push(msg);
+            systems.push(msg.clone());
         } else {
-            non_systems.push(msg);
+            non_systems.push(msg.clone());
         }
     }
 
@@ -253,7 +254,7 @@ pub async fn run(
 
     loop {
         let request = ChatRequest {
-            messages: trim_to_context_window(history.clone(), 100),
+            messages: trim_to_context_window(&history, 100),
             tools: tools.clone(),
             options: Default::default(),
         };
@@ -276,8 +277,7 @@ pub async fn run(
 
         // Save to repository if provided
         if let Some(ref repo) = repository {
-            let conv_id_str = conversation_id.to_string();
-            repo.save_messages(&conv_id_str, &history)
+            repo.save_messages(conversation_id.to_string(), history.clone())
                 .await
                 .map_err(|e| ProviderError::StreamParse(format!("Failed to save: {e}")))?;
         }
@@ -356,7 +356,7 @@ async fn dispatch_one(
     let (result_tx, result_rx) = futures::channel::oneshot::channel();
 
     let req = ToolDispatchRequest {
-        tool_call: tool_call.clone(),
+        tool_call,
         index,
         conversation_id,
         result_tx,

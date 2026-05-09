@@ -31,6 +31,7 @@ streaming-iterator.workspace = true
 instant.workspace = true
 itertools.workspace = true
 rayon.workspace = true
+once_cell.workspace = true
 ignore = "0.4.23"
 line-span = "0.1.5"
 log.workspace = true

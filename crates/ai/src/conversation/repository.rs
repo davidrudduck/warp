@@ -16,10 +16,8 @@ impl ConversationRepository {
         Self { db_path }
     }
 
-    pub async fn create_conversation(&self, provider: &str, model: &str) -> Result<String> {
+    pub async fn create_conversation(&self, provider: String, model: String) -> Result<String> {
         let db_path = self.db_path.clone();
-        let provider = provider.to_string();
-        let model = model.to_string();
 
         spawn_blocking(move || {
             use diesel::prelude::*;
@@ -47,9 +45,8 @@ impl ConversationRepository {
         .await?
     }
 
-    pub async fn get_conversation(&self, conv_id: &str) -> Result<DirectConversation> {
+    pub async fn get_conversation(&self, conv_id: String) -> Result<DirectConversation> {
         let db_path = self.db_path.clone();
-        let conv_id = conv_id.to_string();
 
         spawn_blocking(move || {
             use diesel::prelude::*;
@@ -65,10 +62,8 @@ impl ConversationRepository {
         .await?
     }
 
-    pub async fn save_messages(&self, conv_id: &str, messages: &[ChatMessage]) -> Result<()> {
+    pub async fn save_messages(&self, conv_id: String, messages: Vec<ChatMessage>) -> Result<()> {
         let db_path = self.db_path.clone();
-        let conv_id = conv_id.to_string();
-        let messages = messages.to_vec();
 
         spawn_blocking(move || {
             use diesel::prelude::*;
@@ -81,26 +76,31 @@ impl ConversationRepository {
                     .filter(direct_messages::conversation_id.eq(&conv_id))
                     .execute(conn)?;
 
-                // Insert new messages
-                for (index, message) in messages.iter().enumerate() {
-                    let (role, content_json, tool_calls_json) =
-                        crate::conversation::serialize_chat_message(message);
+                // Build all NewDirectMessage objects first
+                let new_messages: Vec<NewDirectMessage> = messages
+                    .iter()
+                    .enumerate()
+                    .map(|(index, message)| {
+                        let (role, content_json, tool_calls_json) =
+                            crate::conversation::serialize_chat_message(message);
 
-                    let new_msg = NewDirectMessage {
-                        conversation_id: conv_id.clone(),
-                        message_index: index as i32,
-                        role,
-                        content_json,
-                        tool_calls_json,
-                        input_tokens: None,
-                        output_tokens: None,
-                        created_at: Utc::now().naive_utc(),
-                    };
+                        NewDirectMessage {
+                            conversation_id: conv_id.clone(),
+                            message_index: index as i32,
+                            role,
+                            content_json,
+                            tool_calls_json,
+                            input_tokens: None,
+                            output_tokens: None,
+                            created_at: Utc::now().naive_utc(),
+                        }
+                    })
+                    .collect();
 
-                    diesel::insert_into(direct_messages::table)
-                        .values(&new_msg)
-                        .execute(conn)?;
-                }
+                // Single batched INSERT
+                diesel::insert_into(direct_messages::table)
+                    .values(&new_messages)
+                    .execute(conn)?;
 
                 // Update conversation metadata
                 diesel::update(direct_conversations::table)
@@ -117,9 +117,8 @@ impl ConversationRepository {
         .await?
     }
 
-    pub async fn load_messages(&self, conv_id: &str) -> Result<Vec<ChatMessage>> {
+    pub async fn load_messages(&self, conv_id: String) -> Result<Vec<ChatMessage>> {
         let db_path = self.db_path.clone();
-        let conv_id = conv_id.to_string();
 
         spawn_blocking(move || {
             use diesel::prelude::*;
@@ -147,9 +146,8 @@ impl ConversationRepository {
         .await?
     }
 
-    pub async fn generate_title(&self, conv_id: &str) -> Result<()> {
+    pub async fn generate_title(&self, conv_id: String) -> Result<()> {
         let db_path = self.db_path.clone();
-        let conv_id = conv_id.to_string();
 
         spawn_blocking(move || {
             use diesel::prelude::*;

@@ -31,10 +31,10 @@ async fn repository_creates_conversation() {
 
     let repo = ConversationRepository::new(db_path);
 
-    let conv_id: String = repo.create_conversation("openai", "gpt-4o").await.unwrap();
+    let conv_id: String = repo.create_conversation("openai".to_string(), "gpt-4o".to_string()).await.unwrap();
 
     // Verify in DB
-    let conv = repo.get_conversation(&conv_id).await.unwrap();
+    let conv = repo.get_conversation(conv_id.clone()).await.unwrap();
     assert_eq!(conv.provider_kind, "openai");
     assert_eq!(conv.model_id, "gpt-4o");
     assert_eq!(conv.message_count, 0);
@@ -83,7 +83,7 @@ async fn repository_saves_messages() {
     }
 
     let repo = ConversationRepository::new(db_path);
-    let conv_id: String = repo.create_conversation("openai", "gpt-4o").await.unwrap();
+    let conv_id: String = repo.create_conversation("openai".to_string(), "gpt-4o".to_string()).await.unwrap();
 
     let messages = vec![
         ChatMessage::User(vec![ContentBlock::Text("Hello".into())]),
@@ -93,14 +93,14 @@ async fn repository_saves_messages() {
         },
     ];
 
-    repo.save_messages(&conv_id, &messages).await.unwrap();
+    repo.save_messages(conv_id.clone(), messages.clone()).await.unwrap();
 
     // Verify
-    let loaded = repo.load_messages(&conv_id).await.unwrap();
+    let loaded = repo.load_messages(conv_id.clone()).await.unwrap();
     assert_eq!(loaded.len(), 2);
 
     // Verify conversation updated
-    let conv = repo.get_conversation(&conv_id).await.unwrap();
+    let conv = repo.get_conversation(conv_id).await.unwrap();
     assert_eq!(conv.message_count, 2);
 }
 
@@ -147,7 +147,7 @@ async fn repository_generates_auto_title() {
     }
 
     let repo = ConversationRepository::new(db_path);
-    let conv_id: String = repo.create_conversation("openai", "gpt-4o").await.unwrap();
+    let conv_id: String = repo.create_conversation("openai".to_string(), "gpt-4o".to_string()).await.unwrap();
 
     // Save messages with a user message
     let messages = vec![
@@ -160,13 +160,13 @@ async fn repository_generates_auto_title() {
         },
     ];
 
-    repo.save_messages(&conv_id, &messages).await.unwrap();
+    repo.save_messages(conv_id.clone(), messages).await.unwrap();
 
     // Generate auto-title based on first user message
-    repo.generate_title(&conv_id).await.unwrap();
+    repo.generate_title(conv_id.clone()).await.unwrap();
 
     // Verify title was set
-    let conv = repo.get_conversation(&conv_id).await.unwrap();
+    let conv = repo.get_conversation(conv_id).await.unwrap();
     assert!(conv.title.is_some());
     let title = conv.title.unwrap();
     assert!(!title.is_empty());
@@ -216,7 +216,7 @@ async fn repository_auto_title_truncates_long_messages() {
     }
 
     let repo = ConversationRepository::new(db_path);
-    let conv_id: String = repo.create_conversation("openai", "gpt-4o").await.unwrap();
+    let conv_id: String = repo.create_conversation("openai".to_string(), "gpt-4o".to_string()).await.unwrap();
 
     // Save messages with a very long user message
     let long_text = "This is a very long message that should be truncated to fit within the title length limit. It contains many words and characters that exceed what would be reasonable for a conversation title.";
@@ -224,11 +224,11 @@ async fn repository_auto_title_truncates_long_messages() {
         long_text.into(),
     )])];
 
-    repo.save_messages(&conv_id, &messages).await.unwrap();
-    repo.generate_title(&conv_id).await.unwrap();
+    repo.save_messages(conv_id.clone(), messages).await.unwrap();
+    repo.generate_title(conv_id.clone()).await.unwrap();
 
     // Verify title was truncated
-    let conv = repo.get_conversation(&conv_id).await.unwrap();
+    let conv = repo.get_conversation(conv_id).await.unwrap();
     let title = conv.title.unwrap();
     assert!(title.len() <= 50);
     assert!(title.ends_with("..."));

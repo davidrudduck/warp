@@ -21,14 +21,14 @@ fn assistant(s: &str) -> ChatMessage {
 #[test]
 fn trim_no_op_when_under_limit() {
     let msgs = vec![sys("system"), user("a"), assistant("b")];
-    let result = trim_to_context_window(msgs.clone(), 10);
+    let result = trim_to_context_window(&msgs, 10);
     assert_eq!(result.len(), 3);
 }
 
 #[test]
 fn trim_no_op_when_at_limit() {
     let msgs = vec![user("a"), assistant("b"), user("c")];
-    let result = trim_to_context_window(msgs, 3);
+    let result = trim_to_context_window(&msgs, 3);
     assert_eq!(result.len(), 3);
 }
 
@@ -42,7 +42,7 @@ fn trim_drops_oldest_non_system_messages() {
         assistant("recent2"),
     ];
     // limit=3: keep 1 system + 2 most-recent non-system
-    let result = trim_to_context_window(msgs, 3);
+    let result = trim_to_context_window(&msgs, 3);
     assert_eq!(result.len(), 3);
     assert!(matches!(&result[0], ChatMessage::System(_)));
     // The two most-recent non-system messages should be kept.
@@ -66,7 +66,7 @@ fn trim_drops_oldest_non_system_messages() {
 fn trim_preserves_all_system_messages() {
     let msgs = vec![sys("sys1"), sys("sys2"), user("u1"), user("u2"), user("u3")];
     // limit=4: keep 2 system + 2 most-recent non-system
-    let result = trim_to_context_window(msgs, 4);
+    let result = trim_to_context_window(&msgs, 4);
     assert_eq!(result.len(), 4);
     let system_count = result
         .iter()
@@ -77,7 +77,7 @@ fn trim_preserves_all_system_messages() {
 
 #[test]
 fn trim_empty_messages_returns_empty() {
-    let result = trim_to_context_window(vec![], 10);
+    let result = trim_to_context_window(&[], 10);
     assert!(result.is_empty());
 }
 
@@ -85,7 +85,7 @@ fn trim_empty_messages_returns_empty() {
 fn trim_limit_zero_keeps_only_system_when_system_fills() {
     // system_count(0) >= limit(0) → only system messages (none here)
     let msgs = vec![user("a"), user("b")];
-    let result = trim_to_context_window(msgs, 0);
+    let result = trim_to_context_window(&msgs, 0);
     assert!(result.is_empty());
 }
 

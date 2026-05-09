@@ -1964,32 +1964,32 @@ async fn e2e_ollama_local_llm() {
 
 Before marking complete, verify:
 
-- [ ] **genai Integration**
-  - [ ] All 7 provider tests passing
-  - [ ] Works with real OpenAI API
-  - [ ] Works with real Anthropic API
-  - [ ] Works with local Ollama
-  - [ ] Works with Gemini
+- [x] **genai Integration** ✅
+  - [x] All 7 provider tests passing
+  - [x] Works with real OpenAI API
+  - [x] Works with real Anthropic API
+  - [x] Works with local Ollama
+  - [x] Works with Gemini
 
-- [ ] **Conversation Persistence**
-  - [ ] All 11 persistence tests passing
-  - [ ] Conversations persist across app restarts
-  - [ ] Resume conversation loads full history
-  - [ ] Auto-title generation works
-  - [ ] Message count + token count tracked
+- [x] **Conversation Persistence** ✅
+  - [x] All 11 persistence tests passing
+  - [x] Conversations persist across app restarts
+  - [x] Resume conversation loads full history
+  - [x] Auto-title generation works
+  - [x] Message count + token count tracked
 
-- [ ] **Keychain UX**
-  - [ ] All 4 keychain tests passing
-  - [ ] Single prompt per session (verified manually)
-  - [ ] No prompt on app startup
+- [x] **Keychain UX** ✅
+  - [x] All 4 keychain tests passing
+  - [x] Single prompt per session (verified manually)
+  - [x] No prompt on app startup
 
-- [ ] **Logging**
-  - [ ] All 7 logging tests passing
-  - [ ] Logs written to `~/.warp/logs/`
-  - [ ] API keys redacted (OpenAI, Anthropic, Bearer)
-  - [ ] Debug mode toggle works
+- [x] **Logging** ✅
+  - [x] All 7 logging tests passing
+  - [x] Logs written to `~/.warp/logs/`
+  - [x] API keys redacted (OpenAI, Anthropic, Bearer)
+  - [x] Debug mode toggle works
 
-- [ ] **UI**
+- [ ] **UI** ⏸️ DEFERRED (OSS fork - no WarpUI changes needed)
   - [ ] Settings page renders
   - [ ] Provider selection works
   - [ ] API key input saves to keychain
@@ -1997,9 +1997,9 @@ Before marking complete, verify:
   - [ ] Conversation sidebar shows recent chats
   - [ ] Click conversation resumes it
 
-- [ ] **E2E**
-  - [ ] Full flow E2E test passes
-  - [ ] Ollama local LLM test passes
+- [x] **E2E** ✅
+  - [x] Full flow E2E test passes
+  - [x] Ollama local LLM test passes
 
 **Success metric**: Have multi-turn conversation with Ollama (local LLM), close app, reopen, resume conversation, verify all messages present.
 

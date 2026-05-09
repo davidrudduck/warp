@@ -115,7 +115,7 @@ async fn run_with_tools_dispatches_and_continues() {
             .with_stream(events2),
     );
 
-    let (tx, rx) = agent_event_channel(16);
+    let (tx, _rx) = agent_event_channel(16);
     let (tool_req_tx, mut tool_req_rx) = mpsc::channel(16);
     let (_cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
 
@@ -248,7 +248,7 @@ async fn run_cancelled_stops_cleanly() {
     ];
 
     let provider: SharedProvider = Arc::new(MockLlmProvider::new().with_stream(events));
-    let (tx, rx) = agent_event_channel(16);
+    let (tx, _rx) = agent_event_channel(16);
     let (tool_req_tx, _tool_req_rx) = mpsc::channel(16);
     let (cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
 
@@ -288,7 +288,7 @@ async fn run_persists_conversation_to_db() {
     let repo = Arc::new(ConversationRepository::new(db_path));
 
     // Create initial conversation
-    let conv_id = repo.create_conversation("openai", "gpt-4o").await.unwrap();
+    let conv_id = repo.create_conversation("openai".to_string(), "gpt-4o".to_string()).await.unwrap();
 
     let provider = Arc::new(MockLlmProvider::new().with_stream(vec![
         StreamEvent::Start,
@@ -301,7 +301,7 @@ async fn run_persists_conversation_to_db() {
 
     let initial_messages = vec![ChatMessage::User(vec![ContentBlock::Text("Hi".into())])];
 
-    let (tx, rx) = agent_event_channel(16);
+    let (tx, _rx) = agent_event_channel(16);
     let (tool_req_tx, _tool_req_rx) = mpsc::channel(16);
     let (_cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
 
@@ -323,7 +323,7 @@ async fn run_persists_conversation_to_db() {
     .unwrap();
 
     // Verify conversation was saved
-    let messages = repo.load_messages(&conv_id).await.unwrap();
+    let messages = repo.load_messages(conv_id.clone()).await.unwrap();
     assert_eq!(messages.len(), 2); // User + Assistant
 }
 
@@ -337,7 +337,7 @@ async fn run_resumes_from_saved_conversation() {
 
     let repo = Arc::new(ConversationRepository::new(db_path));
 
-    let conv_id = repo.create_conversation("openai", "gpt-4o").await.unwrap();
+    let conv_id = repo.create_conversation("openai".to_string(), "gpt-4o".to_string()).await.unwrap();
 
     // Pre-populate with saved messages
     let previous_messages = vec![
@@ -347,7 +347,7 @@ async fn run_resumes_from_saved_conversation() {
             tool_calls: vec![],
         },
     ];
-    repo.save_messages(&conv_id, &previous_messages)
+    repo.save_messages(conv_id.clone(), previous_messages.clone())
         .await
         .unwrap();
 
@@ -362,12 +362,12 @@ async fn run_resumes_from_saved_conversation() {
     ]));
 
     // Load previous messages and continue
-    let mut initial_messages = repo.load_messages(&conv_id).await.unwrap();
+    let mut initial_messages = repo.load_messages(conv_id.clone()).await.unwrap();
     initial_messages.push(ChatMessage::User(vec![ContentBlock::Text(
         "Are you sure?".into(),
     )]));
 
-    let (tx, rx) = agent_event_channel(16);
+    let (tx, _rx) = agent_event_channel(16);
     let (tool_req_tx, _tool_req_rx) = mpsc::channel(16);
     let (_cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
 
@@ -388,6 +388,6 @@ async fn run_resumes_from_saved_conversation() {
     .unwrap();
 
     // Verify all messages saved
-    let final_messages = repo.load_messages(&conv_id).await.unwrap();
+    let final_messages = repo.load_messages(conv_id.clone()).await.unwrap();
     assert_eq!(final_messages.len(), 4); // 2 previous + 1 user + 1 assistant
 }
