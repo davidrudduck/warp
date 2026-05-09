@@ -30,7 +30,7 @@ pub use ai::LLMId;
 pub fn is_using_api_key_for_provider(provider: &LLMProvider, app: &AppContext) -> bool {
     let api_keys = UserWorkspaces::as_ref(app)
         .is_byo_api_key_enabled()
-        .then(|| ApiKeyManager::as_ref(app).keys().clone());
+        .then(|| ApiKeyManager::as_ref(app).keys(app));
 
     match provider {
         LLMProvider::OpenAI => api_keys.is_some_and(|keys| keys.openai.is_some()),

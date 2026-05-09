@@ -238,6 +238,7 @@ impl RequestParams {
         let api_keys = ApiKeyManager::as_ref(app).api_keys_for_request(
             user_workspaces.is_byo_api_key_enabled(),
             user_workspaces.is_aws_bedrock_credentials_enabled(app),
+            app,
         );
         let allow_use_of_warp_credits_with_byok =
             *AISettings::as_ref(app).can_use_warp_credits_with_byok;

@@ -6327,7 +6327,7 @@ impl ApiKeysWidget {
             anthropic: anthropic_key,
             google: google_key,
             ..
-        } = ApiKeyManager::as_ref(ctx).keys().clone();
+        } = ApiKeyManager::as_ref(ctx).keys(ctx);
 
         // A helper macro to create and configure an API key editor.  This avoids a lot
         // of code duplication and ensures consistency between the editors.
