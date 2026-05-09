@@ -1,13 +1,14 @@
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolCall {
     pub id: String,
     pub name: String,
     pub input: Value,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ImageMediaType {
     Jpeg,
     Png,
@@ -15,13 +16,13 @@ pub enum ImageMediaType {
     Webp,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ToolResultContent {
     Text(String),
     Blocks(Vec<ContentBlock>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ContentBlock {
     Text(String),
     Image {
