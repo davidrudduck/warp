@@ -400,7 +400,7 @@ impl AIRequestUsageModel {
         // If you have provided your own API key,
         // it doesn't matter if you are out of warp-provided requests.
         let has_byo_api_key = UserWorkspaces::as_ref(ctx).is_byo_api_key_enabled()
-            && ApiKeyManager::as_ref(ctx).keys().has_any_key();
+            && ApiKeyManager::as_ref(ctx).keys(ctx).has_any_key();
 
         has_base_plan_ai_requests
             || (user_bonus_credits || workspace_bonus_credits)
