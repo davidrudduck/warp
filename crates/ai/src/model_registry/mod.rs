@@ -16,9 +16,7 @@ impl ModelRegistry {
     /// Returns the static capabilities when the model ID is known, or
     /// `ModelCapabilities::default()` when it is not.
     pub fn capabilities_for(model_id: &str) -> ModelCapabilities {
-        known_capabilities()
-            .remove(model_id)
-            .unwrap_or_default()
+        known_capabilities().remove(model_id).unwrap_or_default()
     }
 
     /// Returns `true` if capabilities for `model_id` are present in the

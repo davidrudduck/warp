@@ -8,8 +8,8 @@ async fn repository_creates_conversation() {
 
     // Initialize test database with schema
     {
-        use diesel::prelude::*;
         use diesel::connection::SimpleConnection;
+        use diesel::prelude::*;
         let mut conn = diesel::SqliteConnection::establish(db_path.to_str().unwrap()).unwrap();
         conn.batch_execute(
             r#"
@@ -49,8 +49,8 @@ async fn repository_saves_messages() {
 
     // Initialize test database with schema
     {
-        use diesel::prelude::*;
         use diesel::connection::SimpleConnection;
+        use diesel::prelude::*;
         let mut conn = diesel::SqliteConnection::establish(db_path.to_str().unwrap()).unwrap();
         conn.batch_execute(
             r#"
@@ -113,8 +113,8 @@ async fn repository_generates_auto_title() {
 
     // Initialize test database with schema
     {
-        use diesel::prelude::*;
         use diesel::connection::SimpleConnection;
+        use diesel::prelude::*;
         let mut conn = diesel::SqliteConnection::establish(db_path.to_str().unwrap()).unwrap();
         conn.batch_execute(
             r#"
@@ -151,7 +151,9 @@ async fn repository_generates_auto_title() {
 
     // Save messages with a user message
     let messages = vec![
-        ChatMessage::User(vec![ContentBlock::Text("How do I create a Rust project?".into())]),
+        ChatMessage::User(vec![ContentBlock::Text(
+            "How do I create a Rust project?".into(),
+        )]),
         ChatMessage::Assistant {
             text: Some("Use cargo new <name>".into()),
             tool_calls: vec![],
@@ -180,8 +182,8 @@ async fn repository_auto_title_truncates_long_messages() {
 
     // Initialize test database with schema
     {
-        use diesel::prelude::*;
         use diesel::connection::SimpleConnection;
+        use diesel::prelude::*;
         let mut conn = diesel::SqliteConnection::establish(db_path.to_str().unwrap()).unwrap();
         conn.batch_execute(
             r#"
@@ -218,7 +220,9 @@ async fn repository_auto_title_truncates_long_messages() {
 
     // Save messages with a very long user message
     let long_text = "This is a very long message that should be truncated to fit within the title length limit. It contains many words and characters that exceed what would be reasonable for a conversation title.";
-    let messages = vec![ChatMessage::User(vec![ContentBlock::Text(long_text.into())])];
+    let messages = vec![ChatMessage::User(vec![ContentBlock::Text(
+        long_text.into(),
+    )])];
 
     repo.save_messages(&conv_id, &messages).await.unwrap();
     repo.generate_title(&conv_id).await.unwrap();
