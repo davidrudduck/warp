@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod conversation;
 pub mod direct_loop;
 pub mod model_registry;
 pub mod provider;

@@ -8,19 +8,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    provider_model_records (id) {
-        id -> Integer,
-        provider_kind -> Text,
-        model_id -> Text,
-        context_window -> Integer,
-        supports_tools -> Bool,
-        supports_vision -> Bool,
-        supports_streaming -> Bool,
-        last_fetched_at -> Timestamp,
-    }
-}
-
-diesel::table! {
     agent_conversations (id) {
         id -> Integer,
         conversation_id -> Text,
@@ -173,6 +160,34 @@ diesel::table! {
 diesel::table! {
     current_user_information (email) {
         email -> Text,
+    }
+}
+
+diesel::table! {
+    direct_conversations (id) {
+        id -> Integer,
+        conversation_id -> Text,
+        provider_kind -> Text,
+        model_id -> Text,
+        created_at -> Timestamp,
+        last_message_at -> Timestamp,
+        title -> Nullable<Text>,
+        message_count -> Integer,
+        total_tokens -> Integer,
+    }
+}
+
+diesel::table! {
+    direct_messages (id) {
+        id -> Integer,
+        conversation_id -> Text,
+        message_index -> Integer,
+        role -> Text,
+        content_json -> Text,
+        tool_calls_json -> Nullable<Text>,
+        input_tokens -> Nullable<Integer>,
+        output_tokens -> Nullable<Integer>,
+        created_at -> Timestamp,
     }
 }
 
@@ -354,6 +369,19 @@ diesel::table! {
 }
 
 diesel::table! {
+    provider_model_records (id) {
+        id -> Integer,
+        provider_kind -> Text,
+        model_id -> Text,
+        context_window -> Integer,
+        supports_tools -> Bool,
+        supports_vision -> Bool,
+        supports_streaming -> Bool,
+        last_fetched_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     server_experiments (experiment) {
         experiment -> Text,
     }
@@ -516,7 +544,6 @@ diesel::table! {
 
 diesel::joinable!(ambient_agent_panes -> pane_nodes (id));
 diesel::joinable!(app -> windows (active_window_id));
-diesel::joinable!(code_pane_tabs -> code_panes (code_pane_id));
 diesel::joinable!(object_permissions -> object_metadata (object_metadata_id));
 diesel::joinable!(pane_branches -> pane_nodes (pane_node_id));
 diesel::joinable!(pane_leaves -> pane_nodes (pane_node_id));
@@ -537,7 +564,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     tabs,
     windows,
 );
-diesel::allow_tables_to_appear_in_same_query!(code_pane_tabs, code_panes,);
 diesel::allow_tables_to_appear_in_same_query!(object_metadata, object_permissions,);
 diesel::allow_tables_to_appear_in_same_query!(team_members, team_settings, teams,);
 diesel::allow_tables_to_appear_in_same_query!(workspace_language_server, workspace_metadata,);
