@@ -30,6 +30,7 @@ use appearance_page::{AppearancePageAction, AppearanceSettingsPageView};
 use billing_and_usage_page::{BillingAndUsagePageEvent, BillingAndUsagePageView};
 use code_page::CodeSubpage;
 use code_page::{CodeSettingsPageAction, CodeSettingsPageEvent};
+use direct_api_page::DirectApiSettingsPageView;
 use environments_page::EnvironmentsPageView;
 use features_page::{FeaturesPageView, FeaturesSettingsPageEvent};
 use itertools::Itertools as _;
@@ -82,6 +83,7 @@ mod billing_and_usage;
 mod billing_and_usage_page;
 mod code_page;
 mod delete_environment_confirmation_dialog;
+mod direct_api_page;
 mod directory_color_add_picker;
 pub(crate) mod environments_page;
 mod execution_profile_view;
@@ -192,6 +194,7 @@ pub enum SettingsSection {
     MCPServers,
     BillingAndUsage,
     Appearance,
+    DirectApi,
     Features,
     Keybindings,
     Privacy,
@@ -231,6 +234,7 @@ impl Display for SettingsSection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SettingsSection::BillingAndUsage => write!(f, "Billing and usage"),
+            SettingsSection::DirectApi => write!(f, "Direct API"),
             SettingsSection::Keybindings => write!(f, "Keyboard shortcuts"),
             SettingsSection::SharedBlocks => write!(f, "Shared blocks"),
             SettingsSection::MCPServers => write!(f, "MCP Servers"),
@@ -327,6 +331,7 @@ impl FromStr for SettingsSection {
             "Billing and usage" => Ok(Self::BillingAndUsage),
             "Appearance" => Ok(Self::Appearance),
             "Code" => Ok(Self::Code),
+            "Direct API" => Ok(Self::DirectApi),
             "Features" => Ok(Self::Features),
             "Keyboard shortcuts" => Ok(Self::Keybindings),
             "Privacy" => Ok(Self::Privacy),
@@ -971,6 +976,7 @@ macro_rules! update_page {
             SettingsPageViewHandle::CloudEnvironments(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::About(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Code(handle) => $ctx.update_view(handle, $update),
+            SettingsPageViewHandle::DirectApi(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::BillingAndUsage(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::MCPServers(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::WarpDrive(handle) => $ctx.update_view(handle, $update),
@@ -1083,6 +1089,9 @@ impl SettingsView {
             me.handle_code_page_event(event, ctx);
         });
 
+        // Direct API page
+        let direct_api_page_handle = ctx.add_view(DirectApiSettingsPageView::new);
+
         // Teams page, adding unconditionally, as `should_render` later on decides whether it
         // should be shown to the user or not
         let teams_page_handle = ctx.add_typed_action_view(TeamsPageView::new);
@@ -1166,6 +1175,7 @@ impl SettingsView {
             SettingsPage::new(ai_page_handle),
             SettingsPage::new(billing_and_usage_page_handle),
             SettingsPage::new(code_page_handle),
+            SettingsPage::new(direct_api_page_handle),
             SettingsPage::new(teams_page_handle),
             SettingsPage::new(appearance_page_handle),
             SettingsPage::new(features_page_handle),
@@ -1209,6 +1219,7 @@ impl SettingsView {
             )),
             SettingsNavItem::Page(SettingsSection::Teams),
             SettingsNavItem::Page(SettingsSection::Appearance),
+            SettingsNavItem::Page(SettingsSection::DirectApi),
             SettingsNavItem::Page(SettingsSection::Features),
             SettingsNavItem::Page(SettingsSection::Keybindings),
             SettingsNavItem::Page(SettingsSection::Warpify),
@@ -1965,6 +1976,7 @@ impl SettingsView {
             SettingsPageViewHandle::CloudEnvironments(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::MCPServers(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Code(v) => v.as_ref(app).should_render(app),
+            SettingsPageViewHandle::DirectApi(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::WarpDrive(v) => v.as_ref(app).should_render(app),
         }
     }
