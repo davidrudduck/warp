@@ -1,5 +1,7 @@
 use crate::provider::{ChatMessage, ContentBlock};
 
+pub mod repository;
+
 /// Convert ChatMessage to database format (role, content_json, tool_calls_json)
 pub fn serialize_chat_message(msg: &ChatMessage) -> (String, String, Option<String>) {
     match msg {
@@ -69,4 +71,8 @@ pub fn deserialize_chat_message(
 
 #[cfg(test)]
 #[path = "serialization_tests.rs"]
-mod tests;
+mod serialization_tests;
+
+#[cfg(test)]
+#[path = "repository_tests.rs"]
+mod repository_tests;
