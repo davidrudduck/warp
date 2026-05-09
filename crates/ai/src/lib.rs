@@ -4,6 +4,7 @@ pub mod aws_credentials;
 pub mod conversation;
 pub mod direct_loop;
 pub mod llm_id;
+pub mod logging;
 pub mod model_registry;
 pub mod provider;
 
