@@ -226,28 +226,6 @@ impl ApiKeyManager {
         }
     }
 
-    fn load_keys_from_secure_storage(ctx: &mut ModelContext<Self>) -> ApiKeys {
-        let key_json = match ctx.secure_storage().read_value(SECURE_STORAGE_KEY) {
-            Ok(json) => json,
-            Err(e) => {
-                if !matches!(e, secure_storage::Error::NotFound) {
-                    log::error!("Failed to read API keys from secure storage: {e:#}");
-                }
-                return ApiKeys::default();
-            }
-        };
-
-        let keys = match serde_json::from_str(&key_json) {
-            Ok(keys) => keys,
-            Err(e) => {
-                log::error!("Failed to deserialize API keys: {e:#}");
-                ApiKeys::default()
-            }
-        };
-
-        keys
-    }
-
     fn load_keys_from_secure_storage_readonly(ctx: &warpui::AppContext) -> ApiKeys {
         use warpui::SingletonEntity;
 

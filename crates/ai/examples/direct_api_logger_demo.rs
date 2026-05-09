@@ -31,8 +31,20 @@ fn main() {
 
     println!("\n=== Log File Contents ===\n{}", content);
     println!("=== Verification ===");
-    println!("✓ No raw API keys in log: {}", !content.contains("sk-1234567890"));
-    println!("✓ No raw Anthropic keys in log: {}", !content.contains("sk-ant-api03-abc"));
-    println!("✓ No raw JWT tokens in log: {}", !content.contains("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"));
-    println!("✓ Contains redaction markers: {}", content.contains("***REDACTED***"));
+    println!(
+        "✓ No raw API keys in log: {}",
+        !content.contains("sk-1234567890")
+    );
+    println!(
+        "✓ No raw Anthropic keys in log: {}",
+        !content.contains("sk-ant-api03-abc")
+    );
+    println!(
+        "✓ No raw JWT tokens in log: {}",
+        !content.contains("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9")
+    );
+    println!(
+        "✓ Contains redaction markers: {}",
+        content.contains("***REDACTED***")
+    );
 }
