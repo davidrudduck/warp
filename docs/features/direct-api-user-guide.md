@@ -1,0 +1,470 @@
+# Direct API User Guide
+
+## What is Direct API?
+
+Direct API allows you to configure your own LLM provider API keys directly in Warp, without relying on Warp's cloud infrastructure. This is ideal for:
+
+- Open-source fork users who want full control over their AI
+- Users who prefer local LLMs (Ollama)
+- Teams managing API keys via existing infrastructure
+- Privacy-conscious users who avoid cloud intermediaries
+
+### Key Benefits
+
+- **Offline-capable**: Use local models like Ollama without internet
+- **Privacy**: API keys stored locally in macOS Keychain (or OS-native secure storage)
+- **Multi-provider**: OpenAI, Anthropic, Google Gemini, Ollama, OpenRouter, custom endpoints
+- **Conversation persistence**: Full chat history saved locally, survives app restarts
+- **No cloud dependency**: Works entirely offline with Ollama
+
+## Supported Providers
+
+| Provider | API Key Required? | Models | Setup Time |
+|---|---|---|---|
+| **OpenAI** | Yes | GPT-4o, GPT-4 Turbo, GPT-3.5 Turbo | 2 min |
+| **Anthropic** | Yes | Claude 3.5 Sonnet, Claude 3 Opus, Claude 3 Haiku | 2 min |
+| **Google Gemini** | Yes | Gemini 2.0 Flash, Gemini 1.5 Pro | 2 min |
+| **Ollama** | No | llama2, mistral, neural-chat (local) | 5 min |
+| **OpenRouter** | Yes | 100+ models (Meta, Mistral, etc.) | 2 min |
+| **Custom (OpenAI-compatible)** | Optional | Any OpenAI-compatible endpoint | 2 min |
+
+## Accessing Direct API Settings
+
+### Step 1: Open Settings
+
+**macOS**
+```text
+Warp → Settings (Cmd+,)
+```
+
+**Linux/Windows**
+```text
+Warp → Settings (Ctrl+,)
+```
+
+### Step 2: Navigate to Agents
+
+In the Settings sidebar:
+1. Click **Agents** section
+2. Click **Direct API**
+
+You should see a page showing which API keys are currently configured.
+
+[Screenshot: Settings → Agents → Direct API]
+
+### Step 3: Configure Provider
+
+See provider-specific setup below.
+
+## Provider Setup Guides
+
+### OpenAI
+
+**Get Your API Key**
+
+1. Go to https://platform.openai.com/api-keys
+2. Click **Create new secret key**
+3. Copy the key (format: `sk-...`)
+
+**Enter in Warp**
+
+1. Open Warp Settings → Agents → Direct API
+2. Select **OpenAI** from the Provider dropdown
+3. Paste your API key into the **API Key** field
+4. Click **Test Connection**
+5. You should see: ✓ Connected to OpenAI
+6. Click **Save to Keychain**
+
+**Choose a Model**
+
+Default: `gpt-4o` (latest, recommended)
+
+Other options:
+- `gpt-4-turbo` — Better context understanding, ~2× slower
+- `gpt-3.5-turbo` — Fastest, cheapest
+- Full list: https://platform.openai.com/docs/models
+
+**Pricing**
+
+- GPT-4o: $5/1M input, $15/1M output tokens
+- See https://openai.com/pricing for current rates
+
+### Anthropic (Claude)
+
+**Get Your API Key**
+
+1. Go to https://console.anthropic.com/keys
+2. Click **Create Key**
+3. Copy the key (format: `sk-ant-...`)
+
+**Enter in Warp**
+
+1. Open Warp Settings → Agents → Direct API
+2. Select **Anthropic** from the Provider dropdown
+3. Paste your API key
+4. Click **Test Connection**
+5. You should see: ✓ Connected to Anthropic
+6. Click **Save to Keychain**
+
+**Choose a Model**
+
+Default: `claude-3-5-sonnet-20241022`
+
+Other options:
+- `claude-3-opus-20240229` — Most capable, slower, more expensive
+- `claude-3-haiku-20240307` — Fastest, cheapest
+- Full list: https://docs.anthropic.com/claude/reference/models-overview
+
+**Pricing**
+
+- Claude 3.5 Sonnet: $3/1M input, $15/1M output tokens
+- See https://www.anthropic.com/pricing for current rates
+
+### Google Gemini
+
+**Get Your API Key**
+
+1. Go to https://aistudio.google.com/app/apikey
+2. Click **Create API Key**
+3. Copy the key
+
+**Enter in Warp**
+
+1. Open Warp Settings → Agents → Direct API
+2. Select **Google Gemini** from the Provider dropdown
+3. Paste your API key
+4. Click **Test Connection**
+5. You should see: ✓ Connected to Google Gemini
+6. Click **Save to Keychain**
+
+**Choose a Model**
+
+Default: `gemini-2.0-flash`
+
+Other options:
+- `gemini-1.5-pro` — Most capable
+- Full list: https://ai.google.dev/gemini-api/docs/models/gemini
+
+**Pricing**
+
+- Free tier: 60 requests/minute
+- Paid tier: $1.50/1M input tokens, $6/1M output tokens
+
+### Ollama (Local LLM)
+
+**Install Ollama**
+
+1. Download from https://ollama.ai
+2. Follow platform-specific installation
+3. Start the Ollama service
+
+**Pull a Model**
+
+```bash
+ollama pull llama2          # ~4GB, recommended for beginners
+ollama pull mistral         # ~5GB, very fast
+ollama pull neural-chat     # ~5GB, good for conversation
+```
+
+**Verify Installation**
+
+```bash
+curl http://localhost:11434/api/tags
+```
+
+You should see your downloaded models.
+
+**Enter in Warp**
+
+1. Open Warp Settings → Agents → Direct API
+2. Select **Ollama** from the Provider dropdown
+3. Leave **API Key** blank (not required)
+4. **Base URL** should be `http://localhost:11434` (default)
+5. Click **Test Connection**
+6. You should see: ✓ Connected to Ollama
+7. Click **Save to Keychain**
+
+**Choose a Model**
+
+Available models from `ollama pull` command:
+- `llama2` — General purpose
+- `mistral` — Fast reasoning
+- `neural-chat` — Conversation optimized
+
+**Advantages**
+
+- ✓ Runs entirely offline (no internet needed)
+- ✓ Free (no API costs)
+- ✓ Private (models run on your machine)
+- ✓ Fast (GPU-accelerated if available)
+
+**Disadvantages**
+
+- ✗ Slower than cloud models
+- ✗ Requires 4GB+ RAM
+- ✗ Requires GPU for acceptable performance
+
+### OpenRouter
+
+**Get Your API Key**
+
+1. Go to https://openrouter.ai
+2. Sign up or log in
+3. Go to https://openrouter.ai/keys
+4. Copy your API key
+
+**Enter in Warp**
+
+1. Open Warp Settings → Agents → Direct API
+2. Select **OpenRouter** from the Provider dropdown
+3. Paste your API key
+4. **Base URL** should be `https://openrouter.ai/api/v1` (default)
+5. Click **Test Connection**
+6. You should see: ✓ Connected to OpenRouter
+7. Click **Save to Keychain**
+
+**Choose a Model**
+
+Popular models:
+- `meta-llama/llama-2-70b-chat` — Fast, open-source
+- `mistralai/mistral-7b-instruct` — Very fast, small
+- `openai/gpt-4-turbo` — Route to OpenAI's GPT-4 via OpenRouter
+
+Full model list: https://openrouter.ai/models
+
+**Pricing**
+
+Varies by model. See https://openrouter.ai/models for current rates.
+
+### Custom (OpenAI-Compatible)
+
+For endpoints compatible with OpenAI's API format (including LM Studio, Vllm, custom servers).
+
+**Enter in Warp**
+
+1. Open Warp Settings → Agents → Direct API
+2. Select **Custom (OpenAI-compatible)** from the Provider dropdown
+3. Enter your **API Key** (or leave blank if endpoint doesn't require auth)
+4. Enter your **Base URL** (e.g., `http://localhost:8000`)
+5. Click **Test Connection**
+6. Click **Save to Keychain**
+
+**Example: LM Studio**
+
+```text
+Base URL: http://localhost:1234/v1
+API Key: (leave blank)
+Model: llama-2-7b-chat.Q4_K_M
+```
+
+## Testing Your Connection
+
+After entering your API key:
+
+1. Click **Test Connection** button
+2. Warp will validate:
+   - API key format is correct
+   - Provider endpoint is reachable
+   - Authentication succeeds
+3. You'll see one of:
+   - ✓ Connected to [Provider]
+   - ✗ Authentication failed: Check your API key
+   - ✗ Connection failed: Check your base URL
+
+## Saving to Keychain
+
+After a successful test:
+
+1. Click **Save to Keychain**
+2. You may see a macOS Keychain permission prompt (first time only)
+3. Click **Allow** to grant Warp access
+4. Key is now securely stored
+
+**Note**: You'll only be prompted once per session. Subsequent saves won't trigger the prompt.
+
+## Using Your API Key
+
+Once saved, your API key is automatically used whenever you:
+
+1. **Use Agent Mode in terminal**
+   ```bash
+   @agent help me install Node.js
+   ```
+
+2. **Use Claude Code or compatible CLI agents**
+   ```bash
+   claude-code
+   ```
+
+3. **Access AI features in Warp**
+
+Your API key is **never** sent to Warp's servers—it's used directly with your configured provider.
+
+## Conversation History
+
+All conversations are saved locally in Warp's database:
+
+- **Location**: `~/.warp/` (hidden directory)
+- **Persistence**: Survives app restarts
+- **Privacy**: Stored only on your machine
+- **Access**: View via Settings → Agents → Conversation History (future feature)
+
+Each conversation includes:
+- User messages
+- Assistant responses
+- Model used
+- Creation date/time
+- Token usage
+
+## Security and Privacy
+
+### API Key Storage
+
+- **macOS**: Stored in system Keychain with encryption
+- **Linux**: Stored in appropriate system secure storage
+- **Windows**: Stored in Credential Manager
+
+### What Warp Sees
+
+Warp's OSS fork:
+- Does NOT send API keys to Warp's cloud
+- Does NOT log your conversations
+- Does NOT track your API usage
+- Is entirely open-source and auditable
+
+### Best Practices
+
+1. **Rotate keys regularly**: Generate new API keys periodically
+2. **Use separate keys**: Create key-per-app or key-per-user
+3. **Monitor usage**: Check your provider's dashboard for unexpected activity
+4. **Never share keys**: Don't paste keys in public repos or chat
+
+## Troubleshooting
+
+### Common Issues
+
+**Q: "Authentication failed" error**
+
+- Check API key is exactly correct (no extra spaces)
+- Verify key is still valid (not revoked)
+- Check provider account has billing enabled
+- For OpenAI: Verify organization access if using org API keys
+
+**Q: "Connection failed" error**
+
+- Check internet connection (unless using Ollama)
+- For custom endpoints: Verify base URL is correct and server is running
+- For Ollama: Ensure `ollama serve` is running in another terminal
+
+**Q: Keychain prompt appears every time**
+
+- This should only happen once per session
+- If it persists, try: Settings → General → Clear cache
+- Restart Warp if still occurring
+
+**Q: "Model not found" error**
+
+- Verify model name matches provider's model list
+- For Ollama: Run `ollama pull model-name` first
+- Check model availability in your region (some may be geo-restricted)
+
+**Q: Slow responses from Ollama**
+
+- Ensure Ollama is using GPU (check Ollama settings)
+- Try a smaller model (mistral, neural-chat instead of llama2)
+- Check system resources (RAM, CPU) via Activity Monitor
+
+**Q: API costs are higher than expected**
+
+- Check Settings → Usage Dashboard for token counts
+- Consider using a cheaper model (GPT-3.5, Haiku, Mistral)
+- Use OpenRouter to compare model prices per request
+
+### Getting Help
+
+1. **Check logs**: `~/.warp/logs/direct-api.log`
+2. **Join Slack**: https://go.warp.dev/join-preview
+3. **File an issue**: https://github.com/warpdotdev/warp/issues
+4. **Search existing issues**: https://github.com/warpdotdev/warp/issues?q=direct+api
+
+## FAQ
+
+**Q: Can I use multiple API keys?**
+
+A: Yes. You can reconfigure any time. Warp stores the most recent configured key. Each conversation remembers which provider/model was used.
+
+**Q: What if I don't have an API key?**
+
+A: Use Ollama (free, local) or get a free tier key from OpenAI ($5 free credits) or Google Gemini (free tier available).
+
+**Q: Is my API key safe?**
+
+A: Yes. Keys are stored in system Keychain and never sent to Warp's servers. The app is open-source so you can verify this yourself.
+
+**Q: Can I switch providers mid-conversation?**
+
+A: You can change your API key anytime. New conversations will use the newly configured key. Old conversations remember their original provider.
+
+**Q: What happens if I run out of API credits?**
+
+A: Your requests will fail with an authentication error. Check your provider's dashboard and add billing or credits.
+
+**Q: Do you support model switching?**
+
+A: Future feature. Currently select one model per provider. Reload settings to switch.
+
+## Advanced Topics
+
+### Custom OpenAI-Compatible Endpoints
+
+Warp supports any OpenAI-API-compatible endpoint.
+
+**Example: LM Studio**
+
+1. Download LM Studio from https://lmstudio.ai
+2. Load a model and start the local inference server
+3. In Warp Settings:
+   - Provider: Custom (OpenAI-compatible)
+   - Base URL: `http://localhost:1234/v1`
+   - API Key: (leave blank)
+   - Model: (from LM Studio interface)
+
+**Example: vLLM**
+
+```bash
+python -m vllm.entrypoints.openai.api_server \
+  --model meta-llama/Llama-2-7b-hf \
+  --port 8000
+```
+
+Then in Warp:
+- Base URL: `http://localhost:8000/v1`
+
+### Environment Variables
+
+For automation or CI/CD, you can set API keys via environment variables:
+
+```bash
+export WARP_OPENAI_API_KEY="sk-..."
+export WARP_ANTHROPIC_API_KEY="sk-ant-..."
+export WARP_GEMINI_API_KEY="..."
+export WARP_OLLAMA_BASE_URL="http://localhost:11434"
+```
+
+These will be used instead of keychain values if set.
+
+### Debug Logging
+
+Enable detailed logs for troubleshooting:
+
+1. Settings → Agents → Direct API
+2. Check **Enable Debug Logging**
+3. Logs appear in `~/.warp/logs/direct-api-debug.log`
+
+Re-enable to submit logs when filing issues.
+
+---
+
+**Last updated**: 2026-05-11  
+**Version**: Warp OSS v2024.05+  
+**For official Warp docs**: https://docs.warp.dev/
