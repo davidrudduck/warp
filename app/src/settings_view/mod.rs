@@ -304,6 +304,7 @@ impl SettingsSection {
             Self::AgentProfiles,
             Self::AgentMCPServers,
             Self::Knowledge,
+            Self::DirectApi,
             Self::ThirdPartyCLIAgents,
         ]
     }
@@ -1219,7 +1220,6 @@ impl SettingsView {
             )),
             SettingsNavItem::Page(SettingsSection::Teams),
             SettingsNavItem::Page(SettingsSection::Appearance),
-            SettingsNavItem::Page(SettingsSection::DirectApi),
             SettingsNavItem::Page(SettingsSection::Features),
             SettingsNavItem::Page(SettingsSection::Keybindings),
             SettingsNavItem::Page(SettingsSection::Warpify),
