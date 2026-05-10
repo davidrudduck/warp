@@ -37,6 +37,29 @@
 
 You can [download Warp](https://www.warp.dev/download) and [read our docs](https://docs.warp.dev/) for platform-specific instructions.
 
+## Direct API (OSS Fork)
+
+The Open Source fork includes **Direct API** — configure your own LLM provider without relying on Warp's cloud backend.
+
+### Quick Setup
+
+1. **Get an API key** from OpenAI, Anthropic, Google Gemini, or use local Ollama
+2. **Open Settings** (Cmd+, or Ctrl+,)
+3. **Go to Agents → Direct API**
+4. **Paste your key** and click Save
+
+Done! Your AI commands now use your own provider.
+
+**Supported providers**: OpenAI, Anthropic, Google Gemini, Ollama (local), OpenRouter, custom endpoints
+
+**Key features**:
+- Local-only API key storage (macOS Keychain)
+- Full conversation persistence (SQLite)
+- Works offline with Ollama
+- 271+ tests, production-ready
+
+See [Direct API documentation](./docs/QUICK-START.md) for detailed setup guides for each provider.
+
 ## Warp Contributions Overview Dashboard
 
 Explore [build.warp.dev](https://build.warp.dev) to:
