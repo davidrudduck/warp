@@ -26,6 +26,7 @@ pub enum DirectApiPageAction {
     SelectProvider(String),
     TestConnection,
     SaveApiKey,
+    UpdateModelList,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -34,6 +35,8 @@ enum ProviderType {
     Anthropic,
     GoogleGemini,
     Ollama,
+    OpenRouter,
+    Custom,
 }
 
 impl ProviderType {
@@ -43,6 +46,8 @@ impl ProviderType {
             ProviderType::Anthropic => "Anthropic",
             ProviderType::GoogleGemini => "Google Gemini",
             ProviderType::Ollama => "Ollama",
+            ProviderType::OpenRouter => "OpenRouter",
+            ProviderType::Custom => "Custom (OpenAI-compatible)",
         }
     }
 
@@ -52,6 +57,8 @@ impl ProviderType {
             "Anthropic" => Some(ProviderType::Anthropic),
             "Google Gemini" => Some(ProviderType::GoogleGemini),
             "Ollama" => Some(ProviderType::Ollama),
+            "OpenRouter" => Some(ProviderType::OpenRouter),
+            "Custom (OpenAI-compatible)" => Some(ProviderType::Custom),
             _ => None,
         }
     }
@@ -62,7 +69,25 @@ impl ProviderType {
             ProviderType::Anthropic,
             ProviderType::GoogleGemini,
             ProviderType::Ollama,
+            ProviderType::OpenRouter,
+            ProviderType::Custom,
         ]
+    }
+
+    fn needs_base_url(&self) -> bool {
+        matches!(
+            self,
+            ProviderType::Ollama | ProviderType::OpenRouter | ProviderType::Custom
+        )
+    }
+
+    fn default_base_url(&self) -> &'static str {
+        match self {
+            ProviderType::Ollama => "http://localhost:11434",
+            ProviderType::OpenRouter => "https://openrouter.ai/api/v1",
+            ProviderType::Custom => "",
+            _ => "",
+        }
     }
 }
 
@@ -71,11 +96,13 @@ pub struct DirectApiSettingsPageView {
     api_key_manager: ModelHandle<ApiKeyManager>,
     provider_dropdown: ViewHandle<Dropdown<DirectApiPageAction>>,
     api_key_editor: ViewHandle<EditorView>,
+    base_url_editor: ViewHandle<EditorView>,
     selected_provider: RefCell<ProviderType>,
     test_result: RefCell<Option<Result<String, String>>>,
     is_testing: RefCell<bool>,
     test_button: ViewHandle<ActionButton>,
     save_button: ViewHandle<ActionButton>,
+    update_model_list_button: ViewHandle<ActionButton>,
 }
 
 impl DirectApiSettingsPageView {
@@ -120,6 +147,22 @@ impl DirectApiSettingsPageView {
             editor.set_buffer_text("", ctx);
         });
 
+        // Create base URL editor
+        let base_url_editor = ctx.add_typed_action_view(|ctx| {
+            let options = SingleLineEditorOptions {
+                text: TextOptions {
+                    font_size_override: Some(ui_font_size),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            EditorView::single_line(options, ctx)
+        });
+
+        base_url_editor.update(ctx, |editor, ctx| {
+            editor.set_buffer_text("http://localhost:11434", ctx);
+        });
+
         // Create Test Connection button
         let test_button = ctx.add_typed_action_view(|_| {
             ActionButton::new("Test Connection", NakedTheme).on_click(|ctx| {
@@ -134,16 +177,25 @@ impl DirectApiSettingsPageView {
             })
         });
 
+        // Create Update Model List button
+        let update_model_list_button = ctx.add_typed_action_view(|_| {
+            ActionButton::new("Update Model List", NakedTheme).on_click(|ctx| {
+                ctx.dispatch_typed_action(DirectApiPageAction::UpdateModelList);
+            })
+        });
+
         Self {
             page: Self::build_page(ctx),
             api_key_manager,
             provider_dropdown,
             api_key_editor,
+            base_url_editor,
             selected_provider: RefCell::new(ProviderType::OpenAI),
             test_result: RefCell::new(None),
             is_testing: RefCell::new(false),
             test_button,
             save_button,
+            update_model_list_button,
         }
     }
 
@@ -154,6 +206,7 @@ impl DirectApiSettingsPageView {
                 "Provider Configuration",
                 vec![
                     Box::new(ProviderSelectorWidget::default()),
+                    Box::new(BaseUrlInputWidget::default()),
                     Box::new(ApiKeyInputWidget::default()),
                     Box::new(ActionButtonsWidget::default()),
                     Box::new(StatusWidget::default()),
@@ -168,10 +221,18 @@ impl DirectApiSettingsPageView {
         PageType::new_categorized(categories, None)
     }
 
-    fn handle_select_provider(&mut self, provider_name: &str, _ctx: &mut ViewContext<Self>) {
+    fn handle_select_provider(&mut self, provider_name: &str, ctx: &mut ViewContext<Self>) {
         if let Some(provider) = ProviderType::from_str(provider_name) {
+            // Update base URL editor with default for this provider
+            if provider.needs_base_url() {
+                self.base_url_editor.update(ctx, |editor, ctx| {
+                    editor.set_buffer_text(provider.default_base_url(), ctx);
+                });
+            }
+
             *self.selected_provider.borrow_mut() = provider;
             *self.test_result.borrow_mut() = None;
+            ctx.notify();
         }
     }
 
@@ -179,7 +240,10 @@ impl DirectApiSettingsPageView {
         let provider = self.selected_provider.borrow().clone();
         let api_key = self.api_key_editor.as_ref(ctx).buffer_text(ctx);
 
-        if api_key.is_empty() && provider != ProviderType::Ollama {
+        if api_key.is_empty()
+            && provider != ProviderType::Ollama
+            && provider != ProviderType::Custom
+        {
             *self.test_result.borrow_mut() = Some(Err("API key cannot be empty".to_string()));
             ctx.notify();
             return;
@@ -191,6 +255,17 @@ impl DirectApiSettingsPageView {
                 Some(Ok("Ollama runs locally - no API key needed".to_string()));
             ctx.notify();
             return;
+        }
+
+        // For Custom provider, API key is optional
+        if provider == ProviderType::Custom {
+            let base_url = self.base_url_editor.as_ref(ctx).buffer_text(ctx);
+            if base_url.is_empty() {
+                *self.test_result.borrow_mut() =
+                    Some(Err("Base URL is required for custom providers".to_string()));
+                ctx.notify();
+                return;
+            }
         }
 
         // Set testing state and update button
@@ -226,6 +301,16 @@ impl DirectApiSettingsPageView {
                 }
             }
             ProviderType::Ollama => Ok("Ollama runs locally - no API key needed".to_string()),
+            ProviderType::OpenRouter => {
+                if !api_key.is_empty() {
+                    Ok("API key format valid (full test pending)".to_string())
+                } else {
+                    Err("OpenRouter API key cannot be empty".to_string())
+                }
+            }
+            ProviderType::Custom => {
+                Ok("Custom provider configured (full test pending)".to_string())
+            }
         };
 
         *self.is_testing.borrow_mut() = false;
@@ -240,7 +325,10 @@ impl DirectApiSettingsPageView {
         let provider = self.selected_provider.borrow().clone();
         let api_key = self.api_key_editor.as_ref(ctx).buffer_text(ctx);
 
-        if api_key.is_empty() && provider != ProviderType::Ollama {
+        if api_key.is_empty()
+            && provider != ProviderType::Ollama
+            && provider != ProviderType::Custom
+        {
             *self.test_result.borrow_mut() = Some(Err("Cannot save empty API key".to_string()));
             ctx.notify();
             return;
@@ -261,11 +349,31 @@ impl DirectApiSettingsPageView {
                 ProviderType::Ollama => {
                     // Ollama doesn't need an API key
                 }
+                ProviderType::OpenRouter => {
+                    manager.set_open_router_key(Some(api_key.clone()), ctx);
+                }
+                ProviderType::Custom => {
+                    // Custom providers can optionally have API keys
+                    if !api_key.is_empty() {
+                        manager.set_openai_key(Some(api_key.clone()), ctx);
+                    }
+                }
             }
         });
 
         *self.test_result.borrow_mut() = Some(Ok(format!(
             "{} API key saved successfully to keychain",
+            provider.as_str()
+        )));
+        ctx.notify();
+    }
+
+    fn handle_update_model_list(&mut self, ctx: &mut ViewContext<Self>) {
+        let provider = self.selected_provider.borrow().clone();
+
+        // TODO: Implement actual model list fetching from provider APIs
+        *self.test_result.borrow_mut() = Some(Ok(format!(
+            "Model list update for {} is not yet implemented",
             provider.as_str()
         )));
         ctx.notify();
@@ -289,6 +397,9 @@ impl TypedActionView for DirectApiSettingsPageView {
             }
             DirectApiPageAction::SaveApiKey => {
                 self.handle_save_api_key(ctx);
+            }
+            DirectApiPageAction::UpdateModelList => {
+                self.handle_update_model_list(ctx);
             }
         }
     }
@@ -350,7 +461,7 @@ impl SettingsWidget for TitleWidget {
     ) -> Box<dyn Element> {
         let description_text = "Configure direct API access to LLM providers. \
             This feature allows you to use your own API keys for OpenAI, Anthropic, Google Gemini, \
-            or run models locally with Ollama.";
+            OpenRouter, or run models locally with Ollama. You can also configure custom OpenAI-compatible providers.";
 
         let description = appearance
             .ui_builder()
@@ -397,6 +508,54 @@ impl SettingsWidget for ProviderSelectorWidget {
         let dropdown = ChildView::new(&view.provider_dropdown).finish();
         column.add_child(
             Container::new(dropdown)
+                .with_margin_bottom(ITEM_VERTICAL_SPACING)
+                .finish(),
+        );
+
+        column.finish()
+    }
+}
+
+#[derive(Default)]
+struct BaseUrlInputWidget {}
+
+impl SettingsWidget for BaseUrlInputWidget {
+    type View = DirectApiSettingsPageView;
+
+    fn search_terms(&self) -> &str {
+        "base url endpoint server ollama openrouter custom"
+    }
+
+    fn render(
+        &self,
+        view: &DirectApiSettingsPageView,
+        appearance: &Appearance,
+        _app: &AppContext,
+    ) -> Box<dyn Element> {
+        use warpui::elements::ChildView;
+
+        let provider = view.selected_provider.borrow().clone();
+
+        // Only show for providers that need base URL
+        if !provider.needs_base_url() {
+            return Container::new(appearance.ui_builder().span("").build().finish()).finish();
+        }
+
+        let mut column = Flex::column();
+
+        // Label
+        let label = appearance
+            .ui_builder()
+            .span("Base URL")
+            .build()
+            .with_margin_bottom(8.)
+            .finish();
+        column.add_child(label);
+
+        // Show actual editor
+        let editor = ChildView::new(&view.base_url_editor).finish();
+        column.add_child(
+            Container::new(editor)
                 .with_margin_bottom(ITEM_VERTICAL_SPACING)
                 .finish(),
         );
@@ -485,7 +644,14 @@ impl SettingsWidget for ActionButtonsWidget {
         );
 
         // Save button
-        row.add_child(ChildView::new(&view.save_button).finish());
+        row.add_child(
+            Container::new(ChildView::new(&view.save_button).finish())
+                .with_margin_right(12.)
+                .finish(),
+        );
+
+        // Update Model List button
+        row.add_child(ChildView::new(&view.update_model_list_button).finish());
 
         Container::new(row.finish())
             .with_margin_bottom(ITEM_VERTICAL_SPACING)
@@ -592,6 +758,18 @@ impl SettingsWidget for ConfiguredKeysWidget {
                 appearance
                     .ui_builder()
                     .span("✓ Google Gemini API key configured")
+                    .build()
+                    .with_margin_bottom(4.)
+                    .finish(),
+            );
+        }
+
+        if keys.open_router.is_some() {
+            has_keys = true;
+            column.add_child(
+                appearance
+                    .ui_builder()
+                    .span("✓ OpenRouter API key configured")
                     .build()
                     .with_margin_bottom(4.)
                     .finish(),
