@@ -7,6 +7,7 @@ use super::{
 };
 use crate::appearance::Appearance;
 use crate::editor::{EditorView, SingleLineEditorOptions, TextOptions};
+use crate::ui_components::icons::Icon;
 use crate::view_components::action_button::{ActionButton, NakedTheme};
 use crate::view_components::{Dropdown, DropdownItem};
 use ::ai::api_keys::ApiKeyManager;
@@ -64,6 +65,7 @@ pub enum DirectApiPageAction {
     TestConnection,
     SaveApiKey,
     UpdateModelList,
+    ToggleApiKeyVisibility,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -161,9 +163,11 @@ pub struct DirectApiSettingsPageView {
     selected_provider: RefCell<ProviderType>,
     test_result: RefCell<Option<Result<String, String>>>,
     is_testing: RefCell<bool>,
+    show_api_key: RefCell<bool>,
     test_button: ViewHandle<ActionButton>,
     save_button: ViewHandle<ActionButton>,
     update_model_list_button: ViewHandle<ActionButton>,
+    toggle_visibility_button: ViewHandle<ActionButton>,
 }
 
 impl DirectApiSettingsPageView {
@@ -247,6 +251,16 @@ impl DirectApiSettingsPageView {
             })
         });
 
+        // Create show/hide visibility toggle for the API Key input
+        let toggle_visibility_button = ctx.add_typed_action_view(|_| {
+            ActionButton::new("", NakedTheme)
+                .with_icon(Icon::Eye)
+                .with_tooltip("Show API key")
+                .on_click(|ctx| {
+                    ctx.dispatch_typed_action(DirectApiPageAction::ToggleApiKeyVisibility);
+                })
+        });
+
         Self {
             page: Self::build_page(ctx),
             api_key_manager,
@@ -256,9 +270,11 @@ impl DirectApiSettingsPageView {
             selected_provider: RefCell::new(ProviderType::OpenAI),
             test_result: RefCell::new(None),
             is_testing: RefCell::new(false),
+            show_api_key: RefCell::new(false),
             test_button,
             save_button,
             update_model_list_button,
+            toggle_visibility_button,
         }
     }
 
@@ -452,6 +468,27 @@ impl DirectApiSettingsPageView {
         )));
         ctx.notify();
     }
+
+    fn handle_toggle_api_key_visibility(&mut self, ctx: &mut ViewContext<Self>) {
+        let new_show = !*self.show_api_key.borrow();
+        *self.show_api_key.borrow_mut() = new_show;
+
+        self.api_key_editor.update(ctx, |editor, ctx| {
+            editor.set_is_password(!new_show, ctx);
+        });
+
+        let tooltip = if new_show {
+            "Hide API key"
+        } else {
+            "Show API key"
+        };
+        self.toggle_visibility_button.update(ctx, |button, ctx| {
+            button.set_active(new_show, ctx);
+            button.set_tooltip(Some(tooltip), ctx);
+        });
+
+        ctx.notify();
+    }
 }
 
 impl Entity for DirectApiSettingsPageView {
@@ -474,6 +511,9 @@ impl TypedActionView for DirectApiSettingsPageView {
             }
             DirectApiPageAction::UpdateModelList => {
                 self.handle_update_model_list(ctx);
+            }
+            DirectApiPageAction::ToggleApiKeyVisibility => {
+                self.handle_toggle_api_key_visibility(ctx);
             }
         }
     }
@@ -652,6 +692,8 @@ impl SettingsWidget for ApiKeyInputWidget {
         appearance: &Appearance,
         _app: &AppContext,
     ) -> Box<dyn Element> {
+        use warpui::elements::ChildView;
+
         let mut column = Flex::column();
 
         // Label
@@ -663,10 +705,20 @@ impl SettingsWidget for ApiKeyInputWidget {
             .finish();
         column.add_child(label);
 
-        // Chromed editor
+        // Chromed editor + eye toggle, side-by-side
         let editor = render_chromed_input(view.api_key_editor.clone(), appearance);
+        let toggle = ChildView::new(&view.toggle_visibility_button).finish();
+        let row = Flex::row()
+            .with_child(
+                Container::new(editor)
+                    .with_margin_right(8.)
+                    .finish(),
+            )
+            .with_child(toggle)
+            .finish();
+
         column.add_child(
-            Container::new(editor)
+            Container::new(row)
                 .with_margin_bottom(ITEM_VERTICAL_SPACING)
                 .finish(),
         );
