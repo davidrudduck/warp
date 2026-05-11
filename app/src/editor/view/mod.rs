@@ -4508,6 +4508,15 @@ impl EditorView {
         ctx.notify();
     }
 
+    /// Toggle whether this editor masks its content as a password field.
+    /// Triggers a re-render via `ctx.notify()`.
+    pub fn set_is_password(&mut self, is_password: bool, ctx: &mut ViewContext<Self>) {
+        if self.is_password != is_password {
+            self.is_password = is_password;
+            ctx.notify();
+        }
+    }
+
     pub fn set_buffer_text_with_base_buffer(&mut self, content: &str, ctx: &mut ViewContext<Self>) {
         self.set_base_buffer_text(content.to_string(), ctx);
         self.set_buffer_text(content, ctx);
