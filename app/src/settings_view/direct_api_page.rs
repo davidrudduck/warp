@@ -314,7 +314,12 @@ impl DirectApiSettingsPageView {
 
         if needs_base_url {
             self.base_url_editor.update(ctx, |editor, ctx| {
-                editor.set_buffer_text(default_base_url, ctx);
+                // Only seed the buffer when empty — preserve any URL the user
+                // typed previously, e.g. a Custom provider's endpoint, instead
+                // of clobbering it on every re-selection of the dropdown.
+                if editor.buffer_text(ctx).is_empty() {
+                    editor.set_buffer_text(default_base_url, ctx);
+                }
                 editor.set_placeholder_text(base_url_placeholder, ctx);
             });
         }
