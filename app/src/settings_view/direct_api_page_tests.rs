@@ -31,7 +31,10 @@ fn base_url_placeholder_for_each_provider() {
 
 #[test]
 fn default_base_url_only_prefilled_for_known_endpoints() {
-    assert_eq!(ProviderType::Ollama.default_base_url(), "http://localhost:11434");
+    assert_eq!(
+        ProviderType::Ollama.default_base_url(),
+        "http://localhost:11434"
+    );
     assert_eq!(
         ProviderType::OpenRouter.default_base_url(),
         "https://openrouter.ai/api/v1"

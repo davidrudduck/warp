@@ -43,9 +43,7 @@ fn render_chromed_input(
             background: Some(bg_fill.into()),
             border_width: Some(1.),
             border_color: Some(border_fill),
-            border_radius: Some(CornerRadius::with_all(Radius::Pixels(
-                INPUT_BORDER_RADIUS,
-            ))),
+            border_radius: Some(CornerRadius::with_all(Radius::Pixels(INPUT_BORDER_RADIUS))),
             font_color: Some(text_color),
             padding: Some(Coords {
                 top: INPUT_PADDING_VERTICAL,
@@ -709,11 +707,7 @@ impl SettingsWidget for ApiKeyInputWidget {
         let editor = render_chromed_input(view.api_key_editor.clone(), appearance);
         let toggle = ChildView::new(&view.toggle_visibility_button).finish();
         let row = Flex::row()
-            .with_child(
-                Container::new(editor)
-                    .with_margin_right(8.)
-                    .finish(),
-            )
+            .with_child(Container::new(editor).with_margin_right(8.).finish())
             .with_child(toggle)
             .finish();
 
