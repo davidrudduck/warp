@@ -285,18 +285,29 @@ impl DirectApiSettingsPageView {
     }
 
     fn handle_select_provider(&mut self, provider_name: &str, ctx: &mut ViewContext<Self>) {
-        if let Some(provider) = ProviderType::from_str(provider_name) {
-            // Update base URL editor with default for this provider
-            if provider.needs_base_url() {
-                self.base_url_editor.update(ctx, |editor, ctx| {
-                    editor.set_buffer_text(provider.default_base_url(), ctx);
-                });
-            }
+        let Some(provider) = ProviderType::from_str(provider_name) else {
+            return;
+        };
 
-            *self.selected_provider.borrow_mut() = provider;
-            *self.test_result.borrow_mut() = None;
-            ctx.notify();
+        let api_key_placeholder = provider.api_key_placeholder();
+        let base_url_placeholder = provider.base_url_placeholder();
+        let default_base_url = provider.default_base_url();
+        let needs_base_url = provider.needs_base_url();
+
+        self.api_key_editor.update(ctx, |editor, ctx| {
+            editor.set_placeholder_text(api_key_placeholder, ctx);
+        });
+
+        if needs_base_url {
+            self.base_url_editor.update(ctx, |editor, ctx| {
+                editor.set_buffer_text(default_base_url, ctx);
+                editor.set_placeholder_text(base_url_placeholder, ctx);
+            });
         }
+
+        *self.selected_provider.borrow_mut() = provider;
+        *self.test_result.borrow_mut() = None;
+        ctx.notify();
     }
 
     fn handle_test_connection(&mut self, ctx: &mut ViewContext<Self>) {
