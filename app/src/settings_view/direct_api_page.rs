@@ -162,6 +162,49 @@ impl ProviderType {
             ProviderType::Custom => "https://api.example.com/v1",
         }
     }
+
+    /// Validate the API key format for this provider. Returns `Ok(())` if
+    /// the key is well-formed (or unused for Ollama/Custom), `Err(message)`
+    /// with a user-facing reason otherwise. Centralised so the "Test
+    /// Connection" and "Save to Keychain" flows can't drift apart — and so
+    /// you can't save a key into a slot that would fail validation later.
+    pub(super) fn validate_api_key(&self, key: &str) -> Result<(), String> {
+        match self {
+            ProviderType::OpenAI => {
+                if key.is_empty() {
+                    Err("OpenAI API key cannot be empty".to_string())
+                } else if !key.starts_with("sk-") {
+                    Err("OpenAI API keys should start with 'sk-'".to_string())
+                } else {
+                    Ok(())
+                }
+            }
+            ProviderType::Anthropic => {
+                if key.is_empty() {
+                    Err("Anthropic API key cannot be empty".to_string())
+                } else if !key.starts_with("sk-ant-") {
+                    Err("Anthropic API keys should start with 'sk-ant-'".to_string())
+                } else {
+                    Ok(())
+                }
+            }
+            ProviderType::GoogleGemini => {
+                if key.is_empty() {
+                    Err("Google Gemini API key cannot be empty".to_string())
+                } else {
+                    Ok(())
+                }
+            }
+            ProviderType::OpenRouter => {
+                if key.is_empty() {
+                    Err("OpenRouter API key cannot be empty".to_string())
+                } else {
+                    Ok(())
+                }
+            }
+            ProviderType::Ollama | ProviderType::Custom => Ok(()),
+        }
+    }
 }
 
 pub struct DirectApiSettingsPageView {
@@ -350,24 +393,14 @@ impl DirectApiSettingsPageView {
         let provider = self.selected_provider.borrow().clone();
         let api_key = self.api_key_editor.as_ref(ctx).buffer_text(ctx);
 
-        if api_key.is_empty()
-            && provider != ProviderType::Ollama
-            && provider != ProviderType::Custom
-        {
-            *self.test_result.borrow_mut() = Some(Err("API key cannot be empty".to_string()));
+        // Format validation first — shared with the save path.
+        if let Err(msg) = provider.validate_api_key(&api_key) {
+            *self.test_result.borrow_mut() = Some(Err(msg));
             ctx.notify();
             return;
         }
 
-        // For Ollama, no API key is needed
-        if provider == ProviderType::Ollama {
-            *self.test_result.borrow_mut() =
-                Some(Ok("Ollama runs locally - no API key needed".to_string()));
-            ctx.notify();
-            return;
-        }
-
-        // For Custom provider, API key is optional
+        // Custom providers also need a Base URL to be testable.
         if provider == ProviderType::Custom {
             let base_url = self.base_url_editor.as_ref(ctx).buffer_text(ctx);
             if base_url.is_empty() {
@@ -386,45 +419,19 @@ impl DirectApiSettingsPageView {
         });
         ctx.notify();
 
-        // TODO: Implement actual API validation
-        // For now, just validate format
-        let result = match provider {
-            ProviderType::OpenAI => {
-                if api_key.starts_with("sk-") {
-                    Ok("API key format valid (full test pending)".to_string())
-                } else {
-                    Err("OpenAI API keys should start with 'sk-'".to_string())
-                }
-            }
-            ProviderType::Anthropic => {
-                if api_key.starts_with("sk-ant-") {
-                    Ok("API key format valid (full test pending)".to_string())
-                } else {
-                    Err("Anthropic API keys should start with 'sk-ant-'".to_string())
-                }
-            }
-            ProviderType::GoogleGemini => {
-                if !api_key.is_empty() {
-                    Ok("API key format valid (full test pending)".to_string())
-                } else {
-                    Err("Google API key cannot be empty".to_string())
-                }
-            }
-            ProviderType::Ollama => Ok("Ollama runs locally - no API key needed".to_string()),
-            ProviderType::OpenRouter => {
-                if !api_key.is_empty() {
-                    Ok("API key format valid (full test pending)".to_string())
-                } else {
-                    Err("OpenRouter API key cannot be empty".to_string())
-                }
-            }
-            ProviderType::Custom => {
-                Ok("Custom provider configured (full test pending)".to_string())
-            }
+        // TODO: Implement actual API validation. For now, surface a
+        // provider-appropriate "format valid, full test pending" message.
+        let msg = match provider {
+            ProviderType::Ollama => "Ollama runs locally - no API key needed".to_string(),
+            ProviderType::Custom => "Custom provider configured (full test pending)".to_string(),
+            ProviderType::OpenAI
+            | ProviderType::Anthropic
+            | ProviderType::GoogleGemini
+            | ProviderType::OpenRouter => "API key format valid (full test pending)".to_string(),
         };
 
         *self.is_testing.borrow_mut() = false;
-        *self.test_result.borrow_mut() = Some(result);
+        *self.test_result.borrow_mut() = Some(Ok(msg));
         self.test_button.update(ctx, |button, ctx| {
             button.set_disabled(false, ctx);
         });
@@ -435,11 +442,11 @@ impl DirectApiSettingsPageView {
         let provider = self.selected_provider.borrow().clone();
         let api_key = self.api_key_editor.as_ref(ctx).buffer_text(ctx);
 
-        if api_key.is_empty()
-            && provider != ProviderType::Ollama
-            && provider != ProviderType::Custom
-        {
-            *self.test_result.borrow_mut() = Some(Err("Cannot save empty API key".to_string()));
+        // Same format validation as Test Connection — refuses to save a key
+        // that would later fail format checks (e.g. a Stripe key pasted into
+        // the Anthropic slot).
+        if let Err(msg) = provider.validate_api_key(&api_key) {
+            *self.test_result.borrow_mut() = Some(Err(msg));
             ctx.notify();
             return;
         }
