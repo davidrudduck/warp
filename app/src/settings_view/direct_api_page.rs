@@ -11,15 +11,52 @@ use crate::view_components::action_button::{ActionButton, NakedTheme};
 use crate::view_components::{Dropdown, DropdownItem};
 use ::ai::api_keys::ApiKeyManager;
 use std::cell::RefCell;
+use warp_core::ui::theme::color::internal_colors;
 use warpui::{
-    elements::{Container, Element, Flex, ParentElement},
-    ui_components::components::UiComponent,
+    elements::{Container, CornerRadius, Element, Fill, Flex, ParentElement, Radius},
+    ui_components::components::{Coords, UiComponent, UiComponentStyles},
     AppContext, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle,
 };
 
 const ITEM_VERTICAL_SPACING: f32 = 24.;
 const DROPDOWN_WIDTH: f32 = 225.;
+const INPUT_BORDER_RADIUS: f32 = 6.;
+const INPUT_PADDING_VERTICAL: f32 = 10.;
+const INPUT_PADDING_HORIZONTAL: f32 = 12.;
+
+fn render_chromed_input(
+    editor: ViewHandle<EditorView>,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    let theme = appearance.theme();
+    let bg_fill = theme.surface_2();
+    let bg_solid = bg_fill.into_solid();
+    let text_color = internal_colors::text_main(theme, bg_solid);
+    let border_fill = Fill::Solid(internal_colors::neutral_4(theme));
+
+    appearance
+        .ui_builder()
+        .text_input(editor)
+        .with_style(UiComponentStyles {
+            background: Some(bg_fill.into()),
+            border_width: Some(1.),
+            border_color: Some(border_fill),
+            border_radius: Some(CornerRadius::with_all(Radius::Pixels(
+                INPUT_BORDER_RADIUS,
+            ))),
+            font_color: Some(text_color),
+            padding: Some(Coords {
+                top: INPUT_PADDING_VERTICAL,
+                bottom: INPUT_PADDING_VERTICAL,
+                left: INPUT_PADDING_HORIZONTAL,
+                right: INPUT_PADDING_HORIZONTAL,
+            }),
+            ..Default::default()
+        })
+        .build()
+        .finish()
+}
 
 #[derive(Debug, Clone)]
 pub enum DirectApiPageAction {
@@ -558,11 +595,9 @@ impl SettingsWidget for BaseUrlInputWidget {
         appearance: &Appearance,
         _app: &AppContext,
     ) -> Box<dyn Element> {
-        use warpui::elements::ChildView;
-
         let provider = view.selected_provider.borrow().clone();
 
-        // Only show for providers that need base URL
+        // Only show for providers that need base URL.
         if !provider.needs_base_url() {
             return Container::new(appearance.ui_builder().span("").build().finish()).finish();
         }
@@ -578,8 +613,8 @@ impl SettingsWidget for BaseUrlInputWidget {
             .finish();
         column.add_child(label);
 
-        // Show actual editor
-        let editor = ChildView::new(&view.base_url_editor).finish();
+        // Chromed editor
+        let editor = render_chromed_input(view.base_url_editor.clone(), appearance);
         column.add_child(
             Container::new(editor)
                 .with_margin_bottom(ITEM_VERTICAL_SPACING)
@@ -606,32 +641,19 @@ impl SettingsWidget for ApiKeyInputWidget {
         appearance: &Appearance,
         _app: &AppContext,
     ) -> Box<dyn Element> {
-        use warpui::elements::ChildView;
-
         let mut column = Flex::column();
 
-        let provider = view.selected_provider.borrow().clone();
-
-        // Label with note for Ollama
-        let label = if provider == ProviderType::Ollama {
-            appearance
-                .ui_builder()
-                .span("API Key (not required for Ollama)")
-                .build()
-                .with_margin_bottom(8.)
-                .finish()
-        } else {
-            appearance
-                .ui_builder()
-                .span("API Key")
-                .build()
-                .with_margin_bottom(8.)
-                .finish()
-        };
+        // Label
+        let label = appearance
+            .ui_builder()
+            .span("API Key")
+            .build()
+            .with_margin_bottom(8.)
+            .finish();
         column.add_child(label);
 
-        // Show actual editor
-        let editor = ChildView::new(&view.api_key_editor).finish();
+        // Chromed editor
+        let editor = render_chromed_input(view.api_key_editor.clone(), appearance);
         column.add_child(
             Container::new(editor)
                 .with_margin_bottom(ITEM_VERTICAL_SPACING)
