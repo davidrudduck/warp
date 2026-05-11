@@ -11,7 +11,7 @@ use crate::ui_components::icons::Icon;
 use crate::view_components::action_button::{ActionButton, NakedTheme};
 use crate::view_components::{Dropdown, DropdownItem};
 use ::ai::api_keys::ApiKeyManager;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use warp_core::ui::theme::color::internal_colors;
 use warpui::{
     elements::{Container, CornerRadius, Element, Fill, Flex, ParentElement, Radius},
@@ -25,6 +25,18 @@ const DROPDOWN_WIDTH: f32 = 225.;
 const INPUT_BORDER_RADIUS: f32 = 6.;
 const INPUT_PADDING_VERTICAL: f32 = 10.;
 const INPUT_PADDING_HORIZONTAL: f32 = 12.;
+
+/// Tooltip text shown on the API Key visibility toggle button.
+///
+/// Pure function so the state-machine half of the toggle can be tested
+/// without instantiating a view.
+fn visibility_tooltip(show: bool) -> &'static str {
+    if show {
+        "Hide API key"
+    } else {
+        "Show API key"
+    }
+}
 
 fn render_chromed_input(
     editor: ViewHandle<EditorView>,
@@ -161,7 +173,7 @@ pub struct DirectApiSettingsPageView {
     selected_provider: RefCell<ProviderType>,
     test_result: RefCell<Option<Result<String, String>>>,
     is_testing: RefCell<bool>,
-    show_api_key: RefCell<bool>,
+    show_api_key: Cell<bool>,
     test_button: ViewHandle<ActionButton>,
     save_button: ViewHandle<ActionButton>,
     update_model_list_button: ViewHandle<ActionButton>,
@@ -268,7 +280,7 @@ impl DirectApiSettingsPageView {
             selected_provider: RefCell::new(ProviderType::OpenAI),
             test_result: RefCell::new(None),
             is_testing: RefCell::new(false),
-            show_api_key: RefCell::new(false),
+            show_api_key: Cell::new(false),
             test_button,
             save_button,
             update_model_list_button,
@@ -323,6 +335,11 @@ impl DirectApiSettingsPageView {
                 editor.set_placeholder_text(base_url_placeholder, ctx);
             });
         }
+
+        // Switching providers always clears the API key buffer and re-masks
+        // the field — prevents a key entered for one provider from lingering
+        // (possibly unmasked) under a different provider's label.
+        self.clear_and_remask_api_key(ctx);
 
         *self.selected_provider.borrow_mut() = provider;
         *self.test_result.borrow_mut() = None;
@@ -454,6 +471,12 @@ impl DirectApiSettingsPageView {
             }
         });
 
+        // Wipe the buffer and re-mask after a successful save. The keychain
+        // is the source of truth from here on; leaving the cleartext key
+        // visible (and revealable via the eye toggle) after the user has
+        // already saved it is a shoulder-surfing footgun.
+        self.clear_and_remask_api_key(ctx);
+
         *self.test_result.borrow_mut() = Some(Ok(format!(
             "{} API key saved successfully to keychain",
             provider.as_str()
@@ -473,24 +496,38 @@ impl DirectApiSettingsPageView {
     }
 
     fn handle_toggle_api_key_visibility(&mut self, ctx: &mut ViewContext<Self>) {
-        let new_show = !*self.show_api_key.borrow();
-        *self.show_api_key.borrow_mut() = new_show;
+        let new_show = !self.show_api_key.get();
+        self.apply_api_key_visibility(new_show, ctx);
+        ctx.notify();
+    }
+
+    /// Drive the API key visibility state machine: editor masking, toggle
+    /// button's active styling, tooltip, and the page's local `show_api_key`
+    /// flag. Centralised so `handle_select_provider` and `handle_save_api_key`
+    /// can reset to masked without duplicating the wiring.
+    fn apply_api_key_visibility(&mut self, show: bool, ctx: &mut ViewContext<Self>) {
+        self.show_api_key.set(show);
 
         self.api_key_editor.update(ctx, |editor, ctx| {
-            editor.set_is_password(!new_show, ctx);
+            editor.set_is_password(!show, ctx);
         });
 
-        let tooltip = if new_show {
-            "Hide API key"
-        } else {
-            "Show API key"
-        };
+        let tooltip = visibility_tooltip(show);
         self.toggle_visibility_button.update(ctx, |button, ctx| {
-            button.set_active(new_show, ctx);
+            button.set_active(show, ctx);
             button.set_tooltip(Some(tooltip), ctx);
         });
+    }
 
-        ctx.notify();
+    /// Clear the API key buffer and force the visibility back to masked.
+    /// Called after a successful save and whenever the provider changes, so
+    /// a previously-typed (possibly revealed) key never bleeds across
+    /// provider switches or lingers after the user has saved it.
+    fn clear_and_remask_api_key(&mut self, ctx: &mut ViewContext<Self>) {
+        self.api_key_editor.update(ctx, |editor, ctx| {
+            editor.set_buffer_text("", ctx);
+        });
+        self.apply_api_key_visibility(false, ctx);
     }
 }
 
