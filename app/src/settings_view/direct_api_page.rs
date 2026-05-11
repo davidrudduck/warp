@@ -30,7 +30,7 @@ pub enum DirectApiPageAction {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum ProviderType {
+pub(super) enum ProviderType {
     OpenAI,
     Anthropic,
     GoogleGemini,
@@ -40,7 +40,7 @@ enum ProviderType {
 }
 
 impl ProviderType {
-    fn as_str(&self) -> &'static str {
+    pub(super) fn as_str(&self) -> &'static str {
         match self {
             ProviderType::OpenAI => "OpenAI",
             ProviderType::Anthropic => "Anthropic",
@@ -51,7 +51,7 @@ impl ProviderType {
         }
     }
 
-    fn from_str(s: &str) -> Option<Self> {
+    pub(super) fn from_str(s: &str) -> Option<Self> {
         match s {
             "OpenAI" => Some(ProviderType::OpenAI),
             "Anthropic" => Some(ProviderType::Anthropic),
@@ -63,7 +63,7 @@ impl ProviderType {
         }
     }
 
-    fn all() -> Vec<Self> {
+    pub(super) fn all() -> Vec<Self> {
         vec![
             ProviderType::OpenAI,
             ProviderType::Anthropic,
@@ -74,19 +74,43 @@ impl ProviderType {
         ]
     }
 
-    fn needs_base_url(&self) -> bool {
+    pub(super) fn needs_base_url(&self) -> bool {
         matches!(
             self,
             ProviderType::Ollama | ProviderType::OpenRouter | ProviderType::Custom
         )
     }
 
-    fn default_base_url(&self) -> &'static str {
+    pub(super) fn default_base_url(&self) -> &'static str {
         match self {
             ProviderType::Ollama => "http://localhost:11434",
             ProviderType::OpenRouter => "https://openrouter.ai/api/v1",
             ProviderType::Custom => "",
-            _ => "",
+            ProviderType::OpenAI => "",
+            ProviderType::Anthropic => "",
+            ProviderType::GoogleGemini => "",
+        }
+    }
+
+    pub(super) fn api_key_placeholder(&self) -> &'static str {
+        match self {
+            ProviderType::OpenAI => "sk-...",
+            ProviderType::Anthropic => "sk-ant-...",
+            ProviderType::GoogleGemini => "AIza...",
+            ProviderType::Ollama => "Optional",
+            ProviderType::OpenRouter => "sk-or-...",
+            ProviderType::Custom => "Optional",
+        }
+    }
+
+    pub(super) fn base_url_placeholder(&self) -> &'static str {
+        match self {
+            ProviderType::OpenAI => "",
+            ProviderType::Anthropic => "",
+            ProviderType::GoogleGemini => "",
+            ProviderType::Ollama => "http://localhost:11434",
+            ProviderType::OpenRouter => "https://openrouter.ai/api/v1",
+            ProviderType::Custom => "https://api.example.com/v1",
         }
     }
 }
@@ -790,3 +814,7 @@ impl SettingsWidget for ConfiguredKeysWidget {
         column.finish()
     }
 }
+
+#[cfg(test)]
+#[path = "direct_api_page_tests.rs"]
+mod tests;
