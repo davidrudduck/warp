@@ -155,13 +155,14 @@ impl DirectApiSettingsPageView {
             dropdown
         });
 
-        // Create API key input editor
+        // Create API key input editor (masked by default; toggle button reveals)
         let api_key_editor = ctx.add_typed_action_view(|ctx| {
             let options = SingleLineEditorOptions {
                 text: TextOptions {
                     font_size_override: Some(ui_font_size),
                     ..Default::default()
                 },
+                is_password: true,
                 ..Default::default()
             };
             EditorView::single_line(options, ctx)
@@ -169,6 +170,7 @@ impl DirectApiSettingsPageView {
 
         api_key_editor.update(ctx, |editor, ctx| {
             editor.set_buffer_text("", ctx);
+            editor.set_placeholder_text(ProviderType::OpenAI.api_key_placeholder(), ctx);
         });
 
         // Create base URL editor
