@@ -1091,7 +1091,7 @@ impl SettingsView {
         });
 
         // Direct API page
-        let direct_api_page_handle = ctx.add_view(DirectApiSettingsPageView::new);
+        let direct_api_page_handle = ctx.add_typed_action_view(DirectApiSettingsPageView::new);
 
         // Teams page, adding unconditionally, as `should_render` later on decides whether it
         // should be shown to the user or not

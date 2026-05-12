@@ -14,7 +14,7 @@ use ::ai::api_keys::ApiKeyManager;
 use std::cell::{Cell, RefCell};
 use warp_core::ui::theme::color::internal_colors;
 use warpui::{
-    elements::{Container, CornerRadius, Element, Fill, Flex, ParentElement, Radius},
+    elements::{ConstrainedBox, Container, CornerRadius, Element, Fill, Flex, ParentElement, Radius},
     ui_components::components::{Coords, UiComponent, UiComponentStyles},
     AppContext, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle,
@@ -22,6 +22,7 @@ use warpui::{
 
 const ITEM_VERTICAL_SPACING: f32 = 24.;
 const DROPDOWN_WIDTH: f32 = 225.;
+const INPUT_MAX_WIDTH: f32 = 360.;
 const INPUT_BORDER_RADIUS: f32 = 6.;
 const INPUT_PADDING_VERTICAL: f32 = 10.;
 const INPUT_PADDING_HORIZONTAL: f32 = 12.;
@@ -48,7 +49,7 @@ fn render_chromed_input(
     let text_color = internal_colors::text_main(theme, bg_solid);
     let border_fill = Fill::Solid(internal_colors::neutral_4(theme));
 
-    appearance
+    let input = appearance
         .ui_builder()
         .text_input(editor)
         .with_style(UiComponentStyles {
@@ -66,6 +67,10 @@ fn render_chromed_input(
             ..Default::default()
         })
         .build()
+        .finish();
+
+    ConstrainedBox::new(input)
+        .with_max_width(INPUT_MAX_WIDTH)
         .finish()
 }
 
