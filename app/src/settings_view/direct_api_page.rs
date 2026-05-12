@@ -7,19 +7,67 @@ use super::{
 };
 use crate::appearance::Appearance;
 use crate::editor::{EditorView, SingleLineEditorOptions, TextOptions};
+use crate::ui_components::icons::Icon;
 use crate::view_components::action_button::{ActionButton, NakedTheme};
 use crate::view_components::{Dropdown, DropdownItem};
 use ::ai::api_keys::ApiKeyManager;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
+use warp_core::ui::theme::color::internal_colors;
 use warpui::{
-    elements::{Container, Element, Flex, ParentElement},
-    ui_components::components::UiComponent,
+    elements::{Container, CornerRadius, Element, Fill, Flex, ParentElement, Radius},
+    ui_components::components::{Coords, UiComponent, UiComponentStyles},
     AppContext, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle,
 };
 
 const ITEM_VERTICAL_SPACING: f32 = 24.;
 const DROPDOWN_WIDTH: f32 = 225.;
+const INPUT_BORDER_RADIUS: f32 = 6.;
+const INPUT_PADDING_VERTICAL: f32 = 10.;
+const INPUT_PADDING_HORIZONTAL: f32 = 12.;
+
+/// Tooltip text shown on the API Key visibility toggle button.
+///
+/// Pure function so the state-machine half of the toggle can be tested
+/// without instantiating a view.
+fn visibility_tooltip(show: bool) -> &'static str {
+    if show {
+        "Hide API key"
+    } else {
+        "Show API key"
+    }
+}
+
+fn render_chromed_input(
+    editor: ViewHandle<EditorView>,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    let theme = appearance.theme();
+    let bg_fill = theme.surface_2();
+    let bg_solid = bg_fill.into_solid();
+    let text_color = internal_colors::text_main(theme, bg_solid);
+    let border_fill = Fill::Solid(internal_colors::neutral_4(theme));
+
+    appearance
+        .ui_builder()
+        .text_input(editor)
+        .with_style(UiComponentStyles {
+            background: Some(bg_fill.into()),
+            border_width: Some(1.),
+            border_color: Some(border_fill),
+            border_radius: Some(CornerRadius::with_all(Radius::Pixels(INPUT_BORDER_RADIUS))),
+            font_color: Some(text_color),
+            padding: Some(Coords {
+                top: INPUT_PADDING_VERTICAL,
+                bottom: INPUT_PADDING_VERTICAL,
+                left: INPUT_PADDING_HORIZONTAL,
+                right: INPUT_PADDING_HORIZONTAL,
+            }),
+            ..Default::default()
+        })
+        .build()
+        .finish()
+}
 
 #[derive(Debug, Clone)]
 pub enum DirectApiPageAction {
@@ -27,10 +75,11 @@ pub enum DirectApiPageAction {
     TestConnection,
     SaveApiKey,
     UpdateModelList,
+    ToggleApiKeyVisibility,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum ProviderType {
+pub(super) enum ProviderType {
     OpenAI,
     Anthropic,
     GoogleGemini,
@@ -40,7 +89,7 @@ enum ProviderType {
 }
 
 impl ProviderType {
-    fn as_str(&self) -> &'static str {
+    pub(super) fn as_str(&self) -> &'static str {
         match self {
             ProviderType::OpenAI => "OpenAI",
             ProviderType::Anthropic => "Anthropic",
@@ -51,7 +100,7 @@ impl ProviderType {
         }
     }
 
-    fn from_str(s: &str) -> Option<Self> {
+    pub(super) fn from_str(s: &str) -> Option<Self> {
         match s {
             "OpenAI" => Some(ProviderType::OpenAI),
             "Anthropic" => Some(ProviderType::Anthropic),
@@ -63,7 +112,7 @@ impl ProviderType {
         }
     }
 
-    fn all() -> Vec<Self> {
+    pub(super) fn all() -> Vec<Self> {
         vec![
             ProviderType::OpenAI,
             ProviderType::Anthropic,
@@ -74,19 +123,86 @@ impl ProviderType {
         ]
     }
 
-    fn needs_base_url(&self) -> bool {
+    pub(super) fn needs_base_url(&self) -> bool {
         matches!(
             self,
             ProviderType::Ollama | ProviderType::OpenRouter | ProviderType::Custom
         )
     }
 
-    fn default_base_url(&self) -> &'static str {
+    pub(super) fn default_base_url(&self) -> &'static str {
         match self {
             ProviderType::Ollama => "http://localhost:11434",
             ProviderType::OpenRouter => "https://openrouter.ai/api/v1",
             ProviderType::Custom => "",
-            _ => "",
+            ProviderType::OpenAI => "",
+            ProviderType::Anthropic => "",
+            ProviderType::GoogleGemini => "",
+        }
+    }
+
+    pub(super) fn api_key_placeholder(&self) -> &'static str {
+        match self {
+            ProviderType::OpenAI => "sk-...",
+            ProviderType::Anthropic => "sk-ant-...",
+            ProviderType::GoogleGemini => "AIza...",
+            ProviderType::Ollama => "Optional",
+            ProviderType::OpenRouter => "sk-or-...",
+            ProviderType::Custom => "Optional",
+        }
+    }
+
+    pub(super) fn base_url_placeholder(&self) -> &'static str {
+        match self {
+            ProviderType::OpenAI => "",
+            ProviderType::Anthropic => "",
+            ProviderType::GoogleGemini => "",
+            ProviderType::Ollama => "http://localhost:11434",
+            ProviderType::OpenRouter => "https://openrouter.ai/api/v1",
+            ProviderType::Custom => "https://api.example.com/v1",
+        }
+    }
+
+    /// Validate the API key format for this provider. Returns `Ok(())` if
+    /// the key is well-formed (or unused for Ollama/Custom), `Err(message)`
+    /// with a user-facing reason otherwise. Centralised so the "Test
+    /// Connection" and "Save to Keychain" flows can't drift apart — and so
+    /// you can't save a key into a slot that would fail validation later.
+    pub(super) fn validate_api_key(&self, key: &str) -> Result<(), String> {
+        match self {
+            ProviderType::OpenAI => {
+                if key.is_empty() {
+                    Err("OpenAI API key cannot be empty".to_string())
+                } else if !key.starts_with("sk-") {
+                    Err("OpenAI API keys should start with 'sk-'".to_string())
+                } else {
+                    Ok(())
+                }
+            }
+            ProviderType::Anthropic => {
+                if key.is_empty() {
+                    Err("Anthropic API key cannot be empty".to_string())
+                } else if !key.starts_with("sk-ant-") {
+                    Err("Anthropic API keys should start with 'sk-ant-'".to_string())
+                } else {
+                    Ok(())
+                }
+            }
+            ProviderType::GoogleGemini => {
+                if key.is_empty() {
+                    Err("Google Gemini API key cannot be empty".to_string())
+                } else {
+                    Ok(())
+                }
+            }
+            ProviderType::OpenRouter => {
+                if key.is_empty() {
+                    Err("OpenRouter API key cannot be empty".to_string())
+                } else {
+                    Ok(())
+                }
+            }
+            ProviderType::Ollama | ProviderType::Custom => Ok(()),
         }
     }
 }
@@ -100,9 +216,11 @@ pub struct DirectApiSettingsPageView {
     selected_provider: RefCell<ProviderType>,
     test_result: RefCell<Option<Result<String, String>>>,
     is_testing: RefCell<bool>,
+    show_api_key: Cell<bool>,
     test_button: ViewHandle<ActionButton>,
     save_button: ViewHandle<ActionButton>,
     update_model_list_button: ViewHandle<ActionButton>,
+    toggle_visibility_button: ViewHandle<ActionButton>,
 }
 
 impl DirectApiSettingsPageView {
@@ -131,13 +249,14 @@ impl DirectApiSettingsPageView {
             dropdown
         });
 
-        // Create API key input editor
+        // Create API key input editor (masked by default; toggle button reveals)
         let api_key_editor = ctx.add_typed_action_view(|ctx| {
             let options = SingleLineEditorOptions {
                 text: TextOptions {
                     font_size_override: Some(ui_font_size),
                     ..Default::default()
                 },
+                is_password: true,
                 ..Default::default()
             };
             EditorView::single_line(options, ctx)
@@ -145,6 +264,7 @@ impl DirectApiSettingsPageView {
 
         api_key_editor.update(ctx, |editor, ctx| {
             editor.set_buffer_text("", ctx);
+            editor.set_placeholder_text(ProviderType::OpenAI.api_key_placeholder(), ctx);
         });
 
         // Create base URL editor
@@ -184,6 +304,16 @@ impl DirectApiSettingsPageView {
             })
         });
 
+        // Create show/hide visibility toggle for the API Key input
+        let toggle_visibility_button = ctx.add_typed_action_view(|_| {
+            ActionButton::new("", NakedTheme)
+                .with_icon(Icon::Eye)
+                .with_tooltip("Show API key")
+                .on_click(|ctx| {
+                    ctx.dispatch_typed_action(DirectApiPageAction::ToggleApiKeyVisibility);
+                })
+        });
+
         Self {
             page: Self::build_page(ctx),
             api_key_manager,
@@ -193,9 +323,11 @@ impl DirectApiSettingsPageView {
             selected_provider: RefCell::new(ProviderType::OpenAI),
             test_result: RefCell::new(None),
             is_testing: RefCell::new(false),
+            show_api_key: Cell::new(false),
             test_button,
             save_button,
             update_model_list_button,
+            toggle_visibility_button,
         }
     }
 
@@ -222,42 +354,53 @@ impl DirectApiSettingsPageView {
     }
 
     fn handle_select_provider(&mut self, provider_name: &str, ctx: &mut ViewContext<Self>) {
-        if let Some(provider) = ProviderType::from_str(provider_name) {
-            // Update base URL editor with default for this provider
-            if provider.needs_base_url() {
-                self.base_url_editor.update(ctx, |editor, ctx| {
-                    editor.set_buffer_text(provider.default_base_url(), ctx);
-                });
-            }
+        let Some(provider) = ProviderType::from_str(provider_name) else {
+            return;
+        };
 
-            *self.selected_provider.borrow_mut() = provider;
-            *self.test_result.borrow_mut() = None;
-            ctx.notify();
+        let api_key_placeholder = provider.api_key_placeholder();
+        let base_url_placeholder = provider.base_url_placeholder();
+        let default_base_url = provider.default_base_url();
+        let needs_base_url = provider.needs_base_url();
+
+        self.api_key_editor.update(ctx, |editor, ctx| {
+            editor.set_placeholder_text(api_key_placeholder, ctx);
+        });
+
+        if needs_base_url {
+            self.base_url_editor.update(ctx, |editor, ctx| {
+                // Only seed the buffer when empty — preserve any URL the user
+                // typed previously, e.g. a Custom provider's endpoint, instead
+                // of clobbering it on every re-selection of the dropdown.
+                if editor.buffer_text(ctx).is_empty() {
+                    editor.set_buffer_text(default_base_url, ctx);
+                }
+                editor.set_placeholder_text(base_url_placeholder, ctx);
+            });
         }
+
+        // Switching providers always clears the API key buffer and re-masks
+        // the field — prevents a key entered for one provider from lingering
+        // (possibly unmasked) under a different provider's label.
+        self.clear_and_remask_api_key(ctx);
+
+        *self.selected_provider.borrow_mut() = provider;
+        *self.test_result.borrow_mut() = None;
+        ctx.notify();
     }
 
     fn handle_test_connection(&mut self, ctx: &mut ViewContext<Self>) {
         let provider = self.selected_provider.borrow().clone();
         let api_key = self.api_key_editor.as_ref(ctx).buffer_text(ctx);
 
-        if api_key.is_empty()
-            && provider != ProviderType::Ollama
-            && provider != ProviderType::Custom
-        {
-            *self.test_result.borrow_mut() = Some(Err("API key cannot be empty".to_string()));
+        // Format validation first — shared with the save path.
+        if let Err(msg) = provider.validate_api_key(&api_key) {
+            *self.test_result.borrow_mut() = Some(Err(msg));
             ctx.notify();
             return;
         }
 
-        // For Ollama, no API key is needed
-        if provider == ProviderType::Ollama {
-            *self.test_result.borrow_mut() =
-                Some(Ok("Ollama runs locally - no API key needed".to_string()));
-            ctx.notify();
-            return;
-        }
-
-        // For Custom provider, API key is optional
+        // Custom providers also need a Base URL to be testable.
         if provider == ProviderType::Custom {
             let base_url = self.base_url_editor.as_ref(ctx).buffer_text(ctx);
             if base_url.is_empty() {
@@ -276,45 +419,19 @@ impl DirectApiSettingsPageView {
         });
         ctx.notify();
 
-        // TODO: Implement actual API validation
-        // For now, just validate format
-        let result = match provider {
-            ProviderType::OpenAI => {
-                if api_key.starts_with("sk-") {
-                    Ok("API key format valid (full test pending)".to_string())
-                } else {
-                    Err("OpenAI API keys should start with 'sk-'".to_string())
-                }
-            }
-            ProviderType::Anthropic => {
-                if api_key.starts_with("sk-ant-") {
-                    Ok("API key format valid (full test pending)".to_string())
-                } else {
-                    Err("Anthropic API keys should start with 'sk-ant-'".to_string())
-                }
-            }
-            ProviderType::GoogleGemini => {
-                if !api_key.is_empty() {
-                    Ok("API key format valid (full test pending)".to_string())
-                } else {
-                    Err("Google API key cannot be empty".to_string())
-                }
-            }
-            ProviderType::Ollama => Ok("Ollama runs locally - no API key needed".to_string()),
-            ProviderType::OpenRouter => {
-                if !api_key.is_empty() {
-                    Ok("API key format valid (full test pending)".to_string())
-                } else {
-                    Err("OpenRouter API key cannot be empty".to_string())
-                }
-            }
-            ProviderType::Custom => {
-                Ok("Custom provider configured (full test pending)".to_string())
-            }
+        // TODO: Implement actual API validation. For now, surface a
+        // provider-appropriate "format valid, full test pending" message.
+        let msg = match provider {
+            ProviderType::Ollama => "Ollama runs locally - no API key needed".to_string(),
+            ProviderType::Custom => "Custom provider configured (full test pending)".to_string(),
+            ProviderType::OpenAI
+            | ProviderType::Anthropic
+            | ProviderType::GoogleGemini
+            | ProviderType::OpenRouter => "API key format valid (full test pending)".to_string(),
         };
 
         *self.is_testing.borrow_mut() = false;
-        *self.test_result.borrow_mut() = Some(result);
+        *self.test_result.borrow_mut() = Some(Ok(msg));
         self.test_button.update(ctx, |button, ctx| {
             button.set_disabled(false, ctx);
         });
@@ -325,11 +442,11 @@ impl DirectApiSettingsPageView {
         let provider = self.selected_provider.borrow().clone();
         let api_key = self.api_key_editor.as_ref(ctx).buffer_text(ctx);
 
-        if api_key.is_empty()
-            && provider != ProviderType::Ollama
-            && provider != ProviderType::Custom
-        {
-            *self.test_result.borrow_mut() = Some(Err("Cannot save empty API key".to_string()));
+        // Same format validation as Test Connection — refuses to save a key
+        // that would later fail format checks (e.g. a Stripe key pasted into
+        // the Anthropic slot).
+        if let Err(msg) = provider.validate_api_key(&api_key) {
+            *self.test_result.borrow_mut() = Some(Err(msg));
             ctx.notify();
             return;
         }
@@ -361,6 +478,12 @@ impl DirectApiSettingsPageView {
             }
         });
 
+        // Wipe the buffer and re-mask after a successful save. The keychain
+        // is the source of truth from here on; leaving the cleartext key
+        // visible (and revealable via the eye toggle) after the user has
+        // already saved it is a shoulder-surfing footgun.
+        self.clear_and_remask_api_key(ctx);
+
         *self.test_result.borrow_mut() = Some(Ok(format!(
             "{} API key saved successfully to keychain",
             provider.as_str()
@@ -377,6 +500,41 @@ impl DirectApiSettingsPageView {
             provider.as_str()
         )));
         ctx.notify();
+    }
+
+    fn handle_toggle_api_key_visibility(&mut self, ctx: &mut ViewContext<Self>) {
+        let new_show = !self.show_api_key.get();
+        self.apply_api_key_visibility(new_show, ctx);
+        ctx.notify();
+    }
+
+    /// Drive the API key visibility state machine: editor masking, toggle
+    /// button's active styling, tooltip, and the page's local `show_api_key`
+    /// flag. Centralised so `handle_select_provider` and `handle_save_api_key`
+    /// can reset to masked without duplicating the wiring.
+    fn apply_api_key_visibility(&mut self, show: bool, ctx: &mut ViewContext<Self>) {
+        self.show_api_key.set(show);
+
+        self.api_key_editor.update(ctx, |editor, ctx| {
+            editor.set_is_password(!show, ctx);
+        });
+
+        let tooltip = visibility_tooltip(show);
+        self.toggle_visibility_button.update(ctx, |button, ctx| {
+            button.set_active(show, ctx);
+            button.set_tooltip(Some(tooltip), ctx);
+        });
+    }
+
+    /// Clear the API key buffer and force the visibility back to masked.
+    /// Called after a successful save and whenever the provider changes, so
+    /// a previously-typed (possibly revealed) key never bleeds across
+    /// provider switches or lingers after the user has saved it.
+    fn clear_and_remask_api_key(&mut self, ctx: &mut ViewContext<Self>) {
+        self.api_key_editor.update(ctx, |editor, ctx| {
+            editor.set_buffer_text("", ctx);
+        });
+        self.apply_api_key_visibility(false, ctx);
     }
 }
 
@@ -400,6 +558,9 @@ impl TypedActionView for DirectApiSettingsPageView {
             }
             DirectApiPageAction::UpdateModelList => {
                 self.handle_update_model_list(ctx);
+            }
+            DirectApiPageAction::ToggleApiKeyVisibility => {
+                self.handle_toggle_api_key_visibility(ctx);
             }
         }
     }
@@ -532,11 +693,9 @@ impl SettingsWidget for BaseUrlInputWidget {
         appearance: &Appearance,
         _app: &AppContext,
     ) -> Box<dyn Element> {
-        use warpui::elements::ChildView;
-
         let provider = view.selected_provider.borrow().clone();
 
-        // Only show for providers that need base URL
+        // Only show for providers that need base URL.
         if !provider.needs_base_url() {
             return Container::new(appearance.ui_builder().span("").build().finish()).finish();
         }
@@ -552,8 +711,8 @@ impl SettingsWidget for BaseUrlInputWidget {
             .finish();
         column.add_child(label);
 
-        // Show actual editor
-        let editor = ChildView::new(&view.base_url_editor).finish();
+        // Chromed editor
+        let editor = render_chromed_input(view.base_url_editor.clone(), appearance);
         column.add_child(
             Container::new(editor)
                 .with_margin_bottom(ITEM_VERTICAL_SPACING)
@@ -584,30 +743,25 @@ impl SettingsWidget for ApiKeyInputWidget {
 
         let mut column = Flex::column();
 
-        let provider = view.selected_provider.borrow().clone();
-
-        // Label with note for Ollama
-        let label = if provider == ProviderType::Ollama {
-            appearance
-                .ui_builder()
-                .span("API Key (not required for Ollama)")
-                .build()
-                .with_margin_bottom(8.)
-                .finish()
-        } else {
-            appearance
-                .ui_builder()
-                .span("API Key")
-                .build()
-                .with_margin_bottom(8.)
-                .finish()
-        };
+        // Label
+        let label = appearance
+            .ui_builder()
+            .span("API Key")
+            .build()
+            .with_margin_bottom(8.)
+            .finish();
         column.add_child(label);
 
-        // Show actual editor
-        let editor = ChildView::new(&view.api_key_editor).finish();
+        // Chromed editor + eye toggle, side-by-side
+        let editor = render_chromed_input(view.api_key_editor.clone(), appearance);
+        let toggle = ChildView::new(&view.toggle_visibility_button).finish();
+        let row = Flex::row()
+            .with_child(Container::new(editor).with_margin_right(8.).finish())
+            .with_child(toggle)
+            .finish();
+
         column.add_child(
-            Container::new(editor)
+            Container::new(row)
                 .with_margin_bottom(ITEM_VERTICAL_SPACING)
                 .finish(),
         );
@@ -790,3 +944,7 @@ impl SettingsWidget for ConfiguredKeysWidget {
         column.finish()
     }
 }
+
+#[cfg(test)]
+#[path = "direct_api_page_tests.rs"]
+mod tests;
