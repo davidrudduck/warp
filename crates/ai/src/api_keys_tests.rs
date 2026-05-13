@@ -218,11 +218,7 @@ fn get_selected_model_returns_user_selection_when_set() {
 
         // Set a custom model selection
         manager.update(&mut app, |manager, ctx| {
-            manager.set_selected_model(
-                ProviderId::OpenAI,
-                "gpt-4-turbo".to_string(),
-                ctx,
-            );
+            manager.set_selected_model(ProviderId::OpenAI, "gpt-4-turbo".to_string(), ctx);
         });
 
         // Verify the selected model is returned

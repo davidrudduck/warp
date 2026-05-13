@@ -222,7 +222,7 @@ impl ApiKeyManager {
             ProviderId::GoogleGemini => Some("gemini-2.0-flash".to_string()),
             ProviderId::Ollama => None, // No default - user must configure local model
             ProviderId::OpenRouter => None, // No default - too many options
-            ProviderId::Custom => None,     // No default - unknown endpoint
+            ProviderId::Custom => None, // No default - unknown endpoint
         }
     }
 

@@ -466,11 +466,7 @@ async fn selected_model_propagates_to_conversation_repository() {
 
         // Simulate user selecting a specific model for OpenAI
         manager.update(&mut app, |manager, ctx| {
-            manager.set_selected_model(
-                ProviderId::OpenAI,
-                "gpt-4-turbo".to_string(),
-                ctx,
-            );
+            manager.set_selected_model(ProviderId::OpenAI, "gpt-4-turbo".to_string(), ctx);
         });
 
         // When creating a conversation, read the selected model

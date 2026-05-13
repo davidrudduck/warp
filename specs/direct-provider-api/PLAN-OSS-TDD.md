@@ -2277,3 +2277,79 @@ After 4-week implementation complete:
 - ✅ TDD throughout (tests written first)
 - ✅ No enterprise complexity
 - ✅ Git provides rollback safety
+
+---
+
+## 🚀 Phase 2: Model Selection (2026-05-13)
+
+**Status**: ✅ Backend Complete, Frontend In Progress
+
+### Completed Components
+
+**Backend Infrastructure** (Commit 4158f88):
+- ✅ `ProviderId` enum (6 variants: OpenAI, Anthropic, GoogleGemini, Ollama, OpenRouter, Custom)
+- ✅ `ModelListProvider` trait (async interface for fetching models)
+- ✅ `ModelListCache` (JSON-backed, 24h TTL, atomic writes)
+- ✅ Provider implementations:
+  - ✅ OpenAI (via `/v1/models` API)
+  - ✅ Anthropic (static list)
+  - ✅ Google Gemini (static list)
+- ✅ `ApiKeyManager::set_selected_model()` (persistence)
+- ✅ `ApiKeyManager::get_selected_model_for_provider()` (with per-provider defaults)
+- ✅ Cache invalidation on API key save
+- ✅ Comprehensive test coverage (15+ new tests)
+
+**Frontend Infrastructure** (Commit 4158f88):
+- ✅ `ModelSelectorWidget` (feature-gated behind `DirectApiModelSelection`)
+- ✅ "Update Model List" button (triggers async fetch)
+- ✅ Model dropdown (populated from cache)
+- ✅ Per-provider default selection
+- ✅ Persistence across app restarts
+
+**Documentation** (2026-05-13):
+- ✅ User guide updated with "Selecting a Model" section
+- ✅ Developer guide updated with Phase 2 architecture:
+  - ✅ ProviderId mapping table
+  - ✅ ModelListProvider trait documentation
+  - ✅ ModelListCache internals
+  - ✅ Cache location and structure
+  - ✅ Template for adding new providers (Steps 6-10)
+
+### In Progress
+
+**Frontend Polish** (US-011, US-016):
+- ⏳ Concurrency control (fetch_in_flight guard)
+- ⏳ CancellationToken for aborting in-flight fetches
+- ⏳ Stale model fallback (handle unavailable models gracefully)
+
+**Provider Coverage** (Deferred to V2):
+- ⏳ Ollama model listing (requires local tags API)
+- ⏳ OpenRouter model listing (requires `/v1/models` endpoint)
+- ⏳ Custom provider (not applicable - user configures manually)
+
+### Deferred Items
+
+Tracked in `specs/direct-provider-api/open-questions.md`:
+- Model validation on conversation start
+- Graceful degradation for unavailable models
+- Model cost/capability metadata in UI
+- Model deprecation warnings
+
+### Success Metrics
+
+**Phase 2 Specific**:
+- ✅ 6 ProviderId variants (exhaustive, no wildcards)
+- ✅ 3 provider implementations (OpenAI, Anthropic, Gemini)
+- ✅ Cache atomicity verified (no corruption on concurrent writes)
+- ✅ 24h TTL enforced (timestamp-based expiration)
+- ✅ Per-provider defaults defined
+- ✅ Feature flag isolation (DirectApiModelSelection)
+- ✅ Documentation complete (user + developer guides)
+
+**Remaining Work**:
+- ⏳ US-011: Concurrency control + cancellation
+- ⏳ US-016: Stale model handling
+- ⏳ US-017: Manual smoke tests
+- ⏳ US-018: Full test suite + presubmit
+- ⏳ US-019: Security review
+- ⏳ US-020: Final documentation polish

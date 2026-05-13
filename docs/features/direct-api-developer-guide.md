@@ -514,6 +514,298 @@ impl DirectApiLogger {
 Before optimization: 200μs per log (regex compilation)  
 After caching: <1μs per log (200× faster)
 
+### 7. Model Selection (Phase 2)
+
+**Files**: `crates/ai/src/model_registry/` (backend infrastructure)
+
+Phase 2 adds per-provider model selection, enabling users to choose which specific model to use for each provider.
+
+#### ProviderId Enum
+
+Maps UI provider selection to backend provider taxonomy:
+
+```rust
+// crates/ai/src/model_registry/provider_id.rs
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
+pub enum ProviderId {
+    OpenAI,
+    Anthropic,
+    GoogleGemini,
+    Ollama,
+    OpenRouter,
+    Custom,
+}
+
+impl ProviderId {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ProviderId::OpenAI => "openai",
+            ProviderId::Anthropic => "anthropic",
+            ProviderId::GoogleGemini => "google",
+            ProviderId::Ollama => "ollama",
+            ProviderId::OpenRouter => "openrouter",
+            ProviderId::Custom => "custom",
+        }
+    }
+    
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "openai" => Some(ProviderId::OpenAI),
+            "anthropic" => Some(ProviderId::Anthropic),
+            "google" => Some(ProviderId::GoogleGemini),
+            "ollama" => Some(ProviderId::Ollama),
+            "openrouter" => Some(ProviderId::OpenRouter),
+            "custom" => Some(ProviderId::Custom),
+            _ => None,
+        }
+    }
+}
+```
+
+**UI to Backend Mapping**:
+
+| UI Label | ProviderId | genai provider string |
+|---|---|---|
+| "OpenAI" | `ProviderId::OpenAI` | `"openai"` |
+| "Anthropic" | `ProviderId::Anthropic` | `"anthropic"` |
+| "Google Gemini" | `ProviderId::GoogleGemini` | `"google"` |
+| "Ollama" | `ProviderId::Ollama` | `"ollama"` |
+| "OpenRouter" | `ProviderId::OpenRouter` | `"openrouter"` |
+| "Custom" | `ProviderId::Custom` | (user-specified) |
+
+#### ModelListProvider Trait
+
+Async interface for fetching available models from provider APIs:
+
+```rust
+// crates/ai/src/model_registry/provider_trait.rs
+
+#[async_trait]
+pub trait ModelListProvider: Send + Sync {
+    /// Fetch available models for this provider.
+    /// Returns list of model IDs suitable for UI display.
+    async fn fetch_models(&self, api_key: &str) -> Result<Vec<String>, ModelListError>;
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ModelListError {
+    #[error("API request failed: {0}")]
+    ApiError(String),
+    #[error("Authentication failed: invalid API key")]
+    AuthError,
+    #[error("Network error: {0}")]
+    NetworkError(String),
+    #[error("Provider does not support model listing")]
+    NotSupported,
+}
+```
+
+**Implementation Example** (OpenAI):
+
+```rust
+pub struct OpenAIModelProvider;
+
+#[async_trait]
+impl ModelListProvider for OpenAIModelProvider {
+    async fn fetch_models(&self, api_key: &str) -> Result<Vec<String>, ModelListError> {
+        let client = reqwest::Client::new();
+        let response = client
+            .get("https://api.openai.com/v1/models")
+            .bearer_auth(api_key)
+            .send()
+            .await
+            .map_err(|e| ModelListError::NetworkError(e.to_string()))?;
+            
+        if response.status() == 401 {
+            return Err(ModelListError::AuthError);
+        }
+        
+        let json: ModelsResponse = response.json().await
+            .map_err(|e| ModelListError::ApiError(e.to_string()))?;
+            
+        Ok(json.data.into_iter().map(|m| m.id).collect())
+    }
+}
+```
+
+**Current Implementations**:
+
+- ✅ OpenAI (via `/v1/models` endpoint)
+- ✅ Anthropic (static list - no public models API)
+- ✅ Google Gemini (static list - no public models API)
+- ❌ Ollama (pending - requires local tags API)
+- ❌ OpenRouter (pending - requires `/v1/models` endpoint)
+- ❌ Custom (not applicable - user configures manually)
+
+#### ModelListCache
+
+JSON-backed cache with 24-hour TTL:
+
+```rust
+// crates/ai/src/model_registry/cache.rs
+
+pub struct ModelListCache {
+    cache_path: PathBuf,  // ~/.cache/warp/model_cache.json
+}
+
+impl ModelListCache {
+    pub fn new() -> Result<Self, CacheError> {
+        let cache_dir = dirs::cache_dir()
+            .ok_or(CacheError::NoCacheDir)?
+            .join("warp");
+        std::fs::create_dir_all(&cache_dir)?;
+        Ok(Self {
+            cache_path: cache_dir.join("model_cache.json"),
+        })
+    }
+    
+    pub fn get(&self, provider: ProviderId) -> Result<CachedModels, CacheError> {
+        let contents = std::fs::read_to_string(&self.cache_path)?;
+        let cache: HashMap<ProviderId, CachedModels> = serde_json::from_str(&contents)?;
+        cache.get(&provider)
+            .filter(|entry| !entry.is_expired())
+            .cloned()
+            .ok_or(CacheError::NotFound)
+    }
+    
+    pub fn set(&self, provider: ProviderId, models: Vec<String>) -> Result<(), CacheError> {
+        let mut cache: HashMap<ProviderId, CachedModels> = 
+            self.read_all().unwrap_or_default();
+            
+        cache.insert(provider, CachedModels {
+            models,
+            fetched_at: SystemTime::now(),
+        });
+        
+        let json = serde_json::to_string_pretty(&cache)?;
+        
+        // Atomic write via temp file + rename
+        let temp_path = self.cache_path.with_extension("tmp");
+        std::fs::write(&temp_path, json)?;
+        std::fs::rename(temp_path, &self.cache_path)?;
+        
+        Ok(())
+    }
+    
+    pub fn invalidate(&self, provider: ProviderId) -> Result<(), CacheError> {
+        let mut cache = self.read_all()?;
+        cache.remove(&provider);
+        let json = serde_json::to_string_pretty(&cache)?;
+        std::fs::write(&self.cache_path, json)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CachedModels {
+    pub models: Vec<String>,
+    pub fetched_at: SystemTime,
+}
+
+impl CachedModels {
+    pub fn is_expired(&self) -> bool {
+        self.fetched_at.elapsed().unwrap_or_default() > Duration::from_secs(24 * 3600)
+    }
+}
+```
+
+**Cache Location**:
+
+```bash
+~/.cache/warp/model_cache.json
+```
+
+**Cache Structure**:
+
+```json
+{
+  "openai": {
+    "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
+    "fetched_at": "2026-05-13T03:00:00Z"
+  },
+  "anthropic": {
+    "models": [
+      "claude-3-5-sonnet-20241022",
+      "claude-3-opus-20240229",
+      "claude-3-haiku-20240307"
+    ],
+    "fetched_at": "2026-05-13T03:15:00Z"
+  }
+}
+```
+
+**Cache Invalidation**:
+
+Cache is invalidated when:
+1. User saves a new API key (forces fresh model list fetch)
+2. 24 hours have elapsed since last fetch
+3. User manually clicks "Update Model List"
+
+#### Model Persistence
+
+User's selected model is stored in `ApiKeys` struct:
+
+```rust
+// crates/ai/src/api_keys.rs
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiKeys {
+    // ... existing API key fields
+    
+    #[serde(default)]
+    pub selected_models: std::collections::BTreeMap<ProviderId, String>,
+}
+
+impl ApiKeyManager {
+    pub fn set_selected_model(
+        &mut self,
+        provider: ProviderId,
+        model_id: String,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.ensure_keys_loaded(ctx);
+        if let Some(ref mut keys) = self.keys_cache.borrow_mut().as_mut() {
+            keys.selected_models.insert(provider, model_id);
+        }
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_secure_storage(ctx);
+    }
+    
+    pub fn get_selected_model_for_provider(
+        &self,
+        provider: ProviderId,
+        ctx: &warpui::AppContext,
+    ) -> Option<String> {
+        let keys = self.keys(ctx);
+        if let Some(model_id) = keys.selected_models.get(&provider) {
+            return Some(model_id.clone());
+        }
+        
+        // Fallback to per-provider defaults
+        match provider {
+            ProviderId::OpenAI => Some("gpt-4o-mini".to_string()),
+            ProviderId::Anthropic => Some("claude-3-5-sonnet-20241022".to_string()),
+            ProviderId::GoogleGemini => Some("gemini-2.0-flash".to_string()),
+            ProviderId::Ollama => None,
+            ProviderId::OpenRouter => None,
+            ProviderId::Custom => None,
+        }
+    }
+}
+```
+
+**Default Models**:
+
+| Provider | Default Model | Rationale |
+|---|---|---|
+| OpenAI | `gpt-4o-mini` | Fast, affordable |
+| Anthropic | `claude-3-5-sonnet-20241022` | Balanced capability |
+| Google Gemini | `gemini-2.0-flash` | Latest, fast |
+| Ollama | None | User must configure local model |
+| OpenRouter | None | 100+ options, user chooses |
+| Custom | None | Endpoint-specific |
+
 ## Integration Points
 
 ### How Settings UI connects to AI
@@ -633,6 +925,117 @@ async fn genai_supports_your_provider() {
     
     let response = adapter.chat(request).await.unwrap();
     assert!(response.text.is_some());
+}
+```
+
+### Step 6: Add ProviderId Variant (Phase 2)
+
+```rust
+// crates/ai/src/model_registry/provider_id.rs
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
+pub enum ProviderId {
+    // ... existing variants
+    YourProvider,
+}
+
+impl ProviderId {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            // ... existing
+            ProviderId::YourProvider => "your-provider",
+        }
+    }
+    
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            // ... existing
+            "your-provider" => Some(ProviderId::YourProvider),
+            _ => None,
+        }
+    }
+}
+```
+
+### Step 7: Implement ModelListProvider (Phase 2)
+
+```rust
+// crates/ai/src/model_registry/providers/your_provider.rs
+
+pub struct YourProviderModelProvider;
+
+#[async_trait]
+impl ModelListProvider for YourProviderModelProvider {
+    async fn fetch_models(&self, api_key: &str) -> Result<Vec<String>, ModelListError> {
+        // Option 1: Static list (like Anthropic/Gemini)
+        Ok(vec![
+            "your-model-v1".to_string(),
+            "your-model-v2".to_string(),
+        ])
+        
+        // Option 2: Fetch from API (like OpenAI)
+        let client = reqwest::Client::new();
+        let response = client
+            .get("https://api.yourprovider.com/v1/models")
+            .bearer_auth(api_key)
+            .send()
+            .await
+            .map_err(|e| ModelListError::NetworkError(e.to_string()))?;
+            
+        // ... parse response and return model IDs
+    }
+}
+```
+
+### Step 8: Register ModelListProvider (Phase 2)
+
+```rust
+// crates/ai/src/model_registry/mod.rs
+
+pub fn get_model_list_provider(provider: ProviderId) -> Option<Box<dyn ModelListProvider>> {
+    match provider {
+        // ... existing
+        ProviderId::YourProvider => Some(Box::new(YourProviderModelProvider)),
+    }
+}
+```
+
+### Step 9: Add Default Model (Phase 2)
+
+```rust
+// crates/ai/src/api_keys.rs
+
+impl ApiKeyManager {
+    pub fn get_selected_model_for_provider(
+        &self,
+        provider: ProviderId,
+        ctx: &warpui::AppContext,
+    ) -> Option<String> {
+        let keys = self.keys(ctx);
+        if let Some(model_id) = keys.selected_models.get(&provider) {
+            return Some(model_id.clone());
+        }
+        
+        match provider {
+            // ... existing defaults
+            ProviderId::YourProvider => Some("your-default-model".to_string()),
+        }
+    }
+}
+```
+
+### Step 10: Update UI Provider Mapping (Phase 2)
+
+```rust
+// app/src/settings_view/direct_api_page.rs
+
+impl ProviderType {
+    fn to_provider_id(&self) -> ProviderId {
+        match self {
+            // ... existing
+            ProviderType::YourProvider => ProviderId::YourProvider,
+        }
+    }
 }
 ```
 
