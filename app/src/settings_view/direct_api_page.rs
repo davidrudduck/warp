@@ -11,14 +11,33 @@ use crate::ui_components::icons::Icon;
 use crate::view_components::action_button::{ActionButton, NakedTheme};
 use crate::view_components::{Dropdown, DropdownItem};
 use ::ai::api_keys::ApiKeyManager;
+use ::ai::model_registry::providers::custom::CustomListProvider;
+use ::ai::model_registry::providers::genai_backed::GenaiBackedListProvider;
+use ::ai::model_registry::providers::openrouter::OpenRouterListProvider;
+use ::ai::model_registry::{
+    ModelDescriptor, ModelListCache, ModelListError, ModelListProvider, ProviderId,
+};
+use ::ai::telemetry::AITelemetryEvent;
 use std::cell::{Cell, RefCell};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
+use std::time::Duration;
+use warp_core::features::FeatureFlag;
+use warp_core::send_telemetry_from_ctx;
 use warp_core::ui::theme::color::internal_colors;
 use warpui::{
-    elements::{ConstrainedBox, Container, CornerRadius, Element, Fill, Flex, ParentElement, Radius},
+    elements::{
+        ConstrainedBox, Container, CornerRadius, Element, Fill, Flex, ParentElement, Radius,
+    },
     ui_components::components::{Coords, UiComponent, UiComponentStyles},
     AppContext, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle,
 };
+
+/// Model list cache freshness threshold. Entries older than this are ignored
+/// by `get()` and require an explicit refresh via "Update Model List".
+const MODEL_CACHE_TTL: Duration = Duration::from_secs(86_400);
 
 const ITEM_VERTICAL_SPACING: f32 = 24.;
 const DROPDOWN_WIDTH: f32 = 225.;
@@ -74,13 +93,14 @@ fn render_chromed_input(
         .finish()
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum DirectApiPageAction {
     SelectProvider(String),
     TestConnection,
     SaveApiKey,
     UpdateModelList,
     ToggleApiKeyVisibility,
+    SelectModel(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -133,6 +153,19 @@ impl ProviderType {
             self,
             ProviderType::Ollama | ProviderType::OpenRouter | ProviderType::Custom
         )
+    }
+
+    /// Map this UI-layer provider to the canonical `ProviderId` used by the
+    /// model registry, cache, and persisted `ApiKeys::selected_models` map.
+    pub(super) fn to_provider_id(&self) -> ProviderId {
+        match self {
+            ProviderType::OpenAI => ProviderId::OpenAI,
+            ProviderType::Anthropic => ProviderId::Anthropic,
+            ProviderType::GoogleGemini => ProviderId::GoogleGemini,
+            ProviderType::Ollama => ProviderId::Ollama,
+            ProviderType::OpenRouter => ProviderId::OpenRouter,
+            ProviderType::Custom => ProviderId::Custom,
+        }
     }
 
     pub(super) fn default_base_url(&self) -> &'static str {
@@ -216,6 +249,7 @@ pub struct DirectApiSettingsPageView {
     page: PageType<Self>,
     api_key_manager: ModelHandle<ApiKeyManager>,
     provider_dropdown: ViewHandle<Dropdown<DirectApiPageAction>>,
+    model_dropdown: ViewHandle<Dropdown<DirectApiPageAction>>,
     api_key_editor: ViewHandle<EditorView>,
     base_url_editor: ViewHandle<EditorView>,
     selected_provider: RefCell<ProviderType>,
@@ -226,6 +260,14 @@ pub struct DirectApiSettingsPageView {
     save_button: ViewHandle<ActionButton>,
     update_model_list_button: ViewHandle<ActionButton>,
     toggle_visibility_button: ViewHandle<ActionButton>,
+    /// JSON-backed cache of provider model lists. Wrapped in `Arc` so the
+    /// async fetch closure can clone a reference cheaply without taking
+    /// ownership of the view's copy.
+    model_cache: Arc<ModelListCache>,
+    /// In-memory snapshot of the cached models for the currently-selected
+    /// provider. Refreshed by `refresh_model_dropdown()` whenever the
+    /// provider changes or a fetch completes.
+    cached_models: RefCell<Vec<ModelDescriptor>>,
 }
 
 impl DirectApiSettingsPageView {
@@ -251,6 +293,15 @@ impl DirectApiSettingsPageView {
                 .collect();
             dropdown.add_items(items, ctx);
             dropdown.set_selected_by_index(0, ctx);
+            dropdown
+        });
+
+        // Create model dropdown. Starts empty; populated by
+        // `refresh_model_dropdown` once cached models are available.
+        let model_dropdown = ctx.add_typed_action_view(|ctx| {
+            let mut dropdown = Dropdown::new(ctx);
+            dropdown.set_top_bar_max_width(DROPDOWN_WIDTH);
+            dropdown.set_menu_width(DROPDOWN_WIDTH, ctx);
             dropdown
         });
 
@@ -319,10 +370,16 @@ impl DirectApiSettingsPageView {
                 })
         });
 
-        Self {
+        let model_cache = Arc::new(ModelListCache::new().unwrap_or_else(|e| {
+            log::warn!("Failed to create ModelListCache, using default: {e}");
+            ModelListCache::default()
+        }));
+
+        let mut view = Self {
             page: Self::build_page(ctx),
             api_key_manager,
             provider_dropdown,
+            model_dropdown,
             api_key_editor,
             base_url_editor,
             selected_provider: RefCell::new(ProviderType::OpenAI),
@@ -333,7 +390,12 @@ impl DirectApiSettingsPageView {
             save_button,
             update_model_list_button,
             toggle_visibility_button,
-        }
+            model_cache,
+            cached_models: RefCell::new(Vec::new()),
+        };
+
+        view.refresh_model_dropdown(ctx);
+        view
     }
 
     fn build_page(_ctx: &mut ViewContext<Self>) -> PageType<Self> {
@@ -345,6 +407,7 @@ impl DirectApiSettingsPageView {
                     Box::new(ProviderSelectorWidget::default()),
                     Box::new(BaseUrlInputWidget::default()),
                     Box::new(ApiKeyInputWidget::default()),
+                    Box::new(ModelSelectorWidget::default()),
                     Box::new(ActionButtonsWidget::default()),
                     Box::new(StatusWidget::default()),
                 ],
@@ -391,6 +454,7 @@ impl DirectApiSettingsPageView {
 
         *self.selected_provider.borrow_mut() = provider;
         *self.test_result.borrow_mut() = None;
+        self.refresh_model_dropdown(ctx);
         ctx.notify();
     }
 
@@ -497,14 +561,251 @@ impl DirectApiSettingsPageView {
     }
 
     fn handle_update_model_list(&mut self, ctx: &mut ViewContext<Self>) {
-        let provider = self.selected_provider.borrow().clone();
+        let provider_type = self.selected_provider.borrow().clone();
+        let provider_id = provider_type.to_provider_id();
 
-        // TODO: Implement actual model list fetching from provider APIs
-        *self.test_result.borrow_mut() = Some(Ok(format!(
-            "Model list update for {} is not yet implemented",
-            provider.as_str()
-        )));
+        // Pull the current API key (if any) from the saved keychain entries.
+        // The in-memory editor buffer is intentionally not consulted — saving
+        // is required first, which keeps "fetch models" and "save key" flows
+        // distinct and avoids leaking unsaved keys into network calls.
+        let api_keys = self.api_key_manager.as_ref(ctx).keys(ctx);
+        let api_key = match provider_id {
+            ProviderId::OpenAI => api_keys.openai.clone(),
+            ProviderId::Anthropic => api_keys.anthropic.clone(),
+            ProviderId::GoogleGemini => api_keys.google.clone(),
+            ProviderId::Ollama => None,
+            ProviderId::OpenRouter => api_keys.open_router.clone(),
+            ProviderId::Custom => None,
+        };
+
+        // Resolve base URL for providers that need one, preferring the live
+        // editor buffer so the user can fetch against an unsaved URL.
+        let base_url = if provider_type.needs_base_url() {
+            let url = self.base_url_editor.as_ref(ctx).buffer_text(ctx);
+            if url.is_empty() {
+                None
+            } else {
+                Some(url)
+            }
+        } else {
+            None
+        };
+
+        // Build the provider-specific list implementation. Three buckets:
+        //   - genai-backed (OpenAI/Anthropic/Gemini/Ollama)
+        //   - OpenRouter (raw reqwest)
+        //   - Custom (raw reqwest, OpenAI-compatible)
+        let provider_impl: Arc<dyn ModelListProvider> = match provider_id.as_genai_adapter_kind() {
+            Some(_) => match GenaiBackedListProvider::new(provider_id, api_key, base_url.clone()) {
+                Ok(p) => Arc::new(p),
+                Err(e) => {
+                    *self.test_result.borrow_mut() =
+                        Some(Err(format!("Failed to create provider: {e}")));
+                    ctx.notify();
+                    return;
+                }
+            },
+            None => match provider_id {
+                ProviderId::OpenRouter => Arc::new(OpenRouterListProvider::new(
+                    api_key.unwrap_or_default(),
+                    base_url,
+                )),
+                ProviderId::Custom => {
+                    let Some(url) = base_url else {
+                        *self.test_result.borrow_mut() =
+                            Some(Err("Base URL is required for custom providers".to_string()));
+                        ctx.notify();
+                        return;
+                    };
+                    Arc::new(CustomListProvider::new(url, api_key))
+                }
+                ProviderId::OpenAI
+                | ProviderId::Anthropic
+                | ProviderId::GoogleGemini
+                | ProviderId::Ollama => {
+                    *self.test_result.borrow_mut() = Some(Err("Unsupported provider".to_string()));
+                    ctx.notify();
+                    return;
+                }
+            },
+        };
+
+        // Stage a "fetching" message and disable the button so the user
+        // doesn't kick off overlapping fetches against the same provider.
+        *self.test_result.borrow_mut() = Some(Ok("Fetching models...".to_string()));
+        self.update_model_list_button.update(ctx, |button, ctx| {
+            button.set_disabled(true, ctx);
+        });
         ctx.notify();
+
+        let cache = Arc::clone(&self.model_cache);
+        let _ = ctx.spawn(
+            async move {
+                let start = instant::Instant::now();
+                let result = provider_impl.list_models().await;
+                let elapsed_ms = start.elapsed().as_millis() as u64;
+                (provider_id, cache, result, elapsed_ms)
+            },
+            Self::on_models_fetched,
+        );
+    }
+
+    /// Callback invoked when an async model list fetch completes. Persists
+    /// the result to the cache (on success), refreshes the dropdown, and
+    /// surfaces a status message in the test_result field.
+    fn on_models_fetched(
+        &mut self,
+        result: (
+            ProviderId,
+            Arc<ModelListCache>,
+            Result<Vec<ModelDescriptor>, ModelListError>,
+            u64,
+        ),
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let (provider_id, cache, models_result, duration_ms) = result;
+
+        match models_result {
+            Ok(models) => {
+                let count = models.len();
+                send_telemetry_from_ctx!(
+                    AITelemetryEvent::DirectApiModelListFetchSucceeded {
+                        provider: provider_id,
+                        model_count: count,
+                        duration_ms,
+                    },
+                    ctx
+                );
+                match cache.set(provider_id, models) {
+                    Ok(()) => {
+                        *self.test_result.borrow_mut() =
+                            Some(Ok(format!("Fetched {count} models")));
+                    }
+                    Err(e) => {
+                        log::error!("Failed to cache models: {e}");
+                        *self.test_result.borrow_mut() = Some(Err(format!(
+                            "Fetched {count} models but cache write failed: {e}"
+                        )));
+                    }
+                }
+            }
+            Err(err) => {
+                let error_kind: &'static str = match &err {
+                    ModelListError::AuthFailed => "auth_failed",
+                    ModelListError::RateLimited { .. } => "rate_limited",
+                    ModelListError::Offline => "offline",
+                    ModelListError::Unsupported => "unsupported",
+                    ModelListError::Network(_) => "network",
+                    ModelListError::ParseFailed(_) => "parse_failed",
+                    ModelListError::Cancelled => "cancelled",
+                };
+                send_telemetry_from_ctx!(
+                    AITelemetryEvent::DirectApiModelListFetchFailed {
+                        provider: provider_id,
+                        error_kind,
+                    },
+                    ctx
+                );
+                let msg = match err {
+                    ModelListError::AuthFailed => "Authentication failed".to_string(),
+                    ModelListError::RateLimited { retry_after_secs } => format!(
+                        "Rate limited (retry after {}s)",
+                        retry_after_secs.unwrap_or(60)
+                    ),
+                    ModelListError::Offline => "Provider unreachable (offline)".to_string(),
+                    ModelListError::Unsupported => {
+                        "Provider does not support model listing".to_string()
+                    }
+                    ModelListError::Network(msg) => format!("Network error: {msg}"),
+                    ModelListError::ParseFailed(msg) => format!("Parse error: {msg}"),
+                    ModelListError::Cancelled => "Cancelled".to_string(),
+                };
+                *self.test_result.borrow_mut() = Some(Err(msg));
+            }
+        }
+
+        // Only refresh the dropdown if the response is for the currently
+        // selected provider — otherwise we'd clobber the user's view with
+        // a stale provider's list.
+        if self.selected_provider.borrow().to_provider_id() == provider_id {
+            self.refresh_model_dropdown(ctx);
+        }
+
+        self.update_model_list_button.update(ctx, |button, ctx| {
+            button.set_disabled(false, ctx);
+        });
+        ctx.notify();
+    }
+
+    fn handle_select_model(&mut self, model_id: String, ctx: &mut ViewContext<Self>) {
+        let provider_id = self.selected_provider.borrow().to_provider_id();
+
+        self.api_key_manager.update(ctx, |manager, ctx| {
+            manager.set_selected_model(provider_id, model_id.clone(), ctx);
+        });
+
+        // Hash the model ID rather than logging it raw — custom providers can
+        // expose internal model names which we don't want to ship to
+        // telemetry.
+        let mut hasher = DefaultHasher::new();
+        model_id.hash(&mut hasher);
+        let model_id_hash = hasher.finish();
+        send_telemetry_from_ctx!(
+            AITelemetryEvent::DirectApiModelSelected {
+                provider: provider_id,
+                model_id_hash,
+            },
+            ctx
+        );
+
+        *self.test_result.borrow_mut() = Some(Ok(format!("Selected model: {model_id}")));
+        ctx.notify();
+    }
+
+    /// Rebuild the model dropdown items from the cache for the currently
+    /// selected provider, then restore the previously-selected model (if any
+    /// matches a freshly-cached ID).
+    fn refresh_model_dropdown(&mut self, ctx: &mut ViewContext<Self>) {
+        let provider_id = self.selected_provider.borrow().to_provider_id();
+
+        let models = self
+            .model_cache
+            .get(provider_id, MODEL_CACHE_TTL)
+            .map(|entry| entry.models)
+            .unwrap_or_default();
+
+        let items: Vec<DropdownItem<DirectApiPageAction>> = models
+            .iter()
+            .map(|m| {
+                let label = m.display_name.clone().unwrap_or_else(|| m.id.clone());
+                DropdownItem::new(label, DirectApiPageAction::SelectModel(m.id.clone()))
+            })
+            .collect();
+
+        let saved_selection = self
+            .api_key_manager
+            .as_ref(ctx)
+            .keys(ctx)
+            .selected_models
+            .get(&provider_id)
+            .cloned();
+
+        self.model_dropdown.update(ctx, |dropdown, ctx| {
+            dropdown.set_items(items, ctx);
+
+            if !models.is_empty() {
+                if let Some(model_id) = saved_selection {
+                    dropdown
+                        .set_selected_by_action(DirectApiPageAction::SelectModel(model_id), ctx);
+                } else {
+                    dropdown.set_selected_by_index(0, ctx);
+                }
+            } else {
+                dropdown.set_selected_to_none(ctx);
+            }
+        });
+
+        *self.cached_models.borrow_mut() = models;
     }
 
     fn handle_toggle_api_key_visibility(&mut self, ctx: &mut ViewContext<Self>) {
@@ -566,6 +867,9 @@ impl TypedActionView for DirectApiSettingsPageView {
             }
             DirectApiPageAction::ToggleApiKeyVisibility => {
                 self.handle_toggle_api_key_visibility(ctx);
+            }
+            DirectApiPageAction::SelectModel(model_id) => {
+                self.handle_select_model(model_id.clone(), ctx);
             }
         }
     }
@@ -770,6 +1074,65 @@ impl SettingsWidget for ApiKeyInputWidget {
                 .with_margin_bottom(ITEM_VERTICAL_SPACING)
                 .finish(),
         );
+
+        column.finish()
+    }
+}
+
+#[derive(Default)]
+struct ModelSelectorWidget {}
+
+impl SettingsWidget for ModelSelectorWidget {
+    type View = DirectApiSettingsPageView;
+
+    fn search_terms(&self) -> &str {
+        "model select dropdown llm gpt claude gemini llama list"
+    }
+
+    fn render(
+        &self,
+        view: &DirectApiSettingsPageView,
+        appearance: &Appearance,
+        _app: &AppContext,
+    ) -> Box<dyn Element> {
+        use warpui::elements::ChildView;
+
+        // Hide widget when DirectApiModelSelection feature flag is disabled
+        if !FeatureFlag::DirectApiModelSelection.is_enabled() {
+            return Container::new(Flex::column().finish()).finish();
+        }
+
+        let mut column = Flex::column();
+
+        // Label
+        let label = appearance
+            .ui_builder()
+            .span("Model")
+            .build()
+            .with_margin_bottom(8.)
+            .finish();
+        column.add_child(label);
+
+        let cached_models = view.cached_models.borrow();
+
+        if cached_models.is_empty() {
+            // Placeholder when no models are cached yet. Drives users to the
+            // "Update Model List" button before they try to pick a model.
+            let placeholder = appearance
+                .ui_builder()
+                .span("Click 'Update Model List' to fetch available models")
+                .build()
+                .with_margin_bottom(ITEM_VERTICAL_SPACING)
+                .finish();
+            column.add_child(placeholder);
+        } else {
+            let dropdown = ChildView::new(&view.model_dropdown).finish();
+            column.add_child(
+                Container::new(dropdown)
+                    .with_margin_bottom(ITEM_VERTICAL_SPACING)
+                    .finish(),
+            );
+        }
 
         column.finish()
     }

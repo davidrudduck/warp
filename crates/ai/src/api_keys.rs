@@ -1,4 +1,5 @@
 pub use crate::aws_credentials::{AwsCredentials, AwsCredentialsState};
+use crate::model_registry::{ModelListCache, ProviderId};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use warp_multi_agent_api as api;
@@ -23,6 +24,18 @@ pub struct ApiKeys {
     pub anthropic: Option<String>,
     pub openai: Option<String>,
     pub open_router: Option<String>,
+
+    // ---- Phase 2 additions (all #[serde(default)] so old payloads parse) ----
+    #[serde(default)]
+    pub selected_provider: Option<ProviderId>,
+    #[serde(default)]
+    pub custom_base_url: Option<String>,
+    #[serde(default)]
+    pub openrouter_base_url: Option<String>,
+    #[serde(default)]
+    pub ollama_base_url: Option<String>,
+    #[serde(default)]
+    pub selected_models: std::collections::BTreeMap<ProviderId, String>,
 }
 
 impl ApiKeys {
@@ -99,6 +112,11 @@ impl ApiKeyManager {
             keys.google = key;
         }
 
+        // Invalidate model list cache for this provider
+        if let Ok(cache) = ModelListCache::new() {
+            let _ = cache.invalidate(ProviderId::GoogleGemini);
+        }
+
         ctx.emit(ApiKeyManagerEvent::KeysUpdated);
         self.write_keys_to_secure_storage(ctx);
     }
@@ -110,6 +128,11 @@ impl ApiKeyManager {
         // Update cache
         if let Some(ref mut keys) = self.keys_cache.borrow_mut().as_mut() {
             keys.anthropic = key;
+        }
+
+        // Invalidate model list cache for this provider
+        if let Ok(cache) = ModelListCache::new() {
+            let _ = cache.invalidate(ProviderId::Anthropic);
         }
 
         ctx.emit(ApiKeyManagerEvent::KeysUpdated);
@@ -125,6 +148,11 @@ impl ApiKeyManager {
             keys.openai = key;
         }
 
+        // Invalidate model list cache for this provider
+        if let Ok(cache) = ModelListCache::new() {
+            let _ = cache.invalidate(ProviderId::OpenAI);
+        }
+
         ctx.emit(ApiKeyManagerEvent::KeysUpdated);
         self.write_keys_to_secure_storage(ctx);
     }
@@ -138,8 +166,64 @@ impl ApiKeyManager {
             keys.open_router = key;
         }
 
+        // Invalidate model list cache for this provider
+        if let Ok(cache) = ModelListCache::new() {
+            let _ = cache.invalidate(ProviderId::OpenRouter);
+        }
+
         ctx.emit(ApiKeyManagerEvent::KeysUpdated);
         self.write_keys_to_secure_storage(ctx);
+    }
+
+    /// Persist the user's selected model for a given provider. The selection
+    /// is stored alongside the API keys in secure storage so it survives
+    /// restarts.
+    pub fn set_selected_model(
+        &mut self,
+        provider: ProviderId,
+        model_id: String,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        // Ensure cache is loaded
+        self.ensure_keys_loaded(ctx);
+
+        // Update cache
+        if let Some(ref mut keys) = self.keys_cache.borrow_mut().as_mut() {
+            keys.selected_models.insert(provider, model_id);
+        }
+
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_secure_storage(ctx);
+    }
+
+    /// Returns the selected model for a given provider, falling back to per-provider defaults.
+    ///
+    /// Call when creating a Direct API conversation to determine the model_id for
+    /// `ConversationRepository::create_conversation()`. Returns `None` for providers
+    /// without sensible defaults (Ollama, OpenRouter, Custom).
+    ///
+    /// **Note**: Conversation-starting UI is pending (Phase 3). This API is ready to use.
+    pub fn get_selected_model_for_provider(
+        &self,
+        provider: ProviderId,
+        ctx: &warpui::AppContext,
+    ) -> Option<String> {
+        let keys = self.keys(ctx);
+
+        // Check if user has explicitly selected a model
+        if let Some(model_id) = keys.selected_models.get(&provider) {
+            return Some(model_id.clone());
+        }
+
+        // Fall back to per-provider defaults
+        match provider {
+            ProviderId::OpenAI => Some("gpt-4o-mini".to_string()),
+            ProviderId::Anthropic => Some("claude-3-5-sonnet-20241022".to_string()),
+            ProviderId::GoogleGemini => Some("gemini-2.0-flash".to_string()),
+            ProviderId::Ollama => None, // No default - user must configure local model
+            ProviderId::OpenRouter => None, // No default - too many options
+            ProviderId::Custom => None,     // No default - unknown endpoint
+        }
     }
 
     pub fn set_aws_credentials_state(

@@ -288,7 +288,10 @@ async fn run_persists_conversation_to_db() {
     let repo = Arc::new(ConversationRepository::new(db_path));
 
     // Create initial conversation
-    let conv_id = repo.create_conversation("openai".to_string(), "gpt-4o".to_string()).await.unwrap();
+    let conv_id = repo
+        .create_conversation("openai".to_string(), "gpt-4o".to_string())
+        .await
+        .unwrap();
 
     let provider = Arc::new(MockLlmProvider::new().with_stream(vec![
         StreamEvent::Start,
@@ -337,7 +340,10 @@ async fn run_resumes_from_saved_conversation() {
 
     let repo = Arc::new(ConversationRepository::new(db_path));
 
-    let conv_id = repo.create_conversation("openai".to_string(), "gpt-4o".to_string()).await.unwrap();
+    let conv_id = repo
+        .create_conversation("openai".to_string(), "gpt-4o".to_string())
+        .await
+        .unwrap();
 
     // Pre-populate with saved messages
     let previous_messages = vec![

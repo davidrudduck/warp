@@ -136,6 +136,9 @@ pub enum FeatureFlag {
     /// Enables workflows for use with Agent Mode.
     AgentModeWorkflows,
 
+    /// Enables model selection UI in Direct API settings (Settings → Agents → Direct API).
+    DirectApiModelSelection,
+
     /// Enables AI rules for use with Agent Mode.
     AIRules,
 
@@ -907,6 +910,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::Projects,
     FeatureFlag::ProviderCommand,
     FeatureFlag::ArtifactCommand,
+    FeatureFlag::DirectApiModelSelection,
     FeatureFlag::MarkdownImages,
     FeatureFlag::FileAndDiffSetComments,
     FeatureFlag::FileGlobV2Warnings,

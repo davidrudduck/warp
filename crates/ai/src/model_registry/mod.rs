@@ -1,7 +1,15 @@
+pub mod cache;
 pub mod known_capabilities;
+pub mod list_provider;
+pub mod provider_id;
+pub mod providers;
 
 use crate::provider::ModelCapabilities;
 use known_capabilities::known_capabilities;
+
+pub use cache::{CacheEntry, ModelListCache};
+pub use list_provider::{ModelDescriptor, ModelListError, ModelListProvider};
+pub use provider_id::ProviderId;
 
 /// A registry that resolves model capabilities by model ID.
 ///
@@ -27,5 +35,17 @@ impl ModelRegistry {
 }
 
 #[cfg(test)]
+#[path = "cache_tests.rs"]
+mod cache_tests;
+
+#[cfg(test)]
 #[path = "registry_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "provider_id_tests.rs"]
+mod provider_id_tests;
+
+#[cfg(test)]
+#[path = "list_provider_tests.rs"]
+mod list_provider_tests;

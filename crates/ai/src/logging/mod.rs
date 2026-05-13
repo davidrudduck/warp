@@ -6,21 +6,15 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-static OPENAI_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"sk-[A-Za-z0-9]+").unwrap()
-});
+static OPENAI_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"sk-[A-Za-z0-9]+").unwrap());
 
-static ANTHROPIC_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"sk-ant-[A-Za-z0-9_-]+").unwrap()
-});
+static ANTHROPIC_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"sk-ant-[A-Za-z0-9_-]+").unwrap());
 
-static BEARER_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"Bearer\s+[A-Za-z0-9_\.\-]+").unwrap()
-});
+static BEARER_PATTERN: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"Bearer\s+[A-Za-z0-9_\.\-]+").unwrap());
 
-static JWT_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+").unwrap()
-});
+static JWT_PATTERN: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+").unwrap());
 
 fn redact_secrets(message: &str) -> String {
     let mut redacted = message.to_string();

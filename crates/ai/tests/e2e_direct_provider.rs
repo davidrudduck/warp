@@ -65,7 +65,7 @@ async fn e2e_openai_conversation_with_persistence() {
 
     // Create conversation
     let conv_id_str = repo
-        .create_conversation("openai", "gpt-4o-mini")
+        .create_conversation("openai".to_string(), "gpt-4o-mini".to_string())
         .await
         .unwrap();
     let conv_id = AIConversationId::from_string(&conv_id_str).unwrap();
@@ -81,7 +81,9 @@ async fn e2e_openai_conversation_with_persistence() {
     let (_cancel_tx, cancel_rx) = oneshot::channel();
 
     // Log start
-    logger.log(&format!("E2E Test: Starting conversation {}", conv_id_str));
+    logger
+        .log(&format!("E2E Test: Starting conversation {}", conv_id_str))
+        .await;
 
     // Run direct loop
     tokio::spawn(direct_loop::run(
@@ -101,16 +103,18 @@ async fn e2e_openai_conversation_with_persistence() {
         match event {
             AgentEvent::TextChunk(text) => {
                 response_text.push_str(&text);
-                logger.log(&format!("Received chunk: {}", text));
+                logger.log(&format!("Received chunk: {}", text)).await;
             }
             AgentEvent::Done {
                 finish_reason,
                 usage,
             } => {
-                logger.log(&format!(
-                    "Conversation done: {:?}, usage: {:?}",
-                    finish_reason, usage
-                ));
+                logger
+                    .log(&format!(
+                        "Conversation done: {:?}, usage: {:?}",
+                        finish_reason, usage
+                    ))
+                    .await;
                 break;
             }
             AgentEvent::Error(err) => {
@@ -126,10 +130,12 @@ async fn e2e_openai_conversation_with_persistence() {
         "Expected answer to contain '4', got: {}",
         response_text
     );
-    logger.log(&format!("Response verified: {}", response_text));
+    logger
+        .log(&format!("Response verified: {}", response_text))
+        .await;
 
     // Verify persistence
-    let saved_messages = repo.load_messages(&conv_id_str).await.unwrap();
+    let saved_messages = repo.load_messages(conv_id_str.clone()).await.unwrap();
     assert_eq!(
         saved_messages.len(),
         2,
@@ -137,12 +143,14 @@ async fn e2e_openai_conversation_with_persistence() {
     );
 
     // Verify auto-title
-    let conversation = repo.get_conversation(&conv_id_str).await.unwrap();
+    let conversation = repo.get_conversation(conv_id_str.clone()).await.unwrap();
     assert!(
         conversation.title.is_some(),
         "Auto-title should be generated"
     );
-    logger.log(&format!("Auto-title: {:?}", conversation.title));
+    logger
+        .log(&format!("Auto-title: {:?}", conversation.title))
+        .await;
 
     // Verify logging (check log file exists and has entries)
     let log_content = std::fs::read_to_string(log_dir.join("direct-api.log")).unwrap();
@@ -155,7 +163,7 @@ async fn e2e_openai_conversation_with_persistence() {
         "API key should be redacted in logs"
     );
 
-    logger.log("E2E Test: PASSED");
+    logger.log("E2E Test: PASSED").await;
 }
 
 #[tokio::test]
@@ -181,7 +189,7 @@ async fn e2e_ollama_local_llm() {
     let provider: SharedProvider = Arc::new(GenaiAdapter::new("ollama", "", "llama3.2"));
 
     let conv_id_str = repo
-        .create_conversation("ollama", "llama3.2")
+        .create_conversation("ollama".to_string(), "llama3.2".to_string())
         .await
         .unwrap();
     let conv_id = AIConversationId::from_string(&conv_id_str).unwrap();
@@ -194,7 +202,7 @@ async fn e2e_ollama_local_llm() {
     let (tool_tx, _tool_rx) = mpsc::channel::<ToolDispatchRequest>(100);
     let (_cancel_tx, cancel_rx) = oneshot::channel();
 
-    logger.log("E2E Ollama Test: Starting");
+    logger.log("E2E Ollama Test: Starting").await;
 
     tokio::spawn(direct_loop::run(
         provider,
@@ -211,7 +219,7 @@ async fn e2e_ollama_local_llm() {
     while let Some(event) = event_rx.recv().await {
         if matches!(event, AgentEvent::Done { .. }) {
             done = true;
-            logger.log("E2E Ollama Test: Received Done event");
+            logger.log("E2E Ollama Test: Received Done event").await;
             break;
         }
     }
@@ -219,14 +227,14 @@ async fn e2e_ollama_local_llm() {
     assert!(done, "Conversation should complete");
 
     // Verify persistence
-    let saved_messages = repo.load_messages(&conv_id_str).await.unwrap();
+    let saved_messages = repo.load_messages(conv_id_str.clone()).await.unwrap();
     assert_eq!(
         saved_messages.len(),
         2,
         "Expected user + assistant messages"
     );
 
-    logger.log("E2E Ollama Test: PASSED");
+    logger.log("E2E Ollama Test: PASSED").await;
 }
 
 #[tokio::test]
@@ -248,12 +256,14 @@ async fn e2e_resume_conversation() {
 
     // First conversation turn
     let conv_id_str = repo
-        .create_conversation("openai", "gpt-4o-mini")
+        .create_conversation("openai".to_string(), "gpt-4o-mini".to_string())
         .await
         .unwrap();
     let conv_id = AIConversationId::from_string(&conv_id_str).unwrap();
 
-    logger.log("E2E Resume Test: First turn - asking 'What is 2+2?'");
+    logger
+        .log("E2E Resume Test: First turn - asking 'What is 2+2?'")
+        .await;
 
     let (event_tx, mut event_rx) = agent_event_channel(100);
     let (tool_tx, _tool_rx) = mpsc::channel::<ToolDispatchRequest>(100);
@@ -274,16 +284,18 @@ async fn e2e_resume_conversation() {
 
     while let Some(event) = event_rx.recv().await {
         if matches!(event, AgentEvent::Done { .. }) {
-            logger.log("E2E Resume Test: First turn completed");
+            logger.log("E2E Resume Test: First turn completed").await;
             break;
         }
     }
 
     // Verify first turn
-    let history = repo.load_messages(&conv_id_str).await.unwrap();
+    let history = repo.load_messages(conv_id_str.clone()).await.unwrap();
     assert_eq!(history.len(), 2, "Expected user + assistant messages"); // User + Assistant
 
-    logger.log("E2E Resume Test: Second turn - asking 'What is 3+3?'");
+    logger
+        .log("E2E Resume Test: Second turn - asking 'What is 3+3?'")
+        .await;
 
     // Resume conversation
     let mut resumed_messages = history;
@@ -308,20 +320,20 @@ async fn e2e_resume_conversation() {
 
     while let Some(event) = event_rx2.recv().await {
         if matches!(event, AgentEvent::Done { .. }) {
-            logger.log("E2E Resume Test: Second turn completed");
+            logger.log("E2E Resume Test: Second turn completed").await;
             break;
         }
     }
 
     // Verify full history saved
-    let final_history = repo.load_messages(&conv_id_str).await.unwrap();
+    let final_history = repo.load_messages(conv_id_str.clone()).await.unwrap();
     assert_eq!(
         final_history.len(),
         4,
         "Expected 2 user + 2 assistant messages"
     );
 
-    logger.log("E2E Resume Test: PASSED");
+    logger.log("E2E Resume Test: PASSED").await;
 }
 
 #[tokio::test]
@@ -349,7 +361,10 @@ async fn e2e_anthropic_conversation() {
 
     // Create conversation
     let conv_id_str = repo
-        .create_conversation("anthropic", "claude-3-5-haiku-20241022")
+        .create_conversation(
+            "anthropic".to_string(),
+            "claude-3-5-haiku-20241022".to_string(),
+        )
         .await
         .unwrap();
     let conv_id = AIConversationId::from_string(&conv_id_str).unwrap();
@@ -365,10 +380,12 @@ async fn e2e_anthropic_conversation() {
     let (_cancel_tx, cancel_rx) = oneshot::channel();
 
     // Log start
-    logger.log(&format!(
-        "E2E Anthropic Test: Starting conversation {}",
-        conv_id_str
-    ));
+    logger
+        .log(&format!(
+            "E2E Anthropic Test: Starting conversation {}",
+            conv_id_str
+        ))
+        .await;
 
     // Run direct loop
     tokio::spawn(direct_loop::run(
@@ -407,7 +424,7 @@ async fn e2e_anthropic_conversation() {
     );
 
     // Verify persistence
-    let saved_messages = repo.load_messages(&conv_id_str).await.unwrap();
+    let saved_messages = repo.load_messages(conv_id_str.clone()).await.unwrap();
     assert_eq!(
         saved_messages.len(),
         2,
@@ -421,5 +438,103 @@ async fn e2e_anthropic_conversation() {
         "Anthropic API key should be redacted in logs"
     );
 
-    logger.log("E2E Anthropic Test: PASSED");
+    logger.log("E2E Anthropic Test: PASSED").await;
+}
+
+#[tokio::test]
+async fn selected_model_propagates_to_conversation_repository() {
+    use ai::api_keys::ApiKeyManager;
+    use ai::model_registry::ProviderId;
+    use warpui::App;
+    use warpui_extras::secure_storage;
+
+    // Demonstrates expected integration: ApiKeyManager → ConversationRepository.
+    // Production integration blocked on conversation-starting UI (Phase 3).
+    // Pattern: get_selected_model_for_provider → create_conversation → direct_loop::run
+    App::test((), |mut app| async move {
+        // Setup secure storage
+        app.update(|ctx| {
+            secure_storage::register_noop("test", ctx);
+        });
+
+        let temp_dir = tempdir().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+        init_test_db(&db_path);
+
+        let repo = Arc::new(ConversationRepository::new(db_path));
+        let manager = app.add_singleton_model(ApiKeyManager::new);
+
+        // Simulate user selecting a specific model for OpenAI
+        manager.update(&mut app, |manager, ctx| {
+            manager.set_selected_model(
+                ProviderId::OpenAI,
+                "gpt-4-turbo".to_string(),
+                ctx,
+            );
+        });
+
+        // When creating a conversation, read the selected model
+        let (provider_str, model_id) = manager.read(&app, |manager, ctx| {
+            let provider = ProviderId::OpenAI;
+            let model = manager
+                .get_selected_model_for_provider(provider, ctx)
+                .expect("OpenAI should have a selected or default model");
+            ("openai".to_string(), model)
+        });
+
+        // Verify the selected model is used (not the default)
+        assert_eq!(model_id, "gpt-4-turbo");
+
+        // Create conversation with the selected model
+        let conv_id_str = repo
+            .create_conversation(provider_str, model_id.clone())
+            .await
+            .unwrap();
+
+        // Verify conversation metadata has the correct model
+        let conversation = repo.get_conversation(conv_id_str).await.unwrap();
+        assert_eq!(conversation.model_id, "gpt-4-turbo");
+    });
+}
+
+#[tokio::test]
+async fn selecting_model_persists_to_api_key_manager() {
+    use ai::api_keys::ApiKeyManager;
+    use ai::model_registry::ProviderId;
+    use warpui::App;
+    use warpui_extras::secure_storage;
+
+    App::test((), |mut app| async move {
+        // Setup secure storage
+        app.update(|ctx| {
+            secure_storage::register_noop("test", ctx);
+        });
+
+        let manager = app.add_singleton_model(ApiKeyManager::new);
+
+        // Set a model selection
+        manager.update(&mut app, |manager, ctx| {
+            manager.set_selected_model(
+                ProviderId::Anthropic,
+                "claude-3-opus-20240229".to_string(),
+                ctx,
+            );
+        });
+
+        // Verify it persists and can be read back
+        manager.read(&app, |manager, ctx| {
+            let selected = manager
+                .get_selected_model_for_provider(ProviderId::Anthropic, ctx)
+                .expect("Should return the selected model");
+            assert_eq!(selected, "claude-3-opus-20240229");
+        });
+
+        // Verify default providers still return their defaults when not set
+        manager.read(&app, |manager, ctx| {
+            let openai_default = manager
+                .get_selected_model_for_provider(ProviderId::OpenAI, ctx)
+                .expect("OpenAI should have a default");
+            assert_eq!(openai_default, "gpt-4o-mini");
+        });
+    });
 }

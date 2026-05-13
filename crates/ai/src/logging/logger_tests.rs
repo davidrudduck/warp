@@ -33,7 +33,9 @@ async fn logger_redacts_api_keys() {
     let logger = DirectApiLogger::new(log_dir.clone());
 
     // Log message with API key
-    logger.log("Request with key: sk-1234567890abcdefghijklmnop").await;
+    logger
+        .log("Request with key: sk-1234567890abcdefghijklmnop")
+        .await;
 
     let content = fs::read_to_string(log_dir.join("direct-api.log")).unwrap();
     assert!(!content.contains("sk-1234567890abcdefghijklmnop"));
@@ -48,7 +50,9 @@ async fn logger_redacts_bearer_tokens() {
     let logger = DirectApiLogger::new(log_dir.clone());
 
     // Log message with bearer token
-    logger.log("Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9").await;
+    logger
+        .log("Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9")
+        .await;
 
     let content = fs::read_to_string(log_dir.join("direct-api.log")).unwrap();
     assert!(!content.contains("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"));

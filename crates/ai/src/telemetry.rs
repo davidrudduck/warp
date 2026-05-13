@@ -9,6 +9,8 @@ use warp_core::{
     telemetry::{EnablementState, TelemetryEvent, TelemetryEventDesc},
 };
 
+use crate::model_registry::ProviderId;
+
 #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
 #[derive(Clone, EnumDiscriminants)]
 #[strum_discriminants(derive(EnumIter))]
@@ -43,6 +45,24 @@ pub enum AITelemetryEvent {
     BuildTreeSuccess {
         file_traversal_duration: Duration,
         merkle_tree_parse_duration: Duration,
+    },
+    /// Model list fetch succeeded for a provider.
+    DirectApiModelListFetchSucceeded {
+        provider: ProviderId,
+        model_count: usize,
+        duration_ms: u64,
+    },
+    /// Model list fetch failed for a provider.
+    DirectApiModelListFetchFailed {
+        provider: ProviderId,
+        /// Static error kind string (e.g., "network", "auth_failed", "rate_limited")
+        error_kind: &'static str,
+    },
+    /// User selected a model for a provider.
+    DirectApiModelSelected {
+        provider: ProviderId,
+        /// Hash of model ID (not raw ID to avoid PII in custom-model cases)
+        model_id_hash: u64,
     },
 }
 
@@ -110,6 +130,29 @@ impl TelemetryEvent for AITelemetryEvent {
                 "file_traversal_duration": file_traversal_duration,
                 "merkle_tree_parse_duration": merkle_tree_parse_duration
             })),
+            Self::DirectApiModelListFetchSucceeded {
+                provider,
+                model_count,
+                duration_ms,
+            } => Some(json!({
+                "provider": provider,
+                "model_count": model_count,
+                "duration_ms": duration_ms
+            })),
+            Self::DirectApiModelListFetchFailed {
+                provider,
+                error_kind,
+            } => Some(json!({
+                "provider": provider,
+                "error_kind": error_kind
+            })),
+            Self::DirectApiModelSelected {
+                provider,
+                model_id_hash,
+            } => Some(json!({
+                "provider": provider,
+                "model_id_hash": model_id_hash
+            })),
         }
     }
 
@@ -122,7 +165,10 @@ impl TelemetryEvent for AITelemetryEvent {
             | Self::SyncCodebaseContextFailed { .. }
             | Self::SyncCodebaseContextSuccess { .. }
             | Self::BuildTreeFailed { .. }
-            | Self::BuildTreeSuccess { .. } => false,
+            | Self::BuildTreeSuccess { .. }
+            | Self::DirectApiModelListFetchSucceeded { .. }
+            | Self::DirectApiModelListFetchFailed { .. }
+            | Self::DirectApiModelSelected { .. } => false,
         }
     }
 
@@ -144,6 +190,9 @@ impl TelemetryEventDesc for AITelemetryEventDiscriminants {
             Self::SyncCodebaseContextFailed => "AgentMode.SyncCodebaseContext.Failed",
             Self::BuildTreeFailed => "AgentMode.SyncCodebaseContext.BuildTree.Failed",
             Self::BuildTreeSuccess => "AgentMode.SyncCodebaseContext.BuildTree.Success",
+            Self::DirectApiModelListFetchSucceeded => "DirectApi.ModelList.Fetch.Success",
+            Self::DirectApiModelListFetchFailed => "DirectApi.ModelList.Fetch.Failed",
+            Self::DirectApiModelSelected => "DirectApi.Model.Selected",
         }
     }
 
@@ -159,6 +208,11 @@ impl TelemetryEventDesc for AITelemetryEventDiscriminants {
             Self::SyncCodebaseContextFailed => "Failed to sync codebase context",
             Self::BuildTreeFailed => "Failed to build merkle tree for codebase context",
             Self::BuildTreeSuccess => "Successfully built merkle tree for codebase context",
+            Self::DirectApiModelListFetchSucceeded => {
+                "Successfully fetched model list for provider"
+            }
+            Self::DirectApiModelListFetchFailed => "Failed to fetch model list for provider",
+            Self::DirectApiModelSelected => "User selected a model for provider",
         }
     }
 
@@ -172,6 +226,9 @@ impl TelemetryEventDesc for AITelemetryEventDiscriminants {
             | Self::SyncCodebaseContextSuccess
             | Self::BuildTreeFailed
             | Self::BuildTreeSuccess => EnablementState::Flag(FeatureFlag::FullSourceCodeEmbedding),
+            Self::DirectApiModelListFetchSucceeded
+            | Self::DirectApiModelListFetchFailed
+            | Self::DirectApiModelSelected => EnablementState::Always,
         }
     }
 }
