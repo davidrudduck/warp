@@ -1,4 +1,4 @@
-use super::{visibility_tooltip, ProviderType};
+use super::{is_safe_for_http, visibility_tooltip, ProviderType};
 
 #[test]
 fn api_key_placeholder_for_each_provider() {
@@ -375,4 +375,115 @@ fn double_click_update_model_list_is_noop() {
     // Expected: Second click while is_fetching_models=true returns early, no spawn.
     // Requires: ViewContext mock to verify single spawn.
     // Note: US-011 (fetch_in_flight guard) marked incomplete; relies on button state only.
+}
+
+#[test]
+#[ignore = "Requires ViewContext mock setup"]
+fn stale_selection_marked_in_dropdown() {
+    // Expected: When user's saved model selection is not in the fresh model list,
+    // it appears in the dropdown with a "(stale)" suffix appended to the model ID.
+    // The stale model appears at the end of the list after all fresh models.
+    // User can keep the stale selection or switch to a fresh model.
+    //
+    // Test flow:
+    // 1. Set saved_selection to "gpt-4" in ApiKeyManager
+    // 2. Populate cache with models ["gpt-4o", "gpt-4o-mini"] (no "gpt-4")
+    // 3. Call refresh_model_dropdown
+    // 4. Verify dropdown items: ["gpt-4o", "gpt-4o-mini", "gpt-4 (stale)"]
+    // 5. Verify "gpt-4 (stale)" is the selected item
+    //
+    // Requires: ViewContext mock to verify dropdown.set_items() and set_selected_by_action().
+}
+
+// ============================================================================
+// LAN Address HTTP Validation Tests (RFC 1918 Private IP Ranges)
+// ============================================================================
+
+#[test]
+fn is_safe_for_http_allows_https_always() {
+    assert!(is_safe_for_http("https://api.example.com"));
+    assert!(is_safe_for_http("https://1.2.3.4:8080"));
+    assert!(is_safe_for_http("https://192.0.2.1/path"));
+}
+
+#[test]
+fn is_safe_for_http_allows_localhost() {
+    assert!(is_safe_for_http("http://localhost"));
+    assert!(is_safe_for_http("http://localhost:11434"));
+    assert!(is_safe_for_http("http://localhost:11434/v1/chat"));
+}
+
+#[test]
+fn is_safe_for_http_allows_127_loopback() {
+    assert!(is_safe_for_http("http://127.0.0.1"));
+    assert!(is_safe_for_http("http://127.0.0.1:8080"));
+    assert!(is_safe_for_http("http://127.1.2.3"));
+    assert!(is_safe_for_http("http://127.255.255.255/api"));
+}
+
+#[test]
+fn is_safe_for_http_allows_rfc1918_10_dot() {
+    // 10.0.0.0/8 - entire 10.x.x.x range
+    assert!(is_safe_for_http("http://10.0.0.1"));
+    assert!(is_safe_for_http("http://10.42.18.156:12345"));
+    assert!(is_safe_for_http("http://10.255.255.254"));
+    assert!(is_safe_for_http("http://10.1.1.1/v1/chat"));
+}
+
+#[test]
+fn is_safe_for_http_allows_rfc1918_192_168() {
+    // 192.168.0.0/16 - entire 192.168.x.x range
+    assert!(is_safe_for_http("http://192.168.0.1"));
+    assert!(is_safe_for_http("http://192.168.1.1:8080"));
+    assert!(is_safe_for_http("http://192.168.255.254"));
+    assert!(is_safe_for_http("http://192.168.100.50/api"));
+}
+
+#[test]
+fn is_safe_for_http_allows_rfc1918_172_16_through_31() {
+    // 172.16.0.0/12 - 172.16.0.0 through 172.31.255.255
+    assert!(is_safe_for_http("http://172.16.0.1"));
+    assert!(is_safe_for_http("http://172.16.255.254"));
+    assert!(is_safe_for_http("http://172.20.1.1:8080"));
+    assert!(is_safe_for_http("http://172.31.255.255"));
+    assert!(is_safe_for_http("http://172.24.100.50/v1/chat"));
+}
+
+#[test]
+fn is_safe_for_http_rejects_172_outside_16_through_31() {
+    // 172.15.x.x and 172.32.x.x are NOT in RFC 1918 range
+    assert!(!is_safe_for_http("http://172.15.0.1"));
+    assert!(!is_safe_for_http("http://172.15.255.254"));
+    assert!(!is_safe_for_http("http://172.32.0.1"));
+    assert!(!is_safe_for_http("http://172.32.1.1"));
+    assert!(!is_safe_for_http("http://172.0.0.1"));
+    assert!(!is_safe_for_http("http://172.255.255.255"));
+}
+
+#[test]
+fn is_safe_for_http_rejects_public_ips() {
+    // Public IPv4 addresses require HTTPS
+    assert!(!is_safe_for_http("http://1.2.3.4"));
+    assert!(!is_safe_for_http("http://8.8.8.8:8080"));
+    assert!(!is_safe_for_http("http://192.0.2.1")); // TEST-NET-1
+    assert!(!is_safe_for_http("http://198.51.100.1")); // TEST-NET-2
+    assert!(!is_safe_for_http("http://203.0.113.1")); // TEST-NET-3
+}
+
+#[test]
+fn is_safe_for_http_rejects_non_http_schemes() {
+    assert!(!is_safe_for_http("ftp://localhost"));
+    assert!(!is_safe_for_http("ws://10.0.0.1"));
+    assert!(!is_safe_for_http("file:///path/to/file"));
+    assert!(!is_safe_for_http(""));
+    assert!(!is_safe_for_http("not-a-url"));
+}
+
+#[test]
+fn is_safe_for_http_handles_ports_and_paths() {
+    // Verify that ports and paths don't interfere with IP detection
+    assert!(is_safe_for_http("http://10.42.18.156:12345/api/v1"));
+    assert!(is_safe_for_http("http://192.168.1.1:8080/chat"));
+    assert!(is_safe_for_http("http://172.20.0.1:9000/completions"));
+    assert!(!is_safe_for_http("http://8.8.8.8:53/dns"));
 }

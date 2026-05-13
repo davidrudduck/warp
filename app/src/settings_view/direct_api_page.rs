@@ -58,6 +58,47 @@ fn visibility_tooltip(show: bool) -> &'static str {
     }
 }
 
+/// Check if a URL is safe to use with HTTP (localhost or private LAN).
+/// Returns true if the URL can use HTTP, false if it requires HTTPS.
+pub(crate) fn is_safe_for_http(url: &str) -> bool {
+    if url.starts_with("https://") {
+        return true;
+    }
+
+    if !url.starts_with("http://") {
+        return false;
+    }
+
+    // Extract hostname from http://host:port/path
+    let without_scheme = url.trim_start_matches("http://");
+    let host = without_scheme.split(&[':', '/'][..]).next().unwrap_or("");
+
+    // Allow localhost variants
+    if host == "localhost" || host.starts_with("127.") {
+        return true;
+    }
+
+    // Allow private IPv4 ranges (RFC 1918)
+    if host.starts_with("10.") {
+        return true; // 10.0.0.0/8
+    }
+    if host.starts_with("192.168.") {
+        return true; // 192.168.0.0/16
+    }
+    if host.starts_with("172.") {
+        // 172.16.0.0/12 (172.16.0.0 - 172.31.255.255)
+        if let Some(second_octet) = host.split('.').nth(1) {
+            if let Ok(n) = second_octet.parse::<u8>() {
+                if (16..=31).contains(&n) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
+}
+
 fn render_chromed_input(
     editor: ViewHandle<EditorView>,
     appearance: &Appearance,
@@ -617,10 +658,23 @@ impl DirectApiSettingsPageView {
                 }
             },
             None => match provider_id {
-                ProviderId::OpenRouter => Arc::new(OpenRouterListProvider::new(
-                    api_key.unwrap_or_default(),
-                    base_url,
-                )),
+                ProviderId::OpenRouter => {
+                    // Validate base URL if provided
+                    if let Some(ref url) = base_url {
+                        if !is_safe_for_http(url) {
+                            *self.test_result.borrow_mut() = Some(Err(
+                                "Base URL must use https:// (http:// only allowed for localhost/LAN)"
+                                    .to_string(),
+                            ));
+                            ctx.notify();
+                            return;
+                        }
+                    }
+                    Arc::new(OpenRouterListProvider::new(
+                        api_key.unwrap_or_default(),
+                        base_url,
+                    ))
+                }
                 ProviderId::Custom => {
                     let Some(url) = base_url else {
                         *self.test_result.borrow_mut() =
@@ -628,6 +682,15 @@ impl DirectApiSettingsPageView {
                         ctx.notify();
                         return;
                     };
+                    // Validate base URL to prevent plaintext leaks or malformed requests
+                    if !is_safe_for_http(&url) {
+                        *self.test_result.borrow_mut() = Some(Err(
+                            "Base URL must use https:// (http:// only allowed for localhost/LAN)"
+                                .to_string(),
+                        ));
+                        ctx.notify();
+                        return;
+                    }
                     Arc::new(CustomListProvider::new(url, api_key))
                 }
                 ProviderId::OpenAI
@@ -786,6 +849,12 @@ impl DirectApiSettingsPageView {
     /// Rebuild the model dropdown items from the cache for the currently
     /// selected provider, then restore the previously-selected model (if any
     /// matches a freshly-cached ID).
+    ///
+    /// **Stale model handling**: If the user's saved selection is no longer
+    /// in the fresh model list, it's added to the dropdown with a "(stale)"
+    /// suffix. This allows the user to see their prior choice and either keep
+    /// it (for temporary provider outages) or switch to a current model. Stale
+    /// models appear at the end of the list after all fresh models.
     fn refresh_model_dropdown(&mut self, ctx: &mut ViewContext<Self>) {
         let provider_id = self.selected_provider.borrow().to_provider_id();
 
@@ -795,14 +864,6 @@ impl DirectApiSettingsPageView {
             .map(|entry| entry.models)
             .unwrap_or_default();
 
-        let items: Vec<DropdownItem<DirectApiPageAction>> = models
-            .iter()
-            .map(|m| {
-                let label = m.display_name.clone().unwrap_or_else(|| m.id.clone());
-                DropdownItem::new(label, DirectApiPageAction::SelectModel(m.id.clone()))
-            })
-            .collect();
-
         let saved_selection = self
             .api_key_manager
             .as_ref(ctx)
@@ -811,10 +872,41 @@ impl DirectApiSettingsPageView {
             .get(&provider_id)
             .cloned();
 
+        // Build dropdown items from fresh models, then append stale selection
+        // if it's not in the fresh list.
+        let mut items: Vec<DropdownItem<DirectApiPageAction>> = models
+            .iter()
+            .map(|m| {
+                let label = m.display_name.clone().unwrap_or_else(|| m.id.clone());
+                DropdownItem::new(label, DirectApiPageAction::SelectModel(m.id.clone()))
+            })
+            .collect();
+
+        // Check if saved selection is stale (not in fresh model list)
+        let is_stale = if let Some(ref model_id) = saved_selection {
+            !models.iter().any(|m| &m.id == model_id)
+        } else {
+            false
+        };
+
+        // If stale, add it as a special item with "(stale)" suffix at the end.
+        // Truncate the model_id to prevent malicious/buggy upstream providers
+        // from breaking the dropdown layout with excessively long IDs.
+        if is_stale {
+            if let Some(ref model_id) = saved_selection {
+                let truncated = model_id.chars().take(80).collect::<String>();
+                let stale_label = format!("{truncated} (stale)");
+                items.push(DropdownItem::new(
+                    stale_label,
+                    DirectApiPageAction::SelectModel(model_id.clone()),
+                ));
+            }
+        }
+
         self.model_dropdown.update(ctx, |dropdown, ctx| {
             dropdown.set_items(items, ctx);
 
-            if !models.is_empty() {
+            if !models.is_empty() || is_stale {
                 if let Some(model_id) = saved_selection {
                     dropdown
                         .set_selected_by_action(DirectApiPageAction::SelectModel(model_id), ctx);
