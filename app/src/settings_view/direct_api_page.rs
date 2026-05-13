@@ -268,6 +268,10 @@ pub struct DirectApiSettingsPageView {
     /// provider. Refreshed by `refresh_model_dropdown()` whenever the
     /// provider changes or a fetch completes.
     cached_models: RefCell<Vec<ModelDescriptor>>,
+    /// Tracks which provider currently has an in-flight model list fetch.
+    /// Used to prevent duplicate fetches and enable early-return on double-click.
+    /// Set to Some(provider_id) when fetch starts, None when fetch completes or errors.
+    fetch_in_flight: Cell<Option<ProviderId>>,
 }
 
 impl DirectApiSettingsPageView {
@@ -392,6 +396,7 @@ impl DirectApiSettingsPageView {
             toggle_visibility_button,
             model_cache,
             cached_models: RefCell::new(Vec::new()),
+            fetch_in_flight: Cell::new(None),
         };
 
         view.refresh_model_dropdown(ctx);
@@ -564,6 +569,12 @@ impl DirectApiSettingsPageView {
         let provider_type = self.selected_provider.borrow().clone();
         let provider_id = provider_type.to_provider_id();
 
+        // Guard: if a fetch is already in flight for this provider, ignore the
+        // double-click to prevent overlapping network calls.
+        if self.fetch_in_flight.get() == Some(provider_id) {
+            return;
+        }
+
         // Pull the current API key (if any) from the saved keychain entries.
         // The in-memory editor buffer is intentionally not consulted — saving
         // is required first, which keeps "fetch models" and "save key" flows
@@ -636,6 +647,10 @@ impl DirectApiSettingsPageView {
         self.update_model_list_button.update(ctx, |button, ctx| {
             button.set_disabled(true, ctx);
         });
+
+        // Mark this provider's fetch as in-flight to guard against double-clicks.
+        self.fetch_in_flight.set(Some(provider_id));
+
         ctx.notify();
 
         let cache = Arc::clone(&self.model_cache);
@@ -664,6 +679,12 @@ impl DirectApiSettingsPageView {
         ctx: &mut ViewContext<Self>,
     ) {
         let (provider_id, cache, models_result, duration_ms) = result;
+
+        // Clear the in-flight guard for this provider now that the fetch completed
+        // (success or error). This allows subsequent fetches to proceed.
+        if self.fetch_in_flight.get() == Some(provider_id) {
+            self.fetch_in_flight.set(None);
+        }
 
         match models_result {
             Ok(models) => {
