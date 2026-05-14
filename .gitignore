@@ -52,6 +52,13 @@ app/src/persistence/schema.rs.orig
 # Don't include Claude Code worktrees
 .claude/worktrees/
 
+# Don't include Claude Code runtime/session data
+.claude/data/
+
+# Don't include OMC runtime state and session files
+.omc/state/
+.omc/sessions/
+
 # Tab drag development notes
 pr_cleanup.md
 desired_behavior.md
