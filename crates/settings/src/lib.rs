@@ -2,8 +2,10 @@
 pub mod macros;
 pub mod manager;
 pub mod schema;
+pub mod direct_api;
 
 // Re-export commonly used types and traits
+pub use direct_api::DirectAPISettings;
 pub use macros::SettingSection;
 pub use manager::SettingsManager;
 

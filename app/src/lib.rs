@@ -1265,7 +1265,10 @@ pub(crate) fn initialize_app(
         #[cfg_attr(target_family = "wasm", allow(unused_mut))]
         let mut manager = ::ai::api_keys::ApiKeyManager::new(ctx);
         #[cfg(not(target_family = "wasm"))]
-        manager.subscribe_to_settings_changes(ctx);
+        {
+            manager.migrate_from_keychain_if_needed(ctx);
+            manager.subscribe_to_settings_changes(ctx);
+        }
         manager
     });
 

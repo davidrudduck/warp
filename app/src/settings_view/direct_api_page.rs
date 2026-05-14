@@ -393,7 +393,7 @@ impl DirectApiSettingsPageView {
 
         // Create Save button
         let save_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Save to Keychain", NakedTheme).on_click(|ctx| {
+            ActionButton::new("Save Settings", NakedTheme).on_click(|ctx| {
                 ctx.dispatch_typed_action(DirectApiPageAction::SaveApiKey);
             })
         });
