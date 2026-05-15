@@ -979,7 +979,7 @@ git commit -m "Validate Direct API base URLs by parsing"
 - Modify `crates/ai/src/provider/genai_adapter.rs`
 - Modify `crates/ai/src/provider/genai_adapter_tests.rs`
 
-- [ ] **Step 1: Add conversion tests**
+- [x] **Step 1: Add conversion tests**
 
 Add tests to `crates/ai/src/provider/genai_adapter_tests.rs`:
 
@@ -1033,7 +1033,7 @@ fn content_blocks_to_text(blocks: &[ContentBlock]) -> String
 
 Then assert that helper output includes both tool result text and user text.
 
-- [ ] **Step 2: Run tests to verify failure or gap**
+- [x] **Step 2: Run tests to verify failure or gap**
 
 Run:
 
@@ -1043,7 +1043,7 @@ cargo test -p ai genai_adapter -- --nocapture
 
 Expected: tests expose the current dropped assistant tool-call and tool-result behavior, or compile forces the helper seam.
 
-- [ ] **Step 3: Preserve tool content in conversions**
+- [x] **Step 3: Preserve tool content in conversions**
 
 In `crates/ai/src/provider/genai_adapter.rs`, change the user message branch to include tool results:
 
@@ -1109,7 +1109,7 @@ ChatMessage::Assistant { text, tool_calls } => {
 }
 ```
 
-- [ ] **Step 4: Run provider tests**
+- [x] **Step 4: Run provider tests**
 
 Run:
 
@@ -1119,7 +1119,7 @@ cargo test -p ai genai_adapter -- --nocapture
 
 Expected: tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/ai/src/provider/genai_adapter.rs crates/ai/src/provider/genai_adapter_tests.rs

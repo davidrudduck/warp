@@ -2,6 +2,134 @@ use super::*;
 use futures::StreamExt;
 use serde_json::json;
 
+#[test]
+fn converts_assistant_tool_calls_to_genai_messages() {
+    let req = ChatRequest {
+        messages: vec![ChatMessage::Assistant {
+            text: Some("I need a file".to_string()),
+            tool_calls: vec![ToolCall {
+                id: "call-1".to_string(),
+                name: "ReadFiles".to_string(),
+                input: serde_json::json!({"files":[{"name":"Cargo.toml"}]}),
+            }],
+        }],
+        tools: Vec::new(),
+        options: ChatOptions::default(),
+    };
+
+    let genai_req = convert_to_genai_request(req);
+
+    assert_eq!(genai_req.messages.len(), 2);
+    let text = genai_req.messages[0]
+        .content
+        .joined_texts()
+        .expect("assistant text should be present");
+    assert!(text.contains("I need a file"));
+
+    let tool_calls = genai_req.messages[1].content.tool_calls();
+    assert_eq!(tool_calls.len(), 1);
+    assert_eq!(tool_calls[0].call_id, "call-1");
+    assert_eq!(tool_calls[0].fn_name, "ReadFiles");
+    assert_eq!(tool_calls[0].fn_arguments["files"][0]["name"], "Cargo.toml");
+}
+
+#[test]
+fn converts_user_tool_results_without_dropping_text() {
+    let req = ChatRequest {
+        messages: vec![ChatMessage::User(vec![
+            ContentBlock::ToolResult {
+                tool_use_id: "call-1".to_string(),
+                content: ToolResultContent::Text("file contents".to_string()),
+                is_error: false,
+            },
+            ContentBlock::Text("continue".to_string()),
+        ])],
+        tools: Vec::new(),
+        options: ChatOptions::default(),
+    };
+
+    let genai_req = convert_to_genai_request(req);
+
+    assert_eq!(genai_req.messages.len(), 2);
+    let text = genai_req.messages[0]
+        .content
+        .joined_texts()
+        .expect("user text should be present");
+    assert!(text.contains("continue"));
+
+    let tool_responses = genai_req.messages[1].content.tool_responses();
+    assert_eq!(tool_responses.len(), 1);
+    assert_eq!(tool_responses[0].call_id, "call-1");
+    assert_eq!(tool_responses[0].content, "file contents");
+}
+
+#[test]
+fn converts_nested_tool_result_blocks_to_text() {
+    let text = content_blocks_to_text(&[ContentBlock::ToolResult {
+        tool_use_id: "call-2".to_string(),
+        content: ToolResultContent::Blocks(vec![
+            ContentBlock::Text("first".to_string()),
+            ContentBlock::ToolUse {
+                id: "nested".to_string(),
+                name: "NestedTool".to_string(),
+                input: serde_json::json!({"ok":true}),
+            },
+        ]),
+        is_error: true,
+    }]);
+
+    assert!(text.contains("Tool result for call-2 (error): first"));
+    assert!(text.contains("Tool call nested NestedTool"));
+}
+
+#[test]
+fn with_base_url_sets_openai_compatible_provider_kind() {
+    let adapter =
+        GenaiAdapter::new("custom", "test-key", "model").with_base_url("https://example.test");
+
+    match adapter.provider_kind() {
+        ProviderKind::OpenAICompatible { label, base_url } => {
+            assert_eq!(label, "custom");
+            assert_eq!(base_url, "https://example.test/v1/");
+        }
+        other => panic!("expected OpenAICompatible provider kind, got {other:?}"),
+    }
+}
+
+#[test]
+fn stream_end_emits_complete_tool_calls_before_end() {
+    let events = convert_genai_stream_event(ChatStreamEvent::End(genai::chat::StreamEnd {
+        captured_content: Some(genai::chat::MessageContent::from_tool_calls(vec![
+            genai::chat::ToolCall {
+                call_id: "call-1".to_string(),
+                fn_name: "ReadFiles".to_string(),
+                fn_arguments: serde_json::json!({"files":[{"name":"Cargo.toml"}]}),
+                thought_signatures: None,
+            },
+        ])),
+        ..Default::default()
+    }));
+
+    assert_eq!(events.len(), 2);
+    match events[0].as_ref().expect("first event should succeed") {
+        StreamEvent::ToolCallReady(tool_call) => {
+            assert_eq!(tool_call.id, "call-1");
+            assert_eq!(tool_call.name, "ReadFiles");
+            assert_eq!(tool_call.input["files"][0]["name"], "Cargo.toml");
+        }
+        other => panic!("expected ToolCallReady, got {other:?}"),
+    }
+    match events[1].as_ref().expect("second event should succeed") {
+        StreamEvent::End { finish_reason, .. } => assert_eq!(*finish_reason, FinishReason::ToolUse),
+        other => panic!("expected End, got {other:?}"),
+    }
+}
+
+#[test]
+fn stream_options_capture_tool_calls() {
+    assert_eq!(genai_stream_options().capture_tool_calls, Some(true));
+}
+
 #[tokio::test]
 #[ignore] // Requires OPENAI_API_KEY
 async fn genai_chat_basic_text() {

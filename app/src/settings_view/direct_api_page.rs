@@ -18,7 +18,7 @@ use ::ai::model_registry::{
     ModelDescriptor, ModelListCache, ModelListError, ModelListProvider, ProviderId,
 };
 use ::ai::telemetry::AITelemetryEvent;
-use ::ai::url_validation::{normalize_direct_api_base_url, normalize_openai_compatible_base_url};
+use ::ai::url_validation::normalize_direct_api_base_url;
 use std::cell::{Cell, RefCell};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -65,8 +65,9 @@ fn invalid_base_url_message() -> String {
 
 fn normalized_base_url_for_provider(provider: &ProviderType, url: &str) -> Result<String, String> {
     match provider {
-        ProviderType::Custom => normalize_openai_compatible_base_url(url),
-        ProviderType::Ollama | ProviderType::OpenRouter => normalize_direct_api_base_url(url),
+        ProviderType::Ollama | ProviderType::OpenRouter | ProviderType::Custom => {
+            normalize_direct_api_base_url(url)
+        }
         ProviderType::OpenAI | ProviderType::Anthropic | ProviderType::GoogleGemini => {
             normalize_direct_api_base_url(url)
         }
