@@ -425,7 +425,7 @@ git commit -m "Resolve Direct API profile route config"
 - Create `app/src/ai/execution_profiles/direct_api_model_choices.rs`
 - Modify `app/src/ai/execution_profiles/mod.rs`
 
-- [ ] **Step 1: Add helper module with tests**
+- [x] **Step 1: Add helper module with tests**
 
 Create `app/src/ai/execution_profiles/direct_api_model_choices.rs`:
 
@@ -546,7 +546,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Wire module**
+- [x] **Step 2: Wire module**
 
 Add to `app/src/ai/execution_profiles/mod.rs`:
 
@@ -554,7 +554,7 @@ Add to `app/src/ai/execution_profiles/mod.rs`:
 pub mod direct_api_model_choices;
 ```
 
-- [ ] **Step 3: Run tests**
+- [x] **Step 3: Run tests**
 
 Run:
 
@@ -564,7 +564,7 @@ cargo test -p warp direct_api_choices_ -- --nocapture
 
 Expected: both helper tests pass.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add app/src/ai/execution_profiles/direct_api_model_choices.rs app/src/ai/execution_profiles/mod.rs

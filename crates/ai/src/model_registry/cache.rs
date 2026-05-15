@@ -29,8 +29,7 @@ impl ModelListCache {
         })
     }
 
-    /// Create a cache instance with a custom path (for testing).
-    #[cfg(test)]
+    /// Create a cache instance with a custom path.
     pub fn new_with_path(cache_path: PathBuf) -> Result<Self> {
         if let Some(parent) = cache_path.parent() {
             std::fs::create_dir_all(parent).context("failed to create cache directory")?;

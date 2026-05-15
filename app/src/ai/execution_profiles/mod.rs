@@ -29,6 +29,7 @@ use super::llms::{LLMContextWindow, LLMId, LLMPreferences};
 
 pub const PROFILE_NAME_MAX_LENGTH: usize = 50;
 
+pub mod direct_api_model_choices;
 pub mod editor;
 pub mod model_menu_items;
 pub mod profiles;
