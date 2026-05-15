@@ -1,11 +1,14 @@
 pub(crate) mod convert_conversation;
 mod convert_from;
 mod convert_to;
+mod direct;
+mod direct_tools;
 mod r#impl;
 
 pub use ai::agent::convert::ConvertToAPITypeError;
 use ai::api_keys::{ApiKeyManager, ApiKeys};
 use ai::model_registry::ProviderId;
+use ai::url_validation::normalize_direct_api_base_url;
 pub use convert_from::{
     user_inputs_from_messages, ConversionParams, ConvertAPIMessageToClientOutputMessage,
     MaybeAIAgentOutputMessage, MessageToAIAgentOutputMessageError,
@@ -40,6 +43,8 @@ use crate::terminal::safe_mode_settings::get_secret_obfuscation_mode;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use warp_core::user_preferences::GetUserPreferences;
 use warpui::{AppContext, EntityId, SingletonEntity as _};
+
+const OPENROUTER_DEFAULT_BASE_URL: &str = "https://openrouter.ai/api/v1";
 
 /// Unique, server-generated conversation-scoped token to be roundtripped to the API when sending
 /// requests that follow-up within a given conversation.
@@ -128,9 +133,19 @@ impl DirectApiRouteConfig {
             ProviderId::Ollama => None,
         };
         let base_url = match selection.provider_id {
-            ProviderId::OpenRouter => non_empty_string(keys.openrouter_base_url.clone()),
-            ProviderId::Ollama => Some(non_empty_string(keys.ollama_base_url.clone())?),
-            ProviderId::Custom => Some(non_empty_string(keys.custom_base_url.clone())?),
+            ProviderId::OpenRouter => {
+                let url = non_empty_string(keys.openrouter_base_url.clone())
+                    .unwrap_or_else(|| OPENROUTER_DEFAULT_BASE_URL.to_string());
+                Some(normalize_direct_api_base_url(&url).ok()?)
+            }
+            ProviderId::Ollama => Some(
+                normalize_direct_api_base_url(&non_empty_string(keys.ollama_base_url.clone())?)
+                    .ok()?,
+            ),
+            ProviderId::Custom => Some(
+                normalize_direct_api_base_url(&non_empty_string(keys.custom_base_url.clone())?)
+                    .ok()?,
+            ),
             ProviderId::OpenAI | ProviderId::Anthropic | ProviderId::GoogleGemini => None,
         };
 
@@ -309,11 +324,7 @@ impl RequestParams {
         } else {
             None
         };
-        let model_routing = if direct_api_route_config.is_some() {
-            requested_model_routing
-        } else {
-            ModelRouting::WarpProvider
-        };
+        let model_routing = requested_model_routing;
 
         let user_workspaces = UserWorkspaces::as_ref(app);
         let api_keys = if model_routing.is_direct_api() {
@@ -563,7 +574,7 @@ mod tests {
     }
 
     #[test]
-    fn request_params_fall_back_to_warp_provider_when_direct_api_model_is_missing() {
+    fn request_params_keep_direct_api_routing_when_direct_api_model_is_missing() {
         App::test((), |mut app| async move {
             let terminal_view_id = install_request_params_singletons(&mut app);
 
@@ -585,13 +596,14 @@ mod tests {
                 )
             });
 
-            assert_eq!(params.model_routing, ModelRouting::WarpProvider);
+            assert_eq!(params.model_routing, ModelRouting::DirectApi);
             assert!(params.direct_api_route_config.is_none());
+            assert_eq!(params.api_keys, None);
         });
     }
 
     #[test]
-    fn request_params_fall_back_to_warp_provider_when_direct_api_key_is_missing() {
+    fn request_params_keep_direct_api_routing_when_direct_api_key_is_missing() {
         App::test((), |mut app| async move {
             let terminal_view_id = install_request_params_singletons(&mut app);
 
@@ -620,13 +632,14 @@ mod tests {
                 )
             });
 
-            assert_eq!(params.model_routing, ModelRouting::WarpProvider);
+            assert_eq!(params.model_routing, ModelRouting::DirectApi);
             assert!(params.direct_api_route_config.is_none());
+            assert_eq!(params.api_keys, None);
         });
     }
 
     #[test]
-    fn request_params_fall_back_to_warp_provider_when_direct_api_base_url_is_missing() {
+    fn request_params_keep_direct_api_routing_when_direct_api_base_url_is_missing() {
         App::test((), |mut app| async move {
             let terminal_view_id = install_request_params_singletons(&mut app);
 
@@ -658,8 +671,52 @@ mod tests {
                 )
             });
 
-            assert_eq!(params.model_routing, ModelRouting::WarpProvider);
+            assert_eq!(params.model_routing, ModelRouting::DirectApi);
             assert!(params.direct_api_route_config.is_none());
+            assert_eq!(params.api_keys, None);
+        });
+    }
+
+    #[test]
+    fn openrouter_direct_api_route_uses_default_base_url() {
+        App::test((), |mut app| async move {
+            let terminal_view_id = install_request_params_singletons(&mut app);
+
+            ApiKeyManager::handle(&app).update(&mut app, |manager, ctx| {
+                manager.set_open_router_key(Some("sk-or-direct".to_string()), ctx);
+            });
+            AIExecutionProfilesModel::handle(&app).update(&mut app, |model, ctx| {
+                let profile_id = *model.active_profile(Some(terminal_view_id), ctx).id();
+                model.set_model_routing(profile_id, ModelRouting::DirectApi, ctx);
+                model.set_direct_api_model(
+                    profile_id,
+                    Some(DirectApiProfileModelSelection {
+                        provider_id: ProviderId::OpenRouter,
+                        model_id: "openai/gpt-4o-mini".to_string(),
+                    }),
+                    ctx,
+                );
+            });
+
+            let params = app.update(|ctx| {
+                let request_input = request_input();
+                RequestParams::new(
+                    Some(terminal_view_id),
+                    SessionContext::new_for_test(),
+                    &request_input,
+                    conversation_data(),
+                    None,
+                    ctx,
+                )
+            });
+
+            assert_eq!(params.model_routing, ModelRouting::DirectApi);
+            let route = params
+                .direct_api_route_config
+                .expect("OpenRouter direct route should be configured");
+            assert_eq!(route.provider_id, ProviderId::OpenRouter);
+            assert_eq!(route.api_key.as_deref(), Some("sk-or-direct"));
+            assert_eq!(route.base_url.as_deref(), Some(OPENROUTER_DEFAULT_BASE_URL));
         });
     }
 }

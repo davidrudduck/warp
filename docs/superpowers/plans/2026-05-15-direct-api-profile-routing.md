@@ -1135,7 +1135,7 @@ git commit -m "Preserve Direct API tool history conversion"
 - Modify `app/src/ai/agent/api/impl.rs`
 - Modify `app/src/ai/agent/api/impl_tests.rs`
 
-- [ ] **Step 1: Add direct module declarations**
+- [x] **Step 1: Add direct module declarations**
 
 In `app/src/ai/agent/api.rs`, add:
 
@@ -1144,7 +1144,7 @@ mod direct;
 mod direct_tools;
 ```
 
-- [ ] **Step 2: Add branch tests**
+- [x] **Step 2: Add branch tests**
 
 In `app/src/ai/agent/api/impl_tests.rs`, add tests that prove routing selection:
 
@@ -1172,7 +1172,7 @@ fn warp_provider_routing_keeps_server_request_path() {
 
 Extend the existing `request_params_with_ask_user_question_enabled` helper in `app/src/ai/agent/api/impl_tests.rs` with `model_routing: ModelRouting::WarpProvider` and `direct_api_route_config: None`.
 
-- [ ] **Step 3: Implement Direct route validation**
+- [x] **Step 3: Implement Direct route validation**
 
 Create `app/src/ai/agent/api/direct.rs`:
 
@@ -1339,7 +1339,7 @@ fn single_error_stream(message: String) -> ResponseStream {
 }
 ```
 
-- [ ] **Step 4: Implement provider call helper**
+- [x] **Step 4: Implement provider call helper**
 
 Create `app/src/ai/agent/api/direct_tools.rs`:
 
@@ -1393,7 +1393,7 @@ fn provider_name(provider_id: ProviderId) -> &'static str {
 
 This establishes the local route. Task 8 expands it from text-only provider calls into agentic tool events using the same `ResponseEvent` stream shape.
 
-- [ ] **Step 5: Branch in `generate_multi_agent_output`**
+- [x] **Step 5: Branch in `generate_multi_agent_output`**
 
 In `app/src/ai/agent/api/impl.rs`, insert after secret redaction and before building `api::Request`:
 
@@ -1404,7 +1404,7 @@ In `app/src/ai/agent/api/impl.rs`, insert after secret redaction and before buil
     }
 ```
 
-- [ ] **Step 6: Run targeted compile**
+- [x] **Step 6: Run targeted compile**
 
 Run:
 
@@ -1414,7 +1414,7 @@ cargo check -p warp --bin warp-oss
 
 Expected: compile succeeds after matching actual enum constructors and imports.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add app/src/ai/agent/api.rs app/src/ai/agent/api/impl.rs app/src/ai/agent/api/direct.rs app/src/ai/agent/api/direct_tools.rs app/src/ai/agent/api/impl_tests.rs

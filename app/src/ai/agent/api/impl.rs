@@ -20,7 +20,7 @@ pub async fn generate_multi_agent_output(
         .unwrap_or_else(|| get_supported_tools(&params));
     let supported_cli_agent_tools = get_supported_cli_agent_tools(&params);
     let mut logging_metadata = HashMap::new();
-    if let Some(metadata) = params.metadata {
+    if let Some(metadata) = &params.metadata {
         logging_metadata.insert(
             "is_autodetected_user_query".to_owned(),
             prost_types::Value {
@@ -49,6 +49,11 @@ pub async fn generate_multi_agent_output(
 
     if params.should_redact_secrets {
         redaction::redact_inputs(&mut params.input);
+    }
+
+    if params.model_routing.is_direct_api() {
+        params.api_keys = None;
+        return super::direct::generate_direct_api_output(params, cancellation_rx).await;
     }
 
     let mut api_keys = params.api_keys;
