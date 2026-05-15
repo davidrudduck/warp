@@ -435,6 +435,55 @@ fn custom_save_with_blank_key_preserves_existing_key() {
 }
 
 #[test]
+fn openrouter_save_with_blank_key_preserves_existing_key() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        DirectAPISettings::register(&mut app);
+        app.add_singleton_model(|_| AuthStateProvider::new_logged_out_for_test());
+        app.add_singleton_model(|_| Appearance::mock());
+        app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
+
+        DirectAPISettings::handle(&app).update(&mut app, |settings, ctx| {
+            settings
+                .api_key_openrouter
+                .set_value(Some("sk-or-existing".to_string()), ctx)
+                .expect("OpenRouter API key should save");
+        });
+
+        let (_window_id, view) =
+            app.add_window(WindowStyle::NotStealFocus, DirectApiSettingsPageView::new);
+        view.update(&mut app, |view, ctx| {
+            let row = view
+                .provider_row(ProviderType::OpenRouter)
+                .expect("OpenRouter row should exist");
+            row.api_key_editor.update(ctx, |editor, ctx| {
+                editor.set_buffer_text("", ctx);
+            });
+            row.base_url_editor
+                .as_ref()
+                .expect("OpenRouter should have a base URL editor")
+                .update(ctx, |editor, ctx| {
+                    editor.set_buffer_text("https://openrouter.example/v1", ctx);
+                });
+
+            view.handle_save_api_key(ProviderType::OpenRouter, ctx);
+        });
+
+        app.read(|ctx| {
+            let settings = DirectAPISettings::as_ref(ctx);
+            assert_eq!(
+                settings.api_key_openrouter.value().as_deref(),
+                Some("sk-or-existing")
+            );
+            assert_eq!(
+                settings.base_url_openrouter.value().as_deref(),
+                Some("https://openrouter.example/v1")
+            );
+        });
+    });
+}
+
+#[test]
 fn provider_rows_load_persisted_base_urls_on_startup() {
     App::test((), |mut app| async move {
         initialize_settings_for_tests(&mut app);

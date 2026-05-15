@@ -10,7 +10,7 @@ use crate::editor::{EditorView, SingleLineEditorOptions, TextOptions};
 use crate::ui_components::icons::Icon;
 use crate::view_components::action_button::{ActionButton, NakedTheme};
 use crate::view_components::{Dropdown, DropdownItem};
-use ::ai::api_keys::ApiKeyManager;
+use ::ai::api_keys::{ApiKeyManager, ApiKeys};
 use ::ai::model_registry::providers::custom::CustomListProvider;
 use ::ai::model_registry::providers::genai_backed::GenaiBackedListProvider;
 use ::ai::model_registry::providers::openrouter::OpenRouterListProvider;
@@ -196,6 +196,17 @@ impl ProviderType {
             ProviderType::Ollama => ProviderId::Ollama,
             ProviderType::OpenRouter => ProviderId::OpenRouter,
             ProviderType::Custom => ProviderId::Custom,
+        }
+    }
+
+    fn saved_api_key(&self, keys: &ApiKeys) -> Option<String> {
+        match self {
+            ProviderType::OpenAI => keys.openai.clone(),
+            ProviderType::Anthropic => keys.anthropic.clone(),
+            ProviderType::GoogleGemini => keys.google.clone(),
+            ProviderType::Ollama => None,
+            ProviderType::OpenRouter => keys.open_router.clone(),
+            ProviderType::Custom => keys.custom.clone(),
         }
     }
 
@@ -514,11 +525,21 @@ impl DirectApiSettingsPageView {
             return;
         };
         let api_key = row.api_key_editor.as_ref(ctx).buffer_text(ctx);
+        let saved_api_key = {
+            let keys = self.api_key_manager.as_ref(ctx).keys(ctx);
+            provider.saved_api_key(&keys)
+        };
+        let api_key_to_save = if api_key.trim().is_empty() {
+            saved_api_key
+        } else {
+            Some(api_key.clone())
+        };
+        let api_key_for_validation = api_key_to_save.as_deref().unwrap_or("");
 
         // Same format validation as Test Connection — refuses to save a key
         // that would later fail format checks (e.g. a Stripe key pasted into
         // the Anthropic slot).
-        if let Err(msg) = provider.validate_api_key(&api_key) {
+        if let Err(msg) = provider.validate_api_key(api_key_for_validation) {
             *row.test_result.borrow_mut() = Some(Err(msg));
             ctx.notify();
             return;
@@ -558,24 +579,24 @@ impl DirectApiSettingsPageView {
 
             match provider {
                 ProviderType::OpenAI => {
-                    manager.set_openai_key(Some(api_key.clone()), ctx);
+                    manager.set_openai_key(api_key_to_save.clone(), ctx);
                 }
                 ProviderType::Anthropic => {
-                    manager.set_anthropic_key(Some(api_key.clone()), ctx);
+                    manager.set_anthropic_key(api_key_to_save.clone(), ctx);
                 }
                 ProviderType::GoogleGemini => {
-                    manager.set_google_key(Some(api_key.clone()), ctx);
+                    manager.set_google_key(api_key_to_save.clone(), ctx);
                 }
                 ProviderType::Ollama => {
                     // Ollama doesn't need an API key
                 }
                 ProviderType::OpenRouter => {
-                    manager.set_open_router_key(Some(api_key.clone()), ctx);
+                    manager.set_open_router_key(api_key_to_save.clone(), ctx);
                 }
                 ProviderType::Custom => {
                     // Blank optional-key fields mean "leave existing key unchanged".
-                    if !api_key.is_empty() {
-                        manager.set_custom_key(Some(api_key.clone()), ctx);
+                    if let Some(api_key) = api_key_to_save.clone() {
+                        manager.set_custom_key(Some(api_key), ctx);
                     }
                 }
             }
