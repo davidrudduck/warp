@@ -1003,7 +1003,7 @@ git commit -m "terminal: test tmux paste buffer clipboard sync"
 **Files:**
 - No planned source modifications.
 
-- [ ] **Step 1: Run tmux parser and command tests**
+- [x] **Step 1: Run tmux parser and command tests**
 
 Run:
 
@@ -1013,7 +1013,7 @@ cargo test -p warp terminal::model::tmux --lib
 
 Expected: PASS.
 
-- [ ] **Step 2: Run terminal model tests**
+- [x] **Step 2: Run terminal model tests**
 
 Run:
 
@@ -1023,7 +1023,7 @@ cargo test -p warp terminal::model::terminal_model --lib
 
 Expected: PASS.
 
-- [ ] **Step 3: Run compile check**
+- [x] **Step 3: Run compile check**
 
 Run:
 
@@ -1033,7 +1033,7 @@ cargo check -p warp --bin warp-oss
 
 Expected: PASS.
 
-- [ ] **Step 4: Format**
+- [x] **Step 4: Format**
 
 Run:
 
@@ -1044,6 +1044,8 @@ cargo fmt
 Expected: exits 0 and leaves only intended formatting changes.
 
 - [ ] **Step 5: Manual macOS validation**
+
+Not run in this agent pass: this requires launching the Warp GUI and performing a real tmux copy-mode gesture plus native app paste check.
 
 Run Warp with the feature disabled first:
 
@@ -1063,6 +1065,8 @@ Enable the setting in Settings → Features → Terminal. Repeat the tmux copy-m
 
 - [ ] **Step 6: Verify normal OSC 52 still works**
 
+Not run in this agent pass: this requires exercising the running Warp GUI clipboard integration in a non-tmux terminal session.
+
 Run inside a non-tmux shell:
 
 ```bash
@@ -1071,7 +1075,7 @@ printf '\033]52;c;%s\a' "$(printf 'warp-osc52-check' | base64)"
 
 Expected: OS clipboard contains `warp-osc52-check`.
 
-- [ ] **Step 7: Final status check**
+- [x] **Step 7: Final status check**
 
 Run:
 
