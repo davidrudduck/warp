@@ -68,7 +68,7 @@
 - Modify `app/src/ai/execution_profiles/mod.rs`
 - Modify `app/src/ai/execution_profiles/profiles_tests.rs`
 
-- [ ] **Step 1: Add failing serialization/default tests**
+- [x] **Step 1: Add failing serialization/default tests**
 
 Add these tests to `app/src/ai/execution_profiles/profiles_tests.rs`:
 
@@ -126,7 +126,7 @@ fn execution_profile_roundtrips_direct_api_selection() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run:
 
@@ -136,7 +136,7 @@ cargo test -p warp execution_profile_defaults_to_warp_provider_routing -- --noca
 
 Expected: compile failure because `ModelRouting` and `DirectApiProfileModelSelection` do not exist.
 
-- [ ] **Step 3: Add profile routing types and fields**
+- [x] **Step 3: Add profile routing types and fields**
 
 In `app/src/ai/execution_profiles/mod.rs`, add the import:
 
@@ -200,7 +200,7 @@ Set defaults in every `AIExecutionProfile` construction that lists model fields 
             coding_model: None,
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run:
 
@@ -210,7 +210,7 @@ cargo test -p warp execution_profile_ -- --nocapture
 
 Expected: all three tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app/src/ai/execution_profiles/mod.rs app/src/ai/execution_profiles/profiles_tests.rs

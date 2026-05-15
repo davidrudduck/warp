@@ -203,6 +203,8 @@ impl BlocklistAIPermissions {
             name: profile_data.name.clone(),
             is_default_profile: profile_data.is_default_profile,
             base_model: profile_data.base_model.clone(),
+            model_routing: profile_data.model_routing,
+            direct_api_model: profile_data.direct_api_model.clone(),
             coding_model: profile_data.coding_model.clone(),
             cli_agent_model: profile_data.cli_agent_model.clone(),
             computer_use_model: profile_data.computer_use_model.clone(),

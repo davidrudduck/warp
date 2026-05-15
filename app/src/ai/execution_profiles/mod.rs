@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use ai::model_registry::ProviderId;
+
 use crate::cloud_object::UniquePer;
 use crate::server::sync_queue::QueueItem;
 use crate::settings::AISettings;
@@ -30,6 +32,52 @@ pub const PROFILE_NAME_MAX_LENGTH: usize = 50;
 pub mod editor;
 pub mod model_menu_items;
 pub mod profiles;
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ModelRouting {
+    #[default]
+    WarpProvider,
+    DirectApi,
+
+    // This is intended to catch deserialization errors whenever we add new variants to this enum.
+    #[serde(other)]
+    Unknown,
+}
+
+impl ModelRouting {
+    pub fn is_direct_api(self) -> bool {
+        matches!(self, Self::DirectApi)
+    }
+
+    pub fn effective(self) -> Self {
+        match self {
+            Self::WarpProvider | Self::Unknown => Self::WarpProvider,
+            Self::DirectApi => Self::DirectApi,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DirectApiProfileModelSelection {
+    pub provider_id: ProviderId,
+    pub model_id: String,
+}
+
+impl DirectApiProfileModelSelection {
+    pub fn label(&self) -> String {
+        format!("{} / {}", self.provider_id.display_name(), self.model_id)
+    }
+}
+
+fn deserialize_direct_api_profile_model_selection<'de, D>(
+    deserializer: D,
+) -> Result<Option<DirectApiProfileModelSelection>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(value.and_then(|value| serde_json::from_value(value).ok()))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ActionPermission {
@@ -244,6 +292,12 @@ pub struct AIExecutionProfile {
     pub computer_use: ComputerUsePermission,
 
     pub base_model: Option<LLMId>,
+    pub model_routing: ModelRouting,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_direct_api_profile_model_selection"
+    )]
+    pub direct_api_model: Option<DirectApiProfileModelSelection>,
     pub coding_model: Option<LLMId>,
     pub cli_agent_model: Option<LLMId>,
     pub computer_use_model: Option<LLMId>,
@@ -275,6 +329,8 @@ impl Default for AIExecutionProfile {
             mcp_denylist: Vec::new(),
             computer_use: ComputerUsePermission::Never,
             base_model: None,
+            model_routing: ModelRouting::WarpProvider,
+            direct_api_model: None,
             coding_model: None,
             cli_agent_model: None,
             computer_use_model: None,
@@ -327,6 +383,8 @@ impl AIExecutionProfile {
             mcp_denylist: Vec::new(),
             computer_use: ComputerUsePermission::Never,
             base_model: None,
+            model_routing: ModelRouting::WarpProvider,
+            direct_api_model: None,
             coding_model: None,
             cli_agent_model: None,
             computer_use_model: None,
@@ -382,6 +440,8 @@ impl AIExecutionProfile {
             mcp_denylist: Vec::new(),
             computer_use: computer_use_permission,
             base_model: None,
+            model_routing: ModelRouting::WarpProvider,
+            direct_api_model: None,
             coding_model: None,
             cli_agent_model: None,
             computer_use_model: None,

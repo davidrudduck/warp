@@ -4,6 +4,7 @@ use warpui::{App, SingletonEntity};
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 use crate::ai::execution_profiles::{
     AIExecutionProfile, ActionPermission, CloudAIExecutionProfileModel,
+    DirectApiProfileModelSelection, ModelRouting,
 };
 use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::auth::AuthStateProvider;
@@ -18,6 +19,7 @@ use crate::test_util::settings::initialize_settings_for_tests;
 use crate::workspaces::team_tester::TeamTesterStatus;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::LaunchMode;
+use ai::model_registry::ProviderId;
 
 fn mock_server_metadata(uid: ServerId) -> ServerMetadata {
     ServerMetadata {
@@ -46,6 +48,72 @@ fn install_singletons(app: &mut App, auth_state: AuthStateProvider) {
     app.add_singleton_model(|_| TemplatableMCPServerManager::default());
     app.add_singleton_model(PrivacySettings::mock);
     app.add_singleton_model(UserWorkspaces::default_mock);
+}
+
+#[test]
+fn execution_profile_defaults_to_warp_provider_routing() {
+    let profile = AIExecutionProfile::default();
+
+    assert_eq!(profile.model_routing, ModelRouting::WarpProvider);
+    assert_eq!(profile.direct_api_model, None);
+}
+
+#[test]
+fn execution_profile_deserializes_missing_routing_as_warp_provider() {
+    let profile: AIExecutionProfile = serde_json::from_str(
+        r#"{
+            "name": "Default",
+            "is_default_profile": true
+        }"#,
+    )
+    .expect("profile should deserialize");
+
+    assert_eq!(profile.model_routing, ModelRouting::WarpProvider);
+    assert_eq!(profile.direct_api_model, None);
+}
+
+#[test]
+fn execution_profile_drops_invalid_direct_api_selection_without_dropping_profile() {
+    let profile: AIExecutionProfile = serde_json::from_str(
+        r#"{
+            "name": "Default",
+            "is_default_profile": true,
+            "model_routing": "DirectApi",
+            "direct_api_model": {
+                "provider_id": "FutureProvider",
+                "model_id": "future-model"
+            }
+        }"#,
+    )
+    .expect("profile should deserialize");
+
+    assert_eq!(profile.model_routing, ModelRouting::DirectApi);
+    assert_eq!(profile.direct_api_model, None);
+}
+
+#[test]
+fn execution_profile_roundtrips_direct_api_selection() {
+    let profile = AIExecutionProfile {
+        model_routing: ModelRouting::DirectApi,
+        direct_api_model: Some(DirectApiProfileModelSelection {
+            provider_id: ProviderId::OpenAI,
+            model_id: "gpt-4o-mini".to_string(),
+        }),
+        ..AIExecutionProfile::default()
+    };
+
+    let serialized = serde_json::to_string(&profile).expect("profile should serialize");
+    let decoded: AIExecutionProfile =
+        serde_json::from_str(&serialized).expect("profile should deserialize");
+
+    assert_eq!(decoded.model_routing, ModelRouting::DirectApi);
+    assert_eq!(
+        decoded.direct_api_model,
+        Some(DirectApiProfileModelSelection {
+            provider_id: ProviderId::OpenAI,
+            model_id: "gpt-4o-mini".to_string(),
+        })
+    );
 }
 
 /// Regression test for the onboarding autonomy bug where
