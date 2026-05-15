@@ -1,0 +1,4 @@
+interface:
+  display_name: "Warp Private Security Review"
+  short_description: "Review practical local security risks."
+  default_prompt: "Use this skill to review secrets, logs, local files, network endpoints, and AI tool exposure."

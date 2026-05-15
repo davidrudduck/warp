@@ -1,0 +1,4 @@
+interface:
+  display_name: "Warp Settings TOML"
+  short_description: "Persist settings through settings.toml."
+  default_prompt: "Use this skill when adding or changing settings groups, toml_path values, or settings-file tests."

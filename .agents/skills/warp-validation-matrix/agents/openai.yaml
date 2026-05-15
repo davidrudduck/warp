@@ -1,0 +1,4 @@
+interface:
+  display_name: "Warp Validation Matrix"
+  short_description: "Choose proof before calling work complete."
+  default_prompt: "Use this skill to select and run the right validation for a Warp change."

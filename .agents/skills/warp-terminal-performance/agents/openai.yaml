@@ -1,0 +1,4 @@
+interface:
+  display_name: "Warp Terminal Performance"
+  short_description: "Keep terminal and agent paths fast."
+  default_prompt: "Use this skill when changing terminal rendering, streaming, async work, caches, or performance-sensitive UI."

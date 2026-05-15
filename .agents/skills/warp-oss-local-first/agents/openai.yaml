@@ -1,0 +1,4 @@
+interface:
+  display_name: "Warp OSS Local First"
+  short_description: "Keep Warp OSS local and server-free."
+  default_prompt: "Use this skill to keep Warp OSS changes grounded in local Direct API and repo-only capabilities."

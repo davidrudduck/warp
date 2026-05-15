@@ -1,0 +1,4 @@
+interface:
+  display_name: "Warp Direct API Provider"
+  short_description: "Work safely on Direct API providers."
+  default_prompt: "Use this skill when changing Direct API providers, model lists, base URLs, or API key settings."

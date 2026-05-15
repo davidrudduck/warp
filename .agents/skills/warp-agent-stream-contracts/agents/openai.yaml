@@ -1,0 +1,4 @@
+interface:
+  display_name: "Warp Agent Stream Contracts"
+  short_description: "Protect agent streaming contracts."
+  default_prompt: "Use this skill when changing agent event streams, tool dispatch, cancellation, or conversation hydration."

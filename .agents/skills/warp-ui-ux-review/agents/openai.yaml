@@ -1,0 +1,4 @@
+interface:
+  display_name: "Warp UI UX Review"
+  short_description: "Review terminal-first UI polish."
+  default_prompt: "Use this skill before and after Warp UI changes to improve usability, accessibility, and visual fit."
