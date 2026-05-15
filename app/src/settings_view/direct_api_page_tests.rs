@@ -484,6 +484,42 @@ fn openrouter_save_with_blank_key_preserves_existing_key() {
 }
 
 #[test]
+fn openrouter_test_with_blank_key_uses_existing_key() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        DirectAPISettings::register(&mut app);
+        app.add_singleton_model(|_| AuthStateProvider::new_logged_out_for_test());
+        app.add_singleton_model(|_| Appearance::mock());
+        app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
+
+        DirectAPISettings::handle(&app).update(&mut app, |settings, ctx| {
+            settings
+                .api_key_openrouter
+                .set_value(Some("sk-or-existing".to_string()), ctx)
+                .expect("OpenRouter API key should save");
+        });
+
+        let (_window_id, view) =
+            app.add_window(WindowStyle::NotStealFocus, DirectApiSettingsPageView::new);
+        view.update(&mut app, |view, ctx| {
+            let row = view
+                .provider_row(ProviderType::OpenRouter)
+                .expect("OpenRouter row should exist");
+            row.api_key_editor.update(ctx, |editor, ctx| {
+                editor.set_buffer_text("", ctx);
+            });
+
+            view.handle_test_connection(ProviderType::OpenRouter, ctx);
+
+            let row = view
+                .provider_row(ProviderType::OpenRouter)
+                .expect("OpenRouter row should exist");
+            assert!(row.test_result.borrow().as_ref().is_some_and(Result::is_ok));
+        });
+    });
+}
+
+#[test]
 fn provider_rows_load_persisted_base_urls_on_startup() {
     App::test((), |mut app| async move {
         initialize_settings_for_tests(&mut app);

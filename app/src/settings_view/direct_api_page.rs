@@ -468,14 +468,30 @@ impl DirectApiSettingsPageView {
             .find(|row| row.provider == provider)
     }
 
+    fn api_key_or_saved(
+        &self,
+        provider: ProviderType,
+        api_key: &str,
+        ctx: &ViewContext<Self>,
+    ) -> Option<String> {
+        if !api_key.trim().is_empty() {
+            return Some(api_key.to_string());
+        }
+
+        let keys = self.api_key_manager.as_ref(ctx).keys(ctx);
+        provider.saved_api_key(&keys)
+    }
+
     fn handle_test_connection(&mut self, provider: ProviderType, ctx: &mut ViewContext<Self>) {
         let Some(row) = self.provider_row(provider) else {
             return;
         };
         let api_key = row.api_key_editor.as_ref(ctx).buffer_text(ctx);
+        let effective_api_key = self.api_key_or_saved(provider, &api_key, ctx);
+        let api_key_for_validation = effective_api_key.as_deref().unwrap_or("");
 
         // Format validation first — shared with the save path.
-        if let Err(msg) = provider.validate_api_key(&api_key) {
+        if let Err(msg) = provider.validate_api_key(api_key_for_validation) {
             *row.test_result.borrow_mut() = Some(Err(msg));
             ctx.notify();
             return;
@@ -525,15 +541,7 @@ impl DirectApiSettingsPageView {
             return;
         };
         let api_key = row.api_key_editor.as_ref(ctx).buffer_text(ctx);
-        let saved_api_key = {
-            let keys = self.api_key_manager.as_ref(ctx).keys(ctx);
-            provider.saved_api_key(&keys)
-        };
-        let api_key_to_save = if api_key.trim().is_empty() {
-            saved_api_key
-        } else {
-            Some(api_key.clone())
-        };
+        let api_key_to_save = self.api_key_or_saved(provider, &api_key, ctx);
         let api_key_for_validation = api_key_to_save.as_deref().unwrap_or("");
 
         // Same format validation as Test Connection — refuses to save a key
