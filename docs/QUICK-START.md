@@ -45,7 +45,7 @@ Choose your provider:
 2. Paste your API key (or leave blank for Ollama)
 3. For Ollama/OpenRouter/custom: Enter base URL if not default
 4. Click **Test Connection** to verify
-5. Click **Save to Keychain**
+5. Click **Save Settings**
 
 ### 4. Start Using AI
 
@@ -69,9 +69,9 @@ Or use Warp's built-in Agent Mode:
 - Check your provider's API status page
 - For Ollama: ensure it's running on localhost:11434
 
-**Keychain prompt appearing repeatedly**
-- macOS Keychain prompt only appears once per session
-- Restart Warp if you see it again
+**Settings are not saved**
+- Confirm the `warp-oss` build can write to `~/.warp-oss/settings.toml`
+- Restart Warp after fixing file permissions
 
 **"API key not configured" when running commands**
 - Go to Settings → Agents → Direct API and verify the key is saved

@@ -4,9 +4,6 @@ use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use warp_multi_agent_api as api;
 use warpui::{Entity, ModelContext, SingletonEntity};
-use warpui_extras::secure_storage::{self, AppContextExt};
-
-const SECURE_STORAGE_KEY: &str = "AiApiKeys";
 
 /// Emitted when user-provided API keys are updated in-memory.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,6 +21,8 @@ pub struct ApiKeys {
     pub anthropic: Option<String>,
     pub openai: Option<String>,
     pub open_router: Option<String>,
+    #[serde(default)]
+    pub custom: Option<String>,
 
     // ---- Phase 2 additions (all #[serde(default)] so old payloads parse) ----
     #[serde(default)]
@@ -44,6 +43,7 @@ impl ApiKeys {
             || self.anthropic.is_some()
             || self.google.is_some()
             || self.open_router.is_some()
+            || self.custom.is_some()
     }
 }
 
@@ -81,43 +81,6 @@ impl ApiKeyManager {
         }
     }
 
-    /// One-time migration from keychain to settings.toml.
-    /// Call once at app startup after ApiKeyManager is created.
-    /// Checks if settings are empty, and if so, loads from keychain and migrates.
-    pub fn migrate_from_keychain_if_needed(&mut self, ctx: &mut ModelContext<Self>) {
-        use warp_core::settings::{DirectAPISettings, Setting};
-        use warpui::SingletonEntity;
-
-        // Check if settings already have a selected provider (indicating migration done or new install)
-        let settings = DirectAPISettings::as_ref(ctx);
-        if settings.selected_provider.value().is_some() {
-            // Settings already populated, no migration needed
-            return;
-        }
-
-        // Settings are empty - try loading from keychain
-        let keychain_keys = Self::load_keys_from_secure_storage_readonly(ctx);
-
-        // Check if keychain has any data
-        let has_keychain_data = keychain_keys.selected_provider.is_some()
-            || keychain_keys.openai.is_some()
-            || keychain_keys.anthropic.is_some()
-            || keychain_keys.google.is_some()
-            || keychain_keys.open_router.is_some()
-            || !keychain_keys.selected_models.is_empty();
-
-        if !has_keychain_data {
-            // No keychain data to migrate
-            return;
-        }
-
-        // Migrate: load keychain data into cache, then write to settings
-        *self.keys_cache.borrow_mut() = Some(keychain_keys);
-        self.write_keys_to_settings(ctx);
-
-        log::info!("Migrated Direct API keys from keychain to settings.toml");
-    }
-
     /// Check if the cache is empty (keys not yet loaded).
     pub fn is_cache_empty(&self) -> bool {
         self.keys_cache.borrow().is_none()
@@ -133,8 +96,7 @@ impl ApiKeyManager {
         }
     }
 
-    /// Get API keys, loading from secure storage on first access (lazy load).
-    /// Works with read-only AppContext since secure_storage.read_value takes &self.
+    /// Get API keys, loading from settings.toml on first access (lazy load).
     pub fn keys(&self, ctx: &warpui::AppContext) -> ApiKeys {
         self.ensure_keys_loaded(ctx);
         self.keys_cache.borrow().as_ref().unwrap().clone()
@@ -212,9 +174,83 @@ impl ApiKeyManager {
         self.write_keys_to_settings(ctx);
     }
 
+    pub fn set_custom_key(&mut self, key: Option<String>, ctx: &mut ModelContext<Self>) {
+        self.ensure_keys_loaded(ctx);
+
+        if let Some(ref mut keys) = self.keys_cache.borrow_mut().as_mut() {
+            keys.custom = key;
+        }
+
+        if let Ok(cache) = ModelListCache::new() {
+            let _ = cache.invalidate(ProviderId::Custom);
+        }
+
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_settings(ctx);
+    }
+
+    pub fn set_selected_provider(
+        &mut self,
+        provider: Option<ProviderId>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.ensure_keys_loaded(ctx);
+
+        if let Some(ref mut keys) = self.keys_cache.borrow_mut().as_mut() {
+            keys.selected_provider = provider;
+        }
+
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_settings(ctx);
+    }
+
+    pub fn set_custom_base_url(&mut self, url: Option<String>, ctx: &mut ModelContext<Self>) {
+        self.ensure_keys_loaded(ctx);
+
+        if let Some(ref mut keys) = self.keys_cache.borrow_mut().as_mut() {
+            keys.custom_base_url = url;
+        }
+
+        if let Ok(cache) = ModelListCache::new() {
+            let _ = cache.invalidate(ProviderId::Custom);
+        }
+
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_settings(ctx);
+    }
+
+    pub fn set_openrouter_base_url(&mut self, url: Option<String>, ctx: &mut ModelContext<Self>) {
+        self.ensure_keys_loaded(ctx);
+
+        if let Some(ref mut keys) = self.keys_cache.borrow_mut().as_mut() {
+            keys.openrouter_base_url = url;
+        }
+
+        if let Ok(cache) = ModelListCache::new() {
+            let _ = cache.invalidate(ProviderId::OpenRouter);
+        }
+
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_settings(ctx);
+    }
+
+    pub fn set_ollama_base_url(&mut self, url: Option<String>, ctx: &mut ModelContext<Self>) {
+        self.ensure_keys_loaded(ctx);
+
+        if let Some(ref mut keys) = self.keys_cache.borrow_mut().as_mut() {
+            keys.ollama_base_url = url;
+        }
+
+        if let Ok(cache) = ModelListCache::new() {
+            let _ = cache.invalidate(ProviderId::Ollama);
+        }
+
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_settings(ctx);
+    }
+
     /// Persist the user's selected model for a given provider. The selection
-    /// is stored alongside the API keys in secure storage so it survives
-    /// restarts.
+    /// is stored alongside the API keys in settings.toml so it survives restarts.
     pub fn set_selected_model(
         &mut self,
         provider: ProviderId,
@@ -347,8 +383,7 @@ impl ApiKeyManager {
         }
     }
 
-    /// Load API keys from DirectAPISettings (settings.toml) instead of keychain.
-    /// This eliminates keychain password prompts and fixes rebuild reset issues.
+    /// Load API keys from DirectAPISettings (settings.toml).
     fn load_keys_from_settings(ctx: &warpui::AppContext) -> ApiKeys {
         use warp_core::settings::{DirectAPISettings, Setting};
         use warpui::SingletonEntity;
@@ -356,19 +391,20 @@ impl ApiKeyManager {
         let settings = DirectAPISettings::as_ref(ctx);
 
         // Map provider string to ProviderId for selected_provider
-        let selected_provider = settings
-            .selected_provider
-            .value()
-            .as_ref()
-            .and_then(|s| match s.as_str() {
-                "OpenAI" => Some(ProviderId::OpenAI),
-                "Anthropic" => Some(ProviderId::Anthropic),
-                "GoogleGemini" => Some(ProviderId::GoogleGemini),
-                "Ollama" => Some(ProviderId::Ollama),
-                "OpenRouter" => Some(ProviderId::OpenRouter),
-                "Custom" => Some(ProviderId::Custom),
-                _ => None,
-            });
+        let selected_provider =
+            settings
+                .selected_provider
+                .value()
+                .as_ref()
+                .and_then(|s| match s.as_str() {
+                    "OpenAI" => Some(ProviderId::OpenAI),
+                    "Anthropic" => Some(ProviderId::Anthropic),
+                    "GoogleGemini" => Some(ProviderId::GoogleGemini),
+                    "Ollama" => Some(ProviderId::Ollama),
+                    "OpenRouter" => Some(ProviderId::OpenRouter),
+                    "Custom" => Some(ProviderId::Custom),
+                    _ => None,
+                });
 
         // Parse selected_models from HashMap<String, String> to BTreeMap<ProviderId, String>
         let selected_models = settings
@@ -394,6 +430,7 @@ impl ApiKeyManager {
             anthropic: settings.api_key_anthropic.value().clone(),
             google: settings.api_key_google.value().clone(),
             open_router: settings.api_key_openrouter.value().clone(),
+            custom: settings.api_key_custom.value().clone(),
             selected_provider,
             custom_base_url: settings.base_url_custom.value().clone(),
             openrouter_base_url: settings.base_url_openrouter.value().clone(),
@@ -402,33 +439,7 @@ impl ApiKeyManager {
         }
     }
 
-    fn load_keys_from_secure_storage_readonly(ctx: &warpui::AppContext) -> ApiKeys {
-        use warpui::SingletonEntity;
-
-        let storage = <secure_storage::Model as SingletonEntity>::as_ref(ctx);
-        let key_json = match storage.as_ref().read_value(SECURE_STORAGE_KEY) {
-            Ok(json) => json,
-            Err(e) => {
-                if !matches!(e, secure_storage::Error::NotFound) {
-                    log::error!("Failed to read API keys from secure storage: {e:#}");
-                }
-                return ApiKeys::default();
-            }
-        };
-
-        let keys = match serde_json::from_str(&key_json) {
-            Ok(keys) => keys,
-            Err(e) => {
-                log::error!("Failed to deserialize API keys: {e:#}");
-                ApiKeys::default()
-            }
-        };
-
-        keys
-    }
-
-    /// Write API keys to DirectAPISettings (settings.toml) instead of keychain.
-    /// This eliminates keychain password prompts and fixes rebuild reset issues.
+    /// Write API keys to DirectAPISettings (settings.toml).
     fn write_keys_to_settings(&self, ctx: &mut ModelContext<Self>) {
         use warp_core::settings::{DirectAPISettings, Setting};
         use warpui::SingletonEntity;
@@ -442,42 +453,61 @@ impl ApiKeyManager {
         // Update DirectAPISettings with the new values
         DirectAPISettings::handle(ctx).update(ctx, |settings, ctx| {
             // Update selected provider
-            if let Some(ref provider) = keys.selected_provider {
-                let provider_str = match provider {
+            let selected_provider = keys.selected_provider.as_ref().map(|provider| {
+                match provider {
                     ProviderId::OpenAI => "OpenAI",
                     ProviderId::Anthropic => "Anthropic",
                     ProviderId::GoogleGemini => "GoogleGemini",
                     ProviderId::Ollama => "Ollama",
                     ProviderId::OpenRouter => "OpenRouter",
                     ProviderId::Custom => "Custom",
-                };
-                if let Err(e) = settings.selected_provider.set_value(Some(provider_str.to_string()), ctx) {
-                    log::error!("Failed to save selected_provider: {e:#}");
                 }
+                .to_string()
+            });
+            if let Err(e) = settings.selected_provider.set_value(selected_provider, ctx) {
+                log::error!("Failed to save selected_provider: {e:#}");
             }
 
             // Update API keys
             if let Err(e) = settings.api_key_openai.set_value(keys.openai.clone(), ctx) {
                 log::error!("Failed to save OpenAI API key: {e:#}");
             }
-            if let Err(e) = settings.api_key_anthropic.set_value(keys.anthropic.clone(), ctx) {
+            if let Err(e) = settings
+                .api_key_anthropic
+                .set_value(keys.anthropic.clone(), ctx)
+            {
                 log::error!("Failed to save Anthropic API key: {e:#}");
             }
             if let Err(e) = settings.api_key_google.set_value(keys.google.clone(), ctx) {
                 log::error!("Failed to save Google API key: {e:#}");
             }
-            if let Err(e) = settings.api_key_openrouter.set_value(keys.open_router.clone(), ctx) {
+            if let Err(e) = settings
+                .api_key_openrouter
+                .set_value(keys.open_router.clone(), ctx)
+            {
                 log::error!("Failed to save OpenRouter API key: {e:#}");
+            }
+            if let Err(e) = settings.api_key_custom.set_value(keys.custom.clone(), ctx) {
+                log::error!("Failed to save custom API key: {e:#}");
             }
 
             // Update base URLs
-            if let Err(e) = settings.base_url_custom.set_value(keys.custom_base_url.clone(), ctx) {
+            if let Err(e) = settings
+                .base_url_custom
+                .set_value(keys.custom_base_url.clone(), ctx)
+            {
                 log::error!("Failed to save custom base URL: {e:#}");
             }
-            if let Err(e) = settings.base_url_openrouter.set_value(keys.openrouter_base_url.clone(), ctx) {
+            if let Err(e) = settings
+                .base_url_openrouter
+                .set_value(keys.openrouter_base_url.clone(), ctx)
+            {
                 log::error!("Failed to save OpenRouter base URL: {e:#}");
             }
-            if let Err(e) = settings.base_url_ollama.set_value(keys.ollama_base_url.clone(), ctx) {
+            if let Err(e) = settings
+                .base_url_ollama
+                .set_value(keys.ollama_base_url.clone(), ctx)
+            {
                 log::error!("Failed to save Ollama base URL: {e:#}");
             }
 
@@ -503,7 +533,6 @@ impl ApiKeyManager {
             }
         });
     }
-
 }
 
 impl Entity for ApiKeyManager {

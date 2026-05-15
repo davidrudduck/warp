@@ -1,5 +1,13 @@
 # AGENTS.md — Warp Global Rules
 
+## Project Context
+
+- This repository is `warp-oss`, a private fork of Warp.
+- We do not have access to a Warp server.
+- We do not have access to any Warp source code outside this repository.
+- Work is feature-locked to what is available in this repository.
+- Do not assume proprietary Warp services, private APIs, or out-of-repo code exist unless they are explicitly present here.
+
 ## 1. Core Principles
 
 - **Type safety first**: Prefer strong types; avoid `unwrap()` in library code — use `?` propagation

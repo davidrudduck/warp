@@ -133,7 +133,7 @@ pub enum DirectApiPageAction {
   3. Click eye icon. Characters become visible. Click again, re-masked.
   4. Select each provider; verify the placeholder text changes and the Base URL field appears/disappears appropriately.
   5. Select Custom — Base URL field is empty with `https://api.example.com/v1` placeholder.
-  6. Paste a key, click Save to Keychain — confirm the existing "saved" status message appears.
+  6. Paste a key, click Save Settings — confirm the existing "saved" status message appears.
 
 - **Unit tests (light):** Extend `direct_api_page_tests.rs` (or create it) with one test covering `handle_select_provider`'s placeholder-update logic for each `ProviderType`. Skip UI snapshot testing — not worth the harness setup for a contained fix.
 

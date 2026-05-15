@@ -1,10 +1,8 @@
 // Direct API Settings (OSS fork - local-only storage in settings.toml)
 //
-// This settings group stores Direct API configuration in ~/.warp/settings.toml
-// instead of macOS Keychain, eliminating password prompts and rebuild reset issues
-// in development builds.
+// This settings group stores Direct API configuration in the channel-specific
+// settings.toml file. For warp-oss on macOS, that is ~/.warp-oss/settings.toml.
 
-use crate::define_settings_group;
 use crate::{SupportedPlatforms, SyncToCloud};
 use std::collections::HashMap;
 

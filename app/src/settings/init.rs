@@ -36,10 +36,10 @@ use super::{
     cloud_preferences::CloudPreferencesSettings, initializer::SettingsInitializer,
     native_preference::NativePreferenceSettings, AISettings, AccessibilitySettings,
     AliasExpansionSettings, AppEditorSettings, BlockVisibilitySettings, ChangelogSettings,
-    CodeSettings, DebugSettings, EmacsBindingsSettings, FontSettings,
-    FontSettingsChangedEvent, GPUSettings, InputBoxType, InputModeSettings, InputSettings,
-    PaneSettings, SameLinePromptBlockSettings, ScrollSettings, SelectionSettings, SshSettings,
-    ThemeSettings, VimBannerSettings, WarpDrivePrivacySettings,
+    CodeSettings, DebugSettings, EmacsBindingsSettings, FontSettings, FontSettingsChangedEvent,
+    GPUSettings, InputBoxType, InputModeSettings, InputSettings, PaneSettings,
+    SameLinePromptBlockSettings, ScrollSettings, SelectionSettings, SshSettings, ThemeSettings,
+    VimBannerSettings, WarpDrivePrivacySettings,
 };
 use settings::DirectAPISettings;
 

@@ -1,6 +1,44 @@
 use super::*;
+use warp_core::settings::{
+    DirectAPISettings, PrivatePreferences, PublicPreferences, SettingsManager,
+};
 use warpui::App;
-use warpui_extras::secure_storage;
+use warpui_extras::user_preferences;
+use warpui_extras::user_preferences::toml_backed::TomlBackedUserPreferences;
+
+fn register_settings(app: &mut App) {
+    app.update(|ctx| {
+        ctx.add_singleton_model(|_| {
+            PublicPreferences::new(
+                Box::<user_preferences::in_memory::InMemoryPreferences>::default(),
+            )
+        });
+        ctx.add_singleton_model(|_| {
+            PrivatePreferences::new(
+                Box::<user_preferences::in_memory::InMemoryPreferences>::default(),
+            )
+        });
+    });
+    app.add_singleton_model(|_| SettingsManager::default());
+    DirectAPISettings::register(app);
+}
+
+fn register_toml_settings(app: &mut App, settings_path: std::path::PathBuf) {
+    app.update(|ctx| {
+        ctx.add_singleton_model(move |_| {
+            let (prefs, parse_error) = TomlBackedUserPreferences::new(settings_path);
+            assert!(parse_error.is_none());
+            PublicPreferences::new(Box::new(prefs))
+        });
+        ctx.add_singleton_model(|_| {
+            PrivatePreferences::new(
+                Box::<user_preferences::in_memory::InMemoryPreferences>::default(),
+            )
+        });
+    });
+    app.add_singleton_model(|_| SettingsManager::default());
+    DirectAPISettings::register(app);
+}
 
 #[test]
 fn api_key_manager_does_not_load_on_init() {
@@ -8,7 +46,6 @@ fn api_key_manager_does_not_load_on_init() {
         let manager = app.add_singleton_model(ApiKeyManager::new);
 
         manager.read(&app, |manager, _ctx| {
-            // Should NOT trigger keychain prompt yet
             // Verify no keys cached
             assert!(manager.is_cache_empty());
         });
@@ -18,15 +55,12 @@ fn api_key_manager_does_not_load_on_init() {
 #[test]
 fn api_key_manager_loads_on_first_keys_access() {
     App::test((), |mut app| async move {
-        // Register noop secure storage for testing
-        app.update(|ctx| {
-            secure_storage::register_noop("test", ctx);
-        });
+        register_settings(&mut app);
 
         let manager = app.add_singleton_model(ApiKeyManager::new);
 
         manager.read(&app, |manager, ctx| {
-            // First call triggers load from secure storage
+            // First call triggers load from settings.
             let _keys = manager.keys(ctx);
 
             // Verify loaded (cache populated)
@@ -38,10 +72,7 @@ fn api_key_manager_loads_on_first_keys_access() {
 #[test]
 fn api_key_manager_uses_cache_on_subsequent_calls() {
     App::test((), |mut app| async move {
-        // Register noop secure storage for testing
-        app.update(|ctx| {
-            secure_storage::register_noop("test", ctx);
-        });
+        register_settings(&mut app);
 
         let manager = app.add_singleton_model(ApiKeyManager::new);
 
@@ -63,10 +94,7 @@ fn api_key_manager_uses_cache_on_subsequent_calls() {
 #[test]
 fn api_key_manager_cache_cleared_on_drop() {
     App::test((), |mut app| async move {
-        // Register noop secure storage for testing
-        app.update(|ctx| {
-            secure_storage::register_noop("test", ctx);
-        });
+        register_settings(&mut app);
 
         {
             let manager = app.add_singleton_model(ApiKeyManager::new);
@@ -89,10 +117,7 @@ fn api_key_manager_cache_cleared_on_drop() {
 #[test]
 fn set_key_updates_cache_and_storage() {
     App::test((), |mut app| async move {
-        // Register noop secure storage for testing
-        app.update(|ctx| {
-            secure_storage::register_noop("test", ctx);
-        });
+        register_settings(&mut app);
 
         let manager = app.add_singleton_model(ApiKeyManager::new);
 
@@ -124,6 +149,7 @@ fn parses_legacy_payload_without_new_fields() {
     assert_eq!(keys.anthropic, Some("test-anthropic-key".to_string()));
     assert_eq!(keys.openai, Some("test-openai-key".to_string()));
     assert_eq!(keys.open_router, Some("test-openrouter-key".to_string()));
+    assert_eq!(keys.custom, None);
 
     // New fields should default
     assert_eq!(keys.selected_provider, None);
@@ -150,6 +176,7 @@ fn roundtrips_full_payload() {
         anthropic: Some("anthropic-key".to_string()),
         openai: Some("openai-key".to_string()),
         open_router: Some("openrouter-key".to_string()),
+        custom: Some("custom-key".to_string()),
         selected_provider: Some(ProviderId::OpenAI),
         custom_base_url: Some("https://custom.example.com".to_string()),
         openrouter_base_url: Some("https://openrouter.ai/api/v1".to_string()),
@@ -169,10 +196,7 @@ fn cache_invalidation_signal_emitted_when_api_key_changes() {
     use std::time::Duration;
 
     App::test((), |mut app| async move {
-        // Register noop secure storage for testing
-        app.update(|ctx| {
-            secure_storage::register_noop("test", ctx);
-        });
+        register_settings(&mut app);
 
         // Create cache and populate it for OpenAI
         let cache = ModelListCache::new().expect("failed to create cache");
@@ -210,9 +234,7 @@ fn get_selected_model_returns_user_selection_when_set() {
     use crate::model_registry::ProviderId;
 
     App::test((), |mut app| async move {
-        app.update(|ctx| {
-            secure_storage::register_noop("test", ctx);
-        });
+        register_settings(&mut app);
 
         let manager = app.add_singleton_model(ApiKeyManager::new);
 
@@ -236,9 +258,7 @@ fn get_selected_model_falls_back_to_defaults() {
     use crate::model_registry::ProviderId;
 
     App::test((), |mut app| async move {
-        app.update(|ctx| {
-            secure_storage::register_noop("test", ctx);
-        });
+        register_settings(&mut app);
 
         let manager = app.add_singleton_model(ApiKeyManager::new);
 
@@ -269,6 +289,84 @@ fn get_selected_model_falls_back_to_defaults() {
             assert_eq!(
                 manager.get_selected_model_for_provider(ProviderId::Custom, ctx),
                 None
+            );
+        });
+    });
+}
+
+#[test]
+fn direct_api_configuration_writes_to_settings_without_secure_storage() {
+    use crate::model_registry::ProviderId;
+    use warp_core::settings::Setting;
+    use warpui::SingletonEntity;
+
+    let _guard = warp_core::features::FeatureFlag::SettingsFile.override_enabled(true);
+    let dir = tempfile::tempdir().unwrap();
+    let settings_path = dir.path().join("settings.toml");
+
+    App::test((), |mut app| async move {
+        register_toml_settings(&mut app, settings_path.clone());
+
+        let manager = app.add_singleton_model(ApiKeyManager::new);
+
+        manager.update(&mut app, |manager, ctx| {
+            manager.set_selected_provider(Some(ProviderId::Custom), ctx);
+            manager.set_custom_key(Some("custom-key".to_string()), ctx);
+            manager.set_custom_base_url(Some("https://api.example.com/v1".to_string()), ctx);
+            manager.set_openrouter_base_url(Some("https://openrouter.example/v1".to_string()), ctx);
+            manager.set_ollama_base_url(Some("http://localhost:11434".to_string()), ctx);
+        });
+
+        app.read(|ctx| {
+            let settings = DirectAPISettings::as_ref(ctx);
+            assert_eq!(
+                settings.selected_provider.value().as_deref(),
+                Some("Custom")
+            );
+            assert_eq!(
+                settings.api_key_custom.value().as_deref(),
+                Some("custom-key")
+            );
+            assert_eq!(
+                settings.base_url_custom.value().as_deref(),
+                Some("https://api.example.com/v1")
+            );
+            assert_eq!(
+                settings.base_url_openrouter.value().as_deref(),
+                Some("https://openrouter.example/v1")
+            );
+            assert_eq!(
+                settings.base_url_ollama.value().as_deref(),
+                Some("http://localhost:11434")
+            );
+        });
+
+        let settings_toml =
+            std::fs::read_to_string(&settings_path).expect("failed to read settings TOML");
+        assert!(settings_toml.contains("[agents.direct_api.api_keys]"));
+        assert!(settings_toml.contains("custom = \"custom-key\""));
+        assert!(settings_toml.contains("[agents.direct_api]"));
+        assert!(settings_toml.contains("selected_provider = \"Custom\""));
+        assert!(settings_toml.contains("[agents.direct_api.base_urls]"));
+        assert!(settings_toml.contains("custom = \"https://api.example.com/v1\""));
+        assert!(settings_toml.contains("openrouter = \"https://openrouter.example/v1\""));
+        assert!(settings_toml.contains("ollama = \"http://localhost:11434\""));
+
+        manager.read(&app, |manager, ctx| {
+            let keys = manager.keys(ctx);
+            assert_eq!(keys.selected_provider, Some(ProviderId::Custom));
+            assert_eq!(keys.custom.as_deref(), Some("custom-key"));
+            assert_eq!(
+                keys.custom_base_url.as_deref(),
+                Some("https://api.example.com/v1")
+            );
+            assert_eq!(
+                keys.openrouter_base_url.as_deref(),
+                Some("https://openrouter.example/v1")
+            );
+            assert_eq!(
+                keys.ollama_base_url.as_deref(),
+                Some("http://localhost:11434")
             );
         });
     });

@@ -12,7 +12,7 @@ Direct API allows you to configure your own LLM provider API keys directly in Wa
 ### Key Benefits
 
 - **Offline-capable**: Use local models like Ollama without internet
-- **Privacy**: API keys stored locally in macOS Keychain (or OS-native secure storage)
+- **Privacy**: API keys stored locally in the channel-specific settings file
 - **Multi-provider**: OpenAI, Anthropic, Google Gemini, Ollama, OpenRouter, custom endpoints
 - **Conversation persistence**: Full chat history saved locally, survives app restarts
 - **No cloud dependency**: Works entirely offline with Ollama
@@ -73,7 +73,7 @@ See provider-specific setup below.
 3. Paste your API key into the **API Key** field
 4. Click **Test Connection**
 5. You should see: ✓ Connected to OpenAI
-6. Click **Save to Keychain**
+6. Click **Save Settings**
 
 **Choose a Model**
 
@@ -104,7 +104,7 @@ Other options:
 3. Paste your API key
 4. Click **Test Connection**
 5. You should see: ✓ Connected to Anthropic
-6. Click **Save to Keychain**
+6. Click **Save Settings**
 
 **Choose a Model**
 
@@ -135,7 +135,7 @@ Other options:
 3. Paste your API key
 4. Click **Test Connection**
 5. You should see: ✓ Connected to Google Gemini
-6. Click **Save to Keychain**
+6. Click **Save Settings**
 
 **Choose a Model**
 
@@ -182,7 +182,7 @@ You should see your downloaded models.
 4. **Base URL** should be `http://localhost:11434` (default)
 5. Click **Test Connection**
 6. You should see: ✓ Connected to Ollama
-7. Click **Save to Keychain**
+7. Click **Save Settings**
 
 **Choose a Model**
 
@@ -221,7 +221,7 @@ Available models from `ollama pull` command:
 4. **Base URL** should be `https://openrouter.ai/api/v1` (default)
 5. Click **Test Connection**
 6. You should see: ✓ Connected to OpenRouter
-7. Click **Save to Keychain**
+7. Click **Save Settings**
 
 **Choose a Model**
 
@@ -247,7 +247,7 @@ For endpoints compatible with OpenAI's API format (including LM Studio, Vllm, cu
 3. Enter your **API Key** (or leave blank if endpoint doesn't require auth)
 4. Enter your **Base URL** (e.g., `http://localhost:8000`)
 5. Click **Test Connection**
-6. Click **Save to Keychain**
+6. Click **Save Settings**
 
 **Example: LM Studio**
 
@@ -271,16 +271,13 @@ After entering your API key:
    - ✗ Authentication failed: Check your API key
    - ✗ Connection failed: Check your base URL
 
-## Saving to Keychain
+## Saving Settings
 
 After a successful test:
 
-1. Click **Save to Keychain**
-2. You may see a macOS Keychain permission prompt (first time only)
-3. Click **Allow** to grant Warp access
-4. Key is now securely stored
-
-**Note**: You'll only be prompted once per session. Subsequent saves won't trigger the prompt.
+1. Click **Save Settings**
+2. Warp writes the Direct API configuration to the channel-specific settings file
+3. For the warp-oss macOS build, that file is `~/.warp-oss/settings.toml`
 
 ## Using Your API Key
 
@@ -304,7 +301,7 @@ Your API key is **never** sent to Warp's servers—it's used directly with your 
 
 All conversations are saved locally in Warp's database:
 
-- **Location**: `~/.warp/` (hidden directory)
+- **Location**: `~/.warp-oss/` for warp-oss builds (hidden directory)
 - **Persistence**: Survives app restarts
 - **Privacy**: Stored only on your machine
 - **Access**: View via Settings → Agents → Conversation History (future feature)
@@ -320,9 +317,9 @@ Each conversation includes:
 
 ### API Key Storage
 
-- **macOS**: Stored in system Keychain with encryption
-- **Linux**: Stored in appropriate system secure storage
-- **Windows**: Stored in Credential Manager
+- **warp-oss macOS**: Stored in `~/.warp-oss/settings.toml`
+- **official stable Warp macOS**: Uses the official channel path under `~/.warp/`
+- **Linux/Windows**: Stored in the channel-specific settings path for that build
 
 ### What Warp Sees
 
@@ -475,11 +472,11 @@ Model selection is gated behind `FeatureFlag::DirectApiModelSelection` in DOGFOO
 - For custom endpoints: Verify base URL is correct and server is running
 - For Ollama: Ensure `ollama serve` is running in another terminal
 
-**Q: Keychain prompt appears every time**
+**Q: Settings do not persist**
 
-- This should only happen once per session
-- If it persists, try: Settings → General → Clear cache
-- Restart Warp if still occurring
+- Check that Warp can write to `~/.warp-oss/settings.toml`
+- Check file permissions on `~/.warp-oss/`
+- Restart Warp after fixing permissions
 
 **Q: "Model not found" error**
 
@@ -518,7 +515,7 @@ A: Use Ollama (free, local) or get a free tier key from OpenAI ($5 free credits)
 
 **Q: Is my API key safe?**
 
-A: Yes. Keys are stored in system Keychain and never sent to Warp's servers. The app is open-source so you can verify this yourself.
+A: Keys are stored locally in the channel-specific settings file and never sent to Warp's servers. The app is open-source so you can verify this yourself.
 
 **Q: Can I switch providers mid-conversation?**
 
@@ -570,7 +567,7 @@ export WARP_GEMINI_API_KEY="..."
 export WARP_OLLAMA_BASE_URL="http://localhost:11434"
 ```
 
-These will be used instead of keychain values if set.
+These will be used instead of saved settings values if set.
 
 ### Debug Logging
 

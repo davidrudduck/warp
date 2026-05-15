@@ -15,7 +15,7 @@ Welcome to the Warp documentation. This directory contains comprehensive guides 
 The Direct API feature allows OSS fork users to configure their own LLM provider API keys directly in Warp Settings. This enables:
 
 - Use any OpenAI-compatible LLM provider (OpenAI, Anthropic, Google Gemini, Ollama, OpenRouter, custom)
-- Local-only API key storage (macOS Keychain)
+- Local-only API key storage in `~/.warp-oss/settings.toml`
 - Full conversation history persistence
 - No dependency on Warp cloud backend
 

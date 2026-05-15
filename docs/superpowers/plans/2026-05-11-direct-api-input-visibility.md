@@ -747,7 +747,7 @@ In the running app:
 6. Select "OpenRouter". Placeholder changes to `sk-or-...`. Base URL field stays visible with `https://openrouter.ai/api/v1` pre-filled.
 7. Select "Custom (OpenAI-compatible)". API Key placeholder shows `Optional`. Base URL field shows empty input with `https://api.example.com/v1` as placeholder hint.
 8. Select an OpenAI / Anthropic / Google Gemini provider. Base URL field disappears. API Key placeholder updates.
-9. Paste a key, click "Save to Keychain" — status message still appears.
+9. Paste a key, click "Save Settings" — status message still appears.
 
 - [ ] **Step 4: Commit any final formatting**
 

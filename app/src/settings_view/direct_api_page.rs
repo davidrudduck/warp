@@ -245,7 +245,7 @@ impl ProviderType {
     /// Validate the API key format for this provider. Returns `Ok(())` if
     /// the key is well-formed (or unused for Ollama/Custom), `Err(message)`
     /// with a user-facing reason otherwise. Centralised so the "Test
-    /// Connection" and "Save to Keychain" flows can't drift apart — and so
+    /// Connection" and "Save Settings" flows can't drift apart — and so
     /// you can't save a key into a slot that would fail validation later.
     pub(super) fn validate_api_key(&self, key: &str) -> Result<(), String> {
         match self {
@@ -566,8 +566,31 @@ impl DirectApiSettingsPageView {
             return;
         }
 
-        // Save to keychain via ApiKeyManager
+        let base_url = if provider.needs_base_url() {
+            let url = self.base_url_editor.as_ref(ctx).buffer_text(ctx);
+            if provider == ProviderType::Custom && url.is_empty() {
+                *self.test_result.borrow_mut() =
+                    Some(Err("Base URL is required for custom providers".to_string()));
+                ctx.notify();
+                return;
+            }
+            if !url.is_empty() && !is_safe_for_http(&url) {
+                *self.test_result.borrow_mut() = Some(Err(
+                    "Base URL must use https:// (http:// only allowed for localhost/LAN)"
+                        .to_string(),
+                ));
+                ctx.notify();
+                return;
+            }
+            (!url.is_empty()).then_some(url)
+        } else {
+            None
+        };
+
+        // Save to settings.toml via ApiKeyManager.
         self.api_key_manager.update(ctx, |manager, ctx| {
+            manager.set_selected_provider(Some(provider.to_provider_id()), ctx);
+
             match provider {
                 ProviderType::OpenAI => {
                     manager.set_openai_key(Some(api_key.clone()), ctx);
@@ -586,21 +609,34 @@ impl DirectApiSettingsPageView {
                 }
                 ProviderType::Custom => {
                     // Custom providers can optionally have API keys
-                    if !api_key.is_empty() {
-                        manager.set_openai_key(Some(api_key.clone()), ctx);
-                    }
+                    manager.set_custom_key((!api_key.is_empty()).then_some(api_key.clone()), ctx);
+                }
+            }
+
+            match provider {
+                ProviderType::Ollama => {
+                    manager.set_ollama_base_url(base_url.clone(), ctx);
+                }
+                ProviderType::OpenRouter => {
+                    manager.set_openrouter_base_url(base_url.clone(), ctx);
+                }
+                ProviderType::Custom => {
+                    manager.set_custom_base_url(base_url.clone(), ctx);
+                }
+                ProviderType::OpenAI | ProviderType::Anthropic | ProviderType::GoogleGemini => {
+                    // These providers use fixed hosted endpoints.
                 }
             }
         });
 
-        // Wipe the buffer and re-mask after a successful save. The keychain
+        // Wipe the buffer and re-mask after a successful save. settings.toml
         // is the source of truth from here on; leaving the cleartext key
         // visible (and revealable via the eye toggle) after the user has
         // already saved it is a shoulder-surfing footgun.
         self.clear_and_remask_api_key(ctx);
 
         *self.test_result.borrow_mut() = Some(Ok(format!(
-            "{} API key saved successfully to keychain",
+            "{} settings saved successfully",
             provider.as_str()
         )));
         ctx.notify();
@@ -616,7 +652,7 @@ impl DirectApiSettingsPageView {
             return;
         }
 
-        // Pull the current API key (if any) from the saved keychain entries.
+        // Pull the current API key (if any) from the saved settings entries.
         // The in-memory editor buffer is intentionally not consulted — saving
         // is required first, which keeps "fetch models" and "save key" flows
         // distinct and avoids leaking unsaved keys into network calls.
@@ -627,7 +663,7 @@ impl DirectApiSettingsPageView {
             ProviderId::GoogleGemini => api_keys.google.clone(),
             ProviderId::Ollama => None,
             ProviderId::OpenRouter => api_keys.open_router.clone(),
-            ProviderId::Custom => None,
+            ProviderId::Custom => api_keys.custom.clone(),
         };
 
         // Resolve base URL for providers that need one, preferring the live

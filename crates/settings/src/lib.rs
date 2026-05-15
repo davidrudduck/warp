@@ -1,8 +1,8 @@
 #[macro_use]
 pub mod macros;
+pub mod direct_api;
 pub mod manager;
 pub mod schema;
-pub mod direct_api;
 
 // Re-export commonly used types and traits
 pub use direct_api::DirectAPISettings;

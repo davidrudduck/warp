@@ -53,7 +53,7 @@ Done! Your AI commands now use your own provider.
 **Supported providers**: OpenAI, Anthropic, Google Gemini, Ollama (local), OpenRouter, custom endpoints
 
 **Key features**:
-- Local-only API key storage (macOS Keychain)
+- Local-only API key storage in `~/.warp-oss/settings.toml`
 - Full conversation persistence (SQLite)
 - Works offline with Ollama
 - 271+ tests, production-ready

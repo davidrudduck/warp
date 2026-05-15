@@ -89,6 +89,7 @@ tempfile.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }
 virtual-fs.workspace = true
 warp_core = { workspace = true, features = ["test-util"] }
+warpui_extras = { workspace = true, features = ["user_preferences-toml"] }
 
 [build-dependencies]
 anyhow.workspace = true

@@ -336,7 +336,7 @@ fn save_path_clears_buffer_and_remasks() {
     //
     // Expected behavior from direct_api_page.rs:
     // When SaveApiKey action completes successfully:
-    // 1. Save key to keychain via ApiKeyManager
+    // 1. Save key to settings via ApiKeyManager
     // 2. Clear api_key_editor buffer
     // 3. Set show_api_key to false
     // 4. Update test_result with success message

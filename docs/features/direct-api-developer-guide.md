@@ -14,7 +14,7 @@ The Direct API feature enables OSS fork users to configure their own LLM provide
                  │
         ┌────────▼──────────┐
         │  ApiKeyManager    │
-        │  (macOS Keychain) │
+        │  (settings.toml)  │
         └────────┬──────────┘
                  │
         ┌────────▼──────────────────────┐
@@ -56,8 +56,8 @@ Main AI functionality. Key files:
 
 ```bash
 crates/ai/src/
-├── api_keys.rs                  # ApiKeyManager - keychain integration
-├── api_keys_tests.rs            # Tests for keychain
+├── api_keys.rs                  # ApiKeyManager - settings.toml integration
+├── api_keys_tests.rs            # Tests for settings persistence
 ├── direct_loop/
 │   ├── mod.rs                   # Main agentic loop (chat + tool dispatch)
 │   ├── run_tests.rs             # Integration tests
@@ -103,16 +103,15 @@ app/src/settings_view/
 
 ## Component Details
 
-### 1. ApiKeyManager — Secure Key Storage
+### 1. ApiKeyManager — Settings-Backed Key Storage
 
 **File**: `crates/ai/src/api_keys.rs`
 
-Manages secure storage of API keys in system Keychain (macOS) or equivalent.
+Manages Direct API keys through `DirectAPISettings`, which are persisted in the channel-specific settings file. For the warp-oss macOS build, that file is `~/.warp-oss/settings.toml`.
 
 ```rust
 pub struct ApiKeyManager {
     cache: Arc<Mutex<Option<ApiKeys>>>,
-    keychain_service: String,
 }
 
 impl ApiKeyManager {
@@ -126,16 +125,16 @@ impl ApiKeyManager {
 
 **Key Design Decisions**:
 
-1. **Lazy Loading**: Keys not loaded until first use (no keychain prompt on app startup)
-2. **Session Cache**: Once loaded, cached in memory (one prompt per session)
+1. **Lazy Loading**: Keys not loaded until first use
+2. **Session Cache**: Once loaded, cached in memory for the session
 3. **Thread-Safe**: Uses Arc<Mutex> but only accessed from main thread (WarpUI invariant)
-4. **Platform-Native**: Uses system Keychain/Credential Manager for security
+4. **Channel-Local**: Uses the active build channel's settings path, so warp-oss and official Warp do not conflict
 
 **Usage**:
 
 ```rust
 let manager = ApiKeyManager::new();
-let keys = manager.get_keys()?;  // First call triggers keychain prompt
+let keys = manager.get_keys()?;  // First call loads settings
 let openai_key = keys.openai;     // Cached for rest of session
 ```
 
@@ -411,7 +410,7 @@ pub struct DirectApiSettingsPageView {
 2. **API Key Input** — EditorView for entering key
 3. **Base URL Input** — For Ollama/custom endpoints (hidden for cloud providers)
 4. **Test Connection Button** — Validates key format and connectivity
-5. **Save to Keychain Button** — Persists to system Keychain
+5. **Save Settings Button** — Persists to DirectAPISettings
 6. **Status Display** — Shows ✓/✗ results
 
 **Action Handlers**:
@@ -769,7 +768,7 @@ impl ApiKeyManager {
             keys.selected_models.insert(provider, model_id);
         }
         ctx.emit(ApiKeyManagerEvent::KeysUpdated);
-        self.write_keys_to_secure_storage(ctx);
+        self.write_keys_to_settings(ctx);
     }
     
     pub fn get_selected_model_for_provider(
@@ -811,7 +810,7 @@ impl ApiKeyManager {
 ### How Settings UI connects to AI
 
 1. User configures provider in Settings
-2. ApiKeyManager stores key in Keychain
+2. ApiKeyManager stores key in DirectAPISettings
 3. When user runs `@agent` command, direct_loop loads the saved key
 4. ModelRegistry creates appropriate LlmProvider based on stored config
 5. direct_loop runs conversation with that provider
@@ -882,7 +881,7 @@ impl ApiKeyManager {
     pub fn set_your_provider_key(&mut self, key: Option<String>) -> Result<(), Error> {
         let mut keys = self.get_keys()?;
         keys.your_provider_key = key;
-        self.save_to_keychain(&keys)?;
+        self.write_keys_to_settings(&keys)?;
         *self.cache.lock().unwrap() = Some(keys);
         Ok(())
     }
@@ -1088,7 +1087,7 @@ fn test_my_function() {
 ### Memory
 
 - **Message Cache**: ~1KB per message in history
-- **Keychain Cache**: <1KB (single API key in memory)
+- **API Key Cache**: <1KB (single API key in memory)
 - **SQLite DB**: ~100KB per 100 conversations
 
 Example: 20-turn conversation uses ~20KB RAM.

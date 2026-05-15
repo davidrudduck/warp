@@ -8,21 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Direct API configuration now persists to `~/.warp/settings.toml` instead of macOS Keychain
-- One-time automatic migration from keychain to settings.toml on first app startup
-- Migration logged: "Migrated Direct API keys from keychain to settings.toml"
+- Direct API configuration now persists to the channel-specific `settings.toml`
+- For the warp-oss macOS build, Direct API configuration writes to `~/.warp-oss/settings.toml`
 
 ### Changed
 - All Direct API key save operations now write to settings.toml (US-004)
-- Button label updated from "Save to Keychain" to "Save Settings" (US-005)
+- Button label updated to "Save Settings" (US-005)
 - DirectAPISettings moved to shared `crates/settings` for cross-crate access
 
 ### Fixed
-- Eliminated keychain password prompts for Direct API configuration
+- Eliminated macOS password prompts for Direct API configuration
 - Direct API settings now survive rebuilds (independent of binary)
 
 ### Removed
-- Removed obsolete `write_keys_to_secure_storage()` function (US-007)
+- Removed obsolete Direct API legacy write path (US-007)
 
 ### Technical Details
 **Migration Implementation (2026-05-14)**
@@ -38,12 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 **Architecture**:
 - `load_keys_from_settings()` - reads from DirectAPISettings on lazy load
 - `write_keys_to_settings()` - writes to DirectAPISettings on save
-- `migrate_from_keychain_if_needed()` - one-time migration at app startup
-- Settings location: `~/.warp/settings.toml` under `[agents.direct_api]`
+- Direct API legacy migration has been removed for warp-oss
+- Settings location: `~/.warp-oss/settings.toml` under `[agents.direct_api]` for the warp-oss macOS build
 
 **Known Issues**:
 - Settings UI buttons (Test Connection, Save Settings, Update Model List) may not respond due to WarpUI framework limitation
-- Workaround: Manually edit `~/.warp/settings.toml` to configure Direct API
+- Workaround: Manually edit `~/.warp-oss/settings.toml` to configure Direct API
 
 ## [0.1.0] - 2026-05-11
 
@@ -55,7 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Agentic chat loop with tool dispatch
 - Streaming responses with cancellation support
 - File-based logging with secret redaction
-- Session caching for keychain access
+- Session caching for Direct API settings access
 - Comprehensive documentation (1,721 lines)
 
 ### Technical Details
