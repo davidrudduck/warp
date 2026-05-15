@@ -49,7 +49,7 @@
 **Files:**
 - Modify: `app/src/terminal/settings.rs`
 
-- [ ] **Step 1: Add a failing settings compile target**
+- [x] **Step 1: Add a failing settings compile target**
 
 Run:
 
@@ -59,7 +59,7 @@ cargo check -p warp --bin warp-oss
 
 Expected before code change: PASS. This establishes the baseline before adding the new setting.
 
-- [ ] **Step 2: Add the setting to `TerminalSettings`**
+- [x] **Step 2: Add the setting to `TerminalSettings`**
 
 In `app/src/terminal/settings.rs`, add this entry inside `define_settings_group!(TerminalSettings, settings: [...])` after `show_terminal_zero_state_block`:
 
@@ -77,7 +77,7 @@ In `app/src/terminal/settings.rs`, add this entry inside `define_settings_group!
 
 This setting is local-only because tmux clipboard behavior is terminal-host and security-context specific.
 
-- [ ] **Step 3: Run the setting compile check**
+- [x] **Step 3: Run the setting compile check**
 
 Run:
 
@@ -87,7 +87,7 @@ cargo check -p warp --bin warp-oss
 
 Expected: PASS.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add app/src/terminal/settings.rs

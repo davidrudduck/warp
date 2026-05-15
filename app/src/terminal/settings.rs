@@ -133,6 +133,15 @@ define_settings_group!(TerminalSettings, settings: [
         toml_path: "terminal.show_terminal_zero_state_block",
         description: "Whether to show the AI zero-state block in new terminal sessions.",
     },
+    experimental_tmux_clipboard_sync: ExperimentalTmuxClipboardSync {
+        type: bool,
+        default: false,
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "terminal.experimental_tmux_clipboard_sync",
+        description: "Whether to mirror tmux paste buffer changes to the OS clipboard.",
+    },
 ]);
 
 impl TerminalSettings {
