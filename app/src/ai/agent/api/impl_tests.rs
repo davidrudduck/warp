@@ -4,7 +4,10 @@ use std::sync::Arc;
 use ai::provider::{ChatMessage, ContentBlock};
 
 use crate::ai::agent::api::{DirectApiRouteConfig, RequestParams};
-use crate::ai::agent::{AIAgentContext, AIAgentInput, UserQueryMode};
+use crate::ai::agent::{
+    AIAgentActionResult, AIAgentActionResultType, AIAgentContext, AIAgentInput, ReadFilesResult,
+    TaskId, UserQueryMode,
+};
 use crate::ai::blocklist::SessionContext;
 use crate::ai::execution_profiles::ModelRouting;
 use crate::ai::llms::LLMId;
@@ -231,6 +234,291 @@ fn direct_api_chat_request_uses_user_query_text() {
         panic!("expected text block");
     };
     assert_eq!(text, "explain the failing test");
+}
+
+#[test]
+fn direct_api_chat_request_preserves_persisted_tool_call_and_result() {
+    let mut params = request_params_with_ask_user_question_enabled(false);
+    params.tasks = vec![api::Task {
+        id: "task-local".to_string(),
+        messages: vec![
+            api::Message {
+                id: "message-tool-call".to_string(),
+                task_id: "task-local".to_string(),
+                request_id: "request-local".to_string(),
+                timestamp: None,
+                server_message_data: String::new(),
+                citations: Vec::new(),
+                message: Some(api::message::Message::ToolCall(api::message::ToolCall {
+                    tool_call_id: "call-read".to_string(),
+                    tool: Some(api::message::tool_call::Tool::ReadFiles(
+                        api::message::tool_call::ReadFiles {
+                            files: vec![api::message::tool_call::read_files::File {
+                                name: "Cargo.toml".to_string(),
+                                line_ranges: Vec::new(),
+                            }],
+                        },
+                    )),
+                })),
+            },
+            api::Message {
+                id: "message-tool-result".to_string(),
+                task_id: "task-local".to_string(),
+                request_id: "request-local".to_string(),
+                timestamp: None,
+                server_message_data: String::new(),
+                citations: Vec::new(),
+                message: Some(api::message::Message::ToolCallResult(
+                    api::message::ToolCallResult {
+                        tool_call_id: "call-read".to_string(),
+                        context: None,
+                        result: Some(api::message::tool_call_result::Result::ReadFiles(
+                            api::ReadFilesResult {
+                                result: Some(api::read_files_result::Result::Error(
+                                    api::read_files_result::Error {
+                                        message: "permission denied".to_string(),
+                                    },
+                                )),
+                            },
+                        )),
+                    },
+                )),
+            },
+        ],
+        dependencies: None,
+        description: String::new(),
+        summary: String::new(),
+        server_data: String::new(),
+    }];
+
+    let request = super::super::direct_tools::build_chat_request(&params);
+
+    let Some(ChatMessage::Assistant { text, tool_calls }) = request.messages.first() else {
+        panic!("expected assistant tool-call message");
+    };
+    assert!(text.is_none());
+    assert_eq!(tool_calls.len(), 1);
+    assert_eq!(tool_calls[0].id, "call-read");
+    assert_eq!(tool_calls[0].name, "ReadFiles");
+    assert_eq!(tool_calls[0].input["files"][0]["name"], "Cargo.toml");
+
+    let Some(ChatMessage::User(blocks)) = request.messages.get(1) else {
+        panic!("expected user tool-result message");
+    };
+    let Some(ContentBlock::ToolResult {
+        tool_use_id,
+        content,
+        is_error,
+    }) = blocks.first()
+    else {
+        panic!("expected structured tool result");
+    };
+    assert_eq!(tool_use_id, "call-read");
+    assert!(matches!(content, ai::provider::ToolResultContent::Text(_)));
+    assert!(*is_error);
+}
+
+#[test]
+fn direct_api_chat_request_marks_successful_shell_result_as_non_error() {
+    let mut params = request_params_with_ask_user_question_enabled(false);
+    params.tasks = vec![api::Task {
+        id: "task-local".to_string(),
+        messages: vec![api::Message {
+            id: "message-tool-result".to_string(),
+            task_id: "task-local".to_string(),
+            request_id: "request-local".to_string(),
+            timestamp: None,
+            server_message_data: String::new(),
+            citations: Vec::new(),
+            message: Some(api::message::Message::ToolCallResult(
+                api::message::ToolCallResult {
+                    tool_call_id: "call-shell".to_string(),
+                    context: None,
+                    result: Some(api::message::tool_call_result::Result::RunShellCommand(
+                        #[allow(deprecated)]
+                        api::RunShellCommandResult {
+                            command: "echo ok".to_string(),
+                            output: String::new(),
+                            exit_code: 0,
+                            result: Some(api::run_shell_command_result::Result::CommandFinished(
+                                api::ShellCommandFinished {
+                                    command_id: "command-local".to_string(),
+                                    output: "ok".to_string(),
+                                    exit_code: 0,
+                                },
+                            )),
+                        },
+                    )),
+                },
+            )),
+        }],
+        dependencies: None,
+        description: String::new(),
+        summary: String::new(),
+        server_data: String::new(),
+    }];
+
+    let request = super::super::direct_tools::build_chat_request(&params);
+
+    let Some(ChatMessage::User(blocks)) = request.messages.first() else {
+        panic!("expected user tool-result message");
+    };
+    let Some(ContentBlock::ToolResult { is_error, .. }) = blocks.first() else {
+        panic!("expected structured tool result");
+    };
+    assert!(!*is_error);
+}
+
+#[test]
+fn direct_api_chat_request_preserves_current_action_result_as_tool_result() {
+    let mut params = request_params_with_ask_user_question_enabled(false);
+    params.input = vec![AIAgentInput::ActionResult {
+        result: AIAgentActionResult {
+            id: "call-read".to_string().into(),
+            task_id: TaskId::new("task-local".to_string()),
+            result: AIAgentActionResultType::ReadFiles(ReadFilesResult::Error(
+                "missing file".to_string(),
+            )),
+        },
+        context: Arc::<[AIAgentContext]>::from([]),
+    }];
+
+    let request = super::super::direct_tools::build_chat_request(&params);
+
+    let Some(ChatMessage::User(blocks)) = request.messages.first() else {
+        panic!("expected user tool-result message");
+    };
+    let Some(ContentBlock::ToolResult {
+        tool_use_id,
+        content,
+        is_error,
+    }) = blocks.first()
+    else {
+        panic!("expected structured tool result");
+    };
+    assert_eq!(tool_use_id, "call-read");
+    assert!(matches!(content, ai::provider::ToolResultContent::Text(_)));
+    assert!(*is_error);
+}
+
+#[test]
+fn maps_direct_read_files_tool_call_to_proto_tool_call() {
+    let tool_call = ai::provider::ToolCall {
+        id: "call-read".to_string(),
+        name: "ReadFiles".to_string(),
+        input: serde_json::json!({
+            "files": [{"name": "Cargo.toml"}]
+        }),
+    };
+
+    let proto =
+        super::super::direct_tools::provider_tool_call_to_proto(tool_call).expect("tool maps");
+
+    assert_eq!(proto.tool_call_id, "call-read");
+    assert!(matches!(
+        proto.tool,
+        Some(api::message::tool_call::Tool::ReadFiles(_))
+    ));
+}
+
+#[test]
+fn direct_read_files_tool_call_rejects_missing_files() {
+    let tool_call = ai::provider::ToolCall {
+        id: "call-read".to_string(),
+        name: "ReadFiles".to_string(),
+        input: serde_json::json!({}),
+    };
+
+    let err = super::super::direct_tools::provider_tool_call_to_proto(tool_call).unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("Invalid Direct API ReadFiles input"));
+}
+
+#[test]
+fn direct_grep_tool_call_rejects_empty_queries() {
+    let tool_call = ai::provider::ToolCall {
+        id: "call-grep".to_string(),
+        name: "Grep".to_string(),
+        input: serde_json::json!({"queries": []}),
+    };
+
+    let err = super::super::direct_tools::provider_tool_call_to_proto(tool_call).unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("Direct API Grep input requires at least one query"));
+}
+
+#[test]
+fn direct_run_shell_command_tool_call_rejects_empty_command() {
+    let tool_call = ai::provider::ToolCall {
+        id: "call-shell".to_string(),
+        name: "RunShellCommand".to_string(),
+        input: serde_json::json!({"command": " "}),
+    };
+
+    let err = super::super::direct_tools::provider_tool_call_to_proto(tool_call).unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("Direct API RunShellCommand input requires a non-empty command"));
+}
+
+#[test]
+fn maps_direct_tool_call_to_add_messages_action() {
+    let tool_call = api::message::ToolCall {
+        tool_call_id: "call-read".to_string(),
+        tool: Some(api::message::tool_call::Tool::ReadFiles(
+            api::message::tool_call::ReadFiles { files: Vec::new() },
+        )),
+    };
+
+    let action = super::super::direct::add_tool_call_action(
+        "task-local".to_string(),
+        "request-local".to_string(),
+        "message-tool".to_string(),
+        tool_call,
+    );
+
+    match action {
+        api::client_action::Action::AddMessagesToTask(add) => {
+            assert_eq!(add.task_id, "task-local");
+            assert_eq!(add.messages.len(), 1);
+            assert!(matches!(
+                add.messages[0].message,
+                Some(api::message::Message::ToolCall(_))
+            ));
+        }
+        api::client_action::Action::BeginTransaction(_)
+        | api::client_action::Action::CommitTransaction(_)
+        | api::client_action::Action::RollbackTransaction(_)
+        | api::client_action::Action::CreateTask(_)
+        | api::client_action::Action::UpdateTaskDescription(_)
+        | api::client_action::Action::ShowSuggestions(_)
+        | api::client_action::Action::UpdateTaskSummary(_)
+        | api::client_action::Action::StartNewConversation(_)
+        | api::client_action::Action::UpdateTaskServerData(_)
+        | api::client_action::Action::MoveMessagesToNewTask(_)
+        | api::client_action::Action::UpdateTaskMessage(_)
+        | api::client_action::Action::AppendToMessageContent(_) => {
+            panic!("expected AddMessagesToTask action")
+        }
+    }
+}
+
+#[test]
+fn unknown_direct_tool_call_maps_to_error() {
+    let tool_call = ai::provider::ToolCall {
+        id: "call-unknown".to_string(),
+        name: "UnknownTool".to_string(),
+        input: serde_json::json!({}),
+    };
+
+    let err = super::super::direct_tools::provider_tool_call_to_proto(tool_call).unwrap_err();
+
+    assert!(err.to_string().contains("Unsupported Direct API tool"));
 }
 
 #[test]

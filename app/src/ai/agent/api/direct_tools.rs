@@ -1,12 +1,18 @@
 use ai::model_registry::ProviderId;
 use ai::provider::{
     ChatMessage, ChatOptions, ChatRequest, ChatStream, ContentBlock, GenaiAdapter, LlmProvider,
+    Tool, ToolCall, ToolResultContent,
 };
+use anyhow::{bail, Context as _};
+use serde::Deserialize;
 use std::fmt::Debug;
 use warp_multi_agent_api as api;
 
 use super::{DirectApiRouteConfig, RequestParams};
-use crate::ai::agent::{AIAgentContext, AIAgentInput};
+use crate::ai::agent::{
+    AIAgentActionResult, AIAgentActionResultType, AIAgentContext, AIAgentInput, GrepResult,
+    ReadFilesResult,
+};
 
 pub async fn run_provider_stream(params: RequestParams) -> anyhow::Result<ChatStream> {
     let config = params
@@ -38,10 +44,7 @@ pub(super) fn build_chat_request(params: &RequestParams) -> ChatRequest {
         messages.extend(chat_messages_from_task_messages(&task.messages));
     }
 
-    let user_prompt = render_inputs_for_provider(&params.input);
-    if !user_prompt.trim().is_empty() {
-        messages.push(ChatMessage::User(vec![ContentBlock::Text(user_prompt)]));
-    }
+    messages.extend(chat_messages_from_inputs(&params.input));
 
     if messages.is_empty() {
         messages.push(ChatMessage::User(vec![ContentBlock::Text(
@@ -51,9 +54,146 @@ pub(super) fn build_chat_request(params: &RequestParams) -> ChatRequest {
 
     ChatRequest {
         messages,
-        tools: Vec::new(),
+        tools: direct_tool_definitions(),
         options: ChatOptions::default(),
     }
+}
+
+pub fn provider_tool_call_to_proto(tool_call: ToolCall) -> anyhow::Result<api::message::ToolCall> {
+    let ToolCall { id, name, input } = tool_call;
+    let tool = match name.as_str() {
+        "ReadFiles" => {
+            let input: ReadFilesToolInput =
+                serde_json::from_value(input).context("Invalid Direct API ReadFiles input")?;
+            if input.files.is_empty() {
+                bail!("Direct API ReadFiles input requires at least one file");
+            }
+            let files = input
+                .files
+                .into_iter()
+                .map(|file| {
+                    if file.name.trim().is_empty() {
+                        bail!("Direct API ReadFiles input contains an empty file name");
+                    }
+                    Ok(api::message::tool_call::read_files::File {
+                        name: file.name,
+                        line_ranges: Vec::new(),
+                    })
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            api::message::tool_call::Tool::ReadFiles(api::message::tool_call::ReadFiles { files })
+        }
+        "Grep" => {
+            let input: GrepToolInput =
+                serde_json::from_value(input).context("Invalid Direct API Grep input")?;
+            if input.queries.is_empty() {
+                bail!("Direct API Grep input requires at least one query");
+            }
+            if input.queries.iter().any(|query| query.trim().is_empty()) {
+                bail!("Direct API Grep input contains an empty query");
+            }
+            let path = input.path.unwrap_or_default();
+            api::message::tool_call::Tool::Grep(api::message::tool_call::Grep {
+                queries: input.queries,
+                path,
+            })
+        }
+        "RunShellCommand" => {
+            let input: RunShellCommandToolInput = serde_json::from_value(input)
+                .context("Invalid Direct API RunShellCommand input")?;
+            if input.command.trim().is_empty() {
+                bail!("Direct API RunShellCommand input requires a non-empty command");
+            }
+            api::message::tool_call::Tool::RunShellCommand(
+                api::message::tool_call::RunShellCommand {
+                    command: input.command,
+                    is_read_only: false,
+                    uses_pager: false,
+                    citations: Vec::new(),
+                    is_risky: true,
+                    risk_category: 0,
+                    wait_until_complete_value: None,
+                },
+            )
+        }
+        other => bail!("Unsupported Direct API tool: {other}"),
+    };
+
+    Ok(api::message::ToolCall {
+        tool_call_id: id,
+        tool: Some(tool),
+    })
+}
+
+#[derive(Deserialize)]
+struct ReadFilesToolInput {
+    files: Vec<ReadFilesToolInputFile>,
+}
+
+#[derive(Deserialize)]
+struct ReadFilesToolInputFile {
+    name: String,
+}
+
+#[derive(Deserialize)]
+struct GrepToolInput {
+    queries: Vec<String>,
+    path: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RunShellCommandToolInput {
+    command: String,
+}
+
+pub(super) fn direct_tool_definitions() -> Vec<Tool> {
+    vec![
+        Tool {
+            name: "ReadFiles".to_string(),
+            description: "Read one or more files from the current workspace.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "files": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string", "minLength": 1}
+                            },
+                            "required": ["name"]
+                        }
+                    }
+                },
+                "required": ["files"]
+            }),
+        },
+        Tool {
+            name: "Grep".to_string(),
+            description: "Search files for text or regex patterns.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "queries": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+                    "path": {"type": "string"}
+                },
+                "required": ["queries"]
+            }),
+        },
+        Tool {
+            name: "RunShellCommand".to_string(),
+            description: "Request execution of a shell command after Warp permission checks."
+                .to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "minLength": 1}
+                },
+                "required": ["command"]
+            }),
+        },
+    ]
 }
 
 fn chat_messages_from_task_messages(messages: &[api::Message]) -> Vec<ChatMessage> {
@@ -75,13 +215,14 @@ fn chat_messages_from_task_messages(messages: &[api::Message]) -> Vec<ChatMessag
                 tool_calls: Vec::new(),
             }),
             api::message::Message::ToolCallResult(result) => {
-                Some(ChatMessage::User(vec![ContentBlock::Text(format!(
-                    "Tool result: {}",
-                    render_tool_result(result)
-                ))]))
+                Some(chat_message_from_tool_call_result(result))
             }
-            api::message::Message::ToolCall(_)
-            | api::message::Message::ServerEvent(_)
+            api::message::Message::ToolCall(tool_call) => provider_tool_call_from_proto(tool_call)
+                .map(|tool_call| ChatMessage::Assistant {
+                    text: None,
+                    tool_calls: vec![tool_call],
+                }),
+            api::message::Message::ServerEvent(_)
             | api::message::Message::AgentReasoning(_)
             | api::message::Message::UpdateTodos(_)
             | api::message::Message::Summarization(_)
@@ -101,12 +242,182 @@ fn chat_messages_from_task_messages(messages: &[api::Message]) -> Vec<ChatMessag
         .collect()
 }
 
-fn render_inputs_for_provider(inputs: &[AIAgentInput]) -> String {
-    inputs
-        .iter()
-        .filter_map(render_input_for_provider)
-        .collect::<Vec<_>>()
-        .join("\n\n")
+fn provider_tool_call_from_proto(tool_call: &api::message::ToolCall) -> Option<ToolCall> {
+    if let Some(api::message::tool_call::Tool::ReadFiles(read_files)) = tool_call.tool.as_ref() {
+        return Some(ToolCall {
+            id: tool_call.tool_call_id.clone(),
+            name: "ReadFiles".to_string(),
+            input: serde_json::json!({
+                "files": read_files
+                    .files
+                    .iter()
+                    .map(|file| serde_json::json!({"name": file.name.clone()}))
+                    .collect::<Vec<_>>()
+            }),
+        });
+    }
+
+    if let Some(api::message::tool_call::Tool::Grep(grep)) = tool_call.tool.as_ref() {
+        return Some(ToolCall {
+            id: tool_call.tool_call_id.clone(),
+            name: "Grep".to_string(),
+            input: serde_json::json!({
+                "queries": grep.queries.clone(),
+                "path": grep.path.clone()
+            }),
+        });
+    }
+
+    if let Some(api::message::tool_call::Tool::RunShellCommand(command)) = tool_call.tool.as_ref() {
+        return Some(ToolCall {
+            id: tool_call.tool_call_id.clone(),
+            name: "RunShellCommand".to_string(),
+            input: serde_json::json!({
+                "command": command.command.clone()
+            }),
+        });
+    }
+
+    None
+}
+
+fn chat_message_from_tool_call_result(result: &api::message::ToolCallResult) -> ChatMessage {
+    ChatMessage::User(vec![ContentBlock::ToolResult {
+        tool_use_id: result.tool_call_id.clone(),
+        content: ToolResultContent::Text(render_tool_result(result)),
+        is_error: proto_tool_call_result_is_error(result),
+    }])
+}
+
+fn chat_messages_from_inputs(inputs: &[AIAgentInput]) -> Vec<ChatMessage> {
+    let mut messages = Vec::new();
+    let mut text_sections = Vec::new();
+
+    for input in inputs {
+        if let Some(action_result) = input.action_result() {
+            if !text_sections.is_empty() {
+                messages.push(ChatMessage::User(vec![ContentBlock::Text(
+                    text_sections.join("\n\n"),
+                )]));
+                text_sections.clear();
+            }
+
+            messages.push(ChatMessage::User(vec![ContentBlock::ToolResult {
+                tool_use_id: action_result.id.to_string(),
+                content: ToolResultContent::Text(action_result.to_string()),
+                is_error: action_result_is_error(action_result),
+            }]));
+
+            if let Some(rendered) = render_input_context_and_attachments_for_provider(input) {
+                text_sections.push(rendered);
+            }
+        } else if let Some(rendered) = render_input_for_provider(input) {
+            text_sections.push(rendered);
+        }
+    }
+
+    if !text_sections.is_empty() {
+        messages.push(ChatMessage::User(vec![ContentBlock::Text(
+            text_sections.join("\n\n"),
+        )]));
+    }
+
+    messages
+}
+
+fn action_result_is_error(action_result: &AIAgentActionResult) -> bool {
+    if action_result.is_rejected() {
+        return true;
+    }
+
+    if let AIAgentActionResultType::ReadFiles(result) = &action_result.result {
+        return read_files_action_result_is_error(result);
+    }
+
+    if let AIAgentActionResultType::Grep(result) = &action_result.result {
+        return grep_action_result_is_error(result);
+    }
+
+    if let AIAgentActionResultType::RequestCommandOutput(result) = &action_result.result {
+        return result.failed();
+    }
+
+    false
+}
+
+fn read_files_action_result_is_error(result: &ReadFilesResult) -> bool {
+    matches!(
+        result,
+        ReadFilesResult::Error(_) | ReadFilesResult::Cancelled
+    )
+}
+
+fn grep_action_result_is_error(result: &GrepResult) -> bool {
+    matches!(result, GrepResult::Error(_) | GrepResult::Cancelled)
+}
+
+fn proto_tool_call_result_is_error(result: &api::message::ToolCallResult) -> bool {
+    let Some(result) = result.result.as_ref() else {
+        return true;
+    };
+
+    if let api::message::tool_call_result::Result::Cancel(()) = result {
+        return true;
+    }
+
+    if let api::message::tool_call_result::Result::ReadFiles(read_files) = result {
+        return read_files_proto_result_is_error(read_files);
+    }
+
+    if let api::message::tool_call_result::Result::Grep(grep) = result {
+        return grep_proto_result_is_error(grep);
+    }
+
+    if let api::message::tool_call_result::Result::RunShellCommand(command) = result {
+        return run_shell_command_proto_result_is_error(command);
+    }
+
+    true
+}
+
+fn read_files_proto_result_is_error(result: &api::ReadFilesResult) -> bool {
+    if result.result.is_none() {
+        return true;
+    }
+
+    if let Some(api::read_files_result::Result::Error(..)) = result.result.as_ref() {
+        return true;
+    }
+
+    false
+}
+
+fn grep_proto_result_is_error(result: &api::GrepResult) -> bool {
+    if result.result.is_none() {
+        return true;
+    }
+
+    if let Some(api::grep_result::Result::Error(..)) = result.result.as_ref() {
+        return true;
+    }
+
+    false
+}
+
+fn run_shell_command_proto_result_is_error(result: &api::RunShellCommandResult) -> bool {
+    let Some(result) = result.result.as_ref() else {
+        return true;
+    };
+
+    if let api::run_shell_command_result::Result::PermissionDenied(..) = result {
+        return true;
+    }
+
+    if let api::run_shell_command_result::Result::CommandFinished(finished) = result {
+        return finished.exit_code != 0;
+    }
+
+    false
 }
 
 fn render_input_for_provider(input: &AIAgentInput) -> Option<String> {
@@ -119,6 +430,29 @@ fn render_input_for_provider(input: &AIAgentInput) -> Option<String> {
         sections.push(query.to_string());
     }
 
+    if let Some(context) = input.context() {
+        let rendered_context = render_context(context);
+        if !rendered_context.is_empty() {
+            sections.push(rendered_context);
+        }
+    }
+
+    if let Some(attachments) = input.attachments() {
+        let rendered_attachments = attachments
+            .into_iter()
+            .map(|attachment| format!("{attachment:?}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        if !rendered_attachments.is_empty() {
+            sections.push(format!("Attachments:\n{rendered_attachments}"));
+        }
+    }
+
+    (!sections.is_empty()).then(|| sections.join("\n\n"))
+}
+
+fn render_input_context_and_attachments_for_provider(input: &AIAgentInput) -> Option<String> {
+    let mut sections = Vec::new();
     if let Some(context) = input.context() {
         let rendered_context = render_context(context);
         if !rendered_context.is_empty() {

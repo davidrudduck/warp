@@ -168,7 +168,20 @@ async fn run_direct_text_stream(
                 )
                 .await?;
             }
-            StreamEvent::ToolCallChunk { .. } | StreamEvent::ToolCallReady(_) => {}
+            StreamEvent::ToolCallReady(tool_call) => {
+                let proto_tool_call = super::direct_tools::provider_tool_call_to_proto(tool_call)?;
+                send_client_action(
+                    &tx,
+                    add_tool_call_action(
+                        task_id.clone(),
+                        request_id.clone(),
+                        Uuid::new_v4().to_string(),
+                        proto_tool_call,
+                    ),
+                )
+                .await?;
+            }
+            StreamEvent::ToolCallChunk { .. } => {}
             StreamEvent::End { .. } => {}
         }
     }
@@ -217,6 +230,26 @@ pub(super) fn append_agent_output_chunk_action(
         mask: Some(FieldMask {
             paths: vec!["message.agent_output.text".to_string()],
         }),
+    })
+}
+
+pub(super) fn add_tool_call_action(
+    task_id: String,
+    request_id: String,
+    message_id: String,
+    tool_call: api::message::ToolCall,
+) -> api::client_action::Action {
+    api::client_action::Action::AddMessagesToTask(api::client_action::AddMessagesToTask {
+        task_id: task_id.clone(),
+        messages: vec![api::Message {
+            id: message_id,
+            task_id,
+            request_id,
+            timestamp: None,
+            server_message_data: String::new(),
+            citations: Vec::new(),
+            message: Some(api::message::Message::ToolCall(tool_call)),
+        }],
     })
 }
 

@@ -157,6 +157,96 @@ async fn run_with_tools_dispatches_and_continues() {
 }
 
 #[tokio::test]
+async fn run_preserves_tool_call_order_when_confirmation_is_required() {
+    let read_call = ToolCall {
+        id: "tc-read".into(),
+        name: "ReadFiles".into(),
+        input: serde_json::json!({"files": [{"name": "Cargo.toml"}]}),
+    };
+    let write_call = ToolCall {
+        id: "tc-write".into(),
+        name: "RunAgents".into(),
+        input: serde_json::json!({"prompt": "check this"}),
+    };
+
+    let events1 = vec![
+        StreamEvent::Start,
+        StreamEvent::ToolCallReady(read_call.clone()),
+        StreamEvent::ToolCallReady(write_call.clone()),
+        StreamEvent::End {
+            finish_reason: FinishReason::ToolUse,
+            usage: None,
+        },
+    ];
+    let events2 = vec![
+        StreamEvent::Start,
+        StreamEvent::TextChunk("done".into()),
+        StreamEvent::End {
+            finish_reason: FinishReason::Stop,
+            usage: None,
+        },
+    ];
+
+    let provider: SharedProvider = Arc::new(
+        MockLlmProvider::new()
+            .with_stream(events1)
+            .with_stream(events2),
+    );
+    let (tx, _rx) = agent_event_channel(16);
+    let (tool_req_tx, mut tool_req_rx) = mpsc::channel(16);
+    let (_cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
+    let initial_messages = vec![ChatMessage::User(vec![ContentBlock::Text("test".into())])];
+    let conversation_id = AIConversationId::new();
+
+    let run_handle = tokio::spawn(async move {
+        run(
+            provider,
+            initial_messages,
+            vec![],
+            conversation_id,
+            tx,
+            tool_req_tx,
+            cancel_rx,
+            None,
+        )
+        .await
+    });
+
+    let first = tool_req_rx
+        .recv()
+        .await
+        .expect("should receive first dispatch");
+    assert_eq!(first.index, 0);
+    assert_eq!(first.tool_call.name, "ReadFiles");
+    first
+        .result_tx
+        .send(Ok(ContentBlock::ToolResult {
+            tool_use_id: "tc-read".into(),
+            content: ToolResultContent::Text("file contents".into()),
+            is_error: false,
+        }))
+        .unwrap();
+
+    let second = tool_req_rx
+        .recv()
+        .await
+        .expect("should receive second dispatch");
+    assert_eq!(second.index, 1);
+    assert_eq!(second.tool_call.name, "RunAgents");
+    second
+        .result_tx
+        .send(Ok(ContentBlock::ToolResult {
+            tool_use_id: "tc-write".into(),
+            content: ToolResultContent::Text("agent output".into()),
+            is_error: false,
+        }))
+        .unwrap();
+
+    let result = run_handle.await.unwrap();
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
 async fn run_respects_turn_limit() {
     // Test: run should stop after MAX_DIRECT_LOOP_TURNS
     let tool_call = ToolCall {

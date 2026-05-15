@@ -296,16 +296,12 @@ pub async fn run(
             break;
         }
 
-        // Pre-classify tool calls: if any require confirmation, serialize all
-        let (confirm_calls, parallel_calls): (Vec<_>, Vec<_>) = tool_calls
-            .into_iter()
-            .partition(|tc| tool_requires_confirmation(&tc.name));
-
+        let requires_serial = batch_requires_confirmation(&tool_calls);
         let mut results: Vec<(usize, ContentBlock)> = Vec::new();
 
-        if !confirm_calls.is_empty() {
-            // Serialize all calls (confirmation batch must be sequential)
-            for (i, tc) in confirm_calls.into_iter().chain(parallel_calls).enumerate() {
+        if requires_serial {
+            // Serialize all calls in original order when any call needs confirmation.
+            for (i, tc) in tool_calls.into_iter().enumerate() {
                 let block = dispatch_one(tc, i, conversation_id, &tool_req_tx).await?;
                 results.push(block);
             }
@@ -313,7 +309,7 @@ pub async fn run(
             // Safe to dispatch concurrently with FuturesUnordered
             use futures::stream::FuturesUnordered;
 
-            let mut pending: FuturesUnordered<_> = parallel_calls
+            let mut pending: FuturesUnordered<_> = tool_calls
                 .into_iter()
                 .enumerate()
                 .map(|(i, tc)| {

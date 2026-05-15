@@ -1430,7 +1430,7 @@ git commit -m "Route Direct API profiles locally"
 - Modify `crates/ai/src/direct_loop/mod.rs`
 - Modify `crates/ai/src/direct_loop/run_tests.rs`
 
-- [ ] **Step 1: Add direct tool mapping tests**
+- [x] **Step 1: Add direct tool mapping tests**
 
 Add tests in `app/src/ai/agent/api/impl_tests.rs`:
 
@@ -1469,7 +1469,7 @@ fn unknown_direct_tool_call_maps_to_error() {
 }
 ```
 
-- [ ] **Step 2: Implement provider-to-proto tool mapping**
+- [x] **Step 2: Implement provider-to-proto tool mapping**
 
 In `app/src/ai/agent/api/direct_tools.rs`, add:
 
@@ -1546,7 +1546,7 @@ pub fn provider_tool_call_to_proto(
 }
 ```
 
-- [ ] **Step 3: Emit tool calls as existing client actions**
+- [x] **Step 3: Emit tool calls as existing client actions**
 
 Update `run_direct_text_stream` in `app/src/ai/agent/api/direct.rs` to collect both assistant text and tool calls from a new helper:
 
@@ -1581,7 +1581,7 @@ for tool_call in output.tool_calls {
 
 Return the same `AddMessagesToTask` action with `messages`.
 
-- [ ] **Step 4: Return provider turn output**
+- [x] **Step 4: Return provider turn output**
 
 In `direct_tools.rs`, add:
 
@@ -1678,7 +1678,7 @@ fn direct_tool_definitions() -> Vec<ai::provider::Tool> {
 }
 ```
 
-- [ ] **Step 5: Fix direct loop ordering**
+- [x] **Step 5: Fix direct loop ordering**
 
 In `crates/ai/src/direct_loop/mod.rs`, replace the partitioning branch with order-preserving classification:
 
@@ -1704,7 +1704,7 @@ In `crates/ai/src/direct_loop/mod.rs`, replace the partitioning branch with orde
                 .collect();
 ```
 
-- [ ] **Step 6: Run tool tests**
+- [x] **Step 6: Run tool tests**
 
 Run:
 
@@ -1715,7 +1715,7 @@ cargo test -p ai direct_loop -- --nocapture
 
 Expected: tests pass and direct loop preserves original tool-call order.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add app/src/ai/agent/api/direct.rs app/src/ai/agent/api/direct_tools.rs app/src/ai/agent/api/impl_tests.rs crates/ai/src/direct_loop/mod.rs crates/ai/src/direct_loop/run_tests.rs
