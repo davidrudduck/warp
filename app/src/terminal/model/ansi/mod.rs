@@ -1786,6 +1786,7 @@ where
             }
             TmuxMessage::Unknown { tag: _, rest: _ } => {}
             TmuxMessage::WindowClose { window_id: _ } => {}
+            TmuxMessage::PasteBufferChanged { buffer_name: _ } => {}
         }
     }
 }

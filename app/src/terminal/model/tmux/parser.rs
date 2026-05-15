@@ -7,6 +7,7 @@
 //! Refer to the tmux control mode protocol documentation for more details:
 //! https://github.com/tmux/tmux/wiki/Control-Mode
 
+use super::PasteBufferName;
 use crate::util::AsciiDebug;
 #[derive(PartialEq, Eq)]
 pub enum TmuxMessage {
@@ -19,6 +20,9 @@ pub enum TmuxMessage {
     },
     WindowClose {
         window_id: u32,
+    },
+    PasteBufferChanged {
+        buffer_name: PasteBufferName,
     },
     Exit,
     /// Only used in development.
@@ -67,6 +71,10 @@ impl std::fmt::Debug for TmuxMessage {
                 .debug_struct("WindowClose")
                 .field("window_id", window_id)
                 .finish(),
+            TmuxMessage::PasteBufferChanged { buffer_name } => f
+                .debug_struct("PasteBufferChanged")
+                .field("buffer_name", buffer_name)
+                .finish(),
         }
     }
 }
@@ -114,6 +122,10 @@ enum ParserState {
 
     TagWindowClose {
         maybe_window: Option<u32>,
+    },
+    TagPasteBufferChanged {
+        buffer_name: Vec<u8>,
+        saw_name: bool,
     },
     Error,
 }
@@ -197,6 +209,12 @@ impl TmuxControlModeParser {
                         }
                         b"window-close" | b"unlinked-window-close" => {
                             self.state = ParserState::TagWindowClose { maybe_window: None };
+                        }
+                        b"paste-buffer-changed" => {
+                            self.state = ParserState::TagPasteBufferChanged {
+                                buffer_name: Vec::new(),
+                                saw_name: false,
+                            };
                         }
                         _ => {
                             self.state = ParserState::TagUnknown {
@@ -446,6 +464,40 @@ impl TmuxControlModeParser {
                     }
                 }
             }
+            ParserState::TagPasteBufferChanged {
+                buffer_name,
+                saw_name,
+            } => match byte {
+                b'\n' => {
+                    let Some(name) = PasteBufferName::parse(buffer_name) else {
+                        report_parse_error(
+                            handler,
+                            "Invalid %paste-buffer-changed buffer name",
+                            b'\n',
+                        );
+                        self.state = ParserState::BeginningOfLine;
+                        return;
+                    };
+
+                    handler.tmux_control_mode_message(TmuxMessage::PasteBufferChanged {
+                        buffer_name: name,
+                    });
+                    self.state = ParserState::BeginningOfLine;
+                }
+                b' ' if !*saw_name => {}
+                b' ' => {
+                    report_parse_error(
+                        handler,
+                        "Unexpected space in %paste-buffer-changed buffer name",
+                        byte,
+                    );
+                    self.state = ParserState::Error;
+                }
+                byte => {
+                    *saw_name = true;
+                    buffer_name.push(byte);
+                }
+            },
         }
     }
 }

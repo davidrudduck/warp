@@ -206,6 +206,45 @@ fn test_pane_output_incomplete_escape() {
 }
 
 #[test]
+fn test_paste_buffer_changed_message() {
+    let mut parser = TmuxControlModeParser::new();
+    let mut handler = TestHandler::new();
+
+    let input = b"%paste-buffer-changed buffer123\n";
+    for &byte in input {
+        parser.advance(&mut handler, byte);
+    }
+
+    assert_eq!(handler.messages.len(), 1);
+    assert_eq!(
+        &handler.messages[0],
+        &TmuxMessage::PasteBufferChanged {
+            buffer_name: PasteBufferName::parse(b"buffer123").expect("valid buffer name"),
+        }
+    );
+}
+
+#[test]
+fn test_paste_buffer_changed_rejects_invalid_buffer_name() {
+    let mut parser = TmuxControlModeParser::new();
+    let mut handler = TestHandler::new();
+
+    let input = b"%paste-buffer-changed buffer1;display-message\n";
+    for &byte in input {
+        parser.advance(&mut handler, byte);
+    }
+
+    assert_eq!(handler.messages.len(), 1);
+    assert!(matches!(
+        handler.messages[0],
+        TmuxMessage::ParseError {
+            message: "Invalid %paste-buffer-changed buffer name",
+            byte: b'\n',
+        }
+    ));
+}
+
+#[test]
 fn test_pane_output_invalid_escape_sequence() {
     let mut parser = TmuxControlModeParser::new();
     let mut handler = TestHandler::new();

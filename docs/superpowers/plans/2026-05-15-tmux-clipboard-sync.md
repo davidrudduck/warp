@@ -359,7 +359,7 @@ git commit -m "tmux: add safe paste buffer name type"
 - Modify: `app/src/terminal/model/tmux/parser.rs`
 - Modify: `app/src/terminal/model/tmux/parser_tests.rs`
 
-- [ ] **Step 1: Write parser tests**
+- [x] **Step 1: Write parser tests**
 
 Add to `app/src/terminal/model/tmux/parser_tests.rs`:
 
@@ -401,7 +401,7 @@ fn test_paste_buffer_changed_rejects_invalid_buffer_name() {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify failure**
+- [x] **Step 2: Run tests to verify failure**
 
 Run:
 
@@ -411,7 +411,7 @@ cargo test -p warp terminal::model::tmux::parser_tests::test_paste_buffer_change
 
 Expected: FAIL because `PasteBufferChanged` does not exist.
 
-- [ ] **Step 3: Add enum variant and parser state**
+- [x] **Step 3: Add enum variant and parser state**
 
 In `app/src/terminal/model/tmux/parser.rs`, import `PasteBufferName`:
 
@@ -445,7 +445,7 @@ Add to `ParserState`:
     },
 ```
 
-- [ ] **Step 4: Recognize the tag**
+- [x] **Step 4: Recognize the tag**
 
 In `ParserState::ReadingTag`, add:
 
@@ -458,7 +458,7 @@ In `ParserState::ReadingTag`, add:
                         }
 ```
 
-- [ ] **Step 5: Parse the buffer name**
+- [x] **Step 5: Parse the buffer name**
 
 Add a match arm in `TmuxControlModeParser::advance`:
 
@@ -499,7 +499,7 @@ Add a match arm in `TmuxControlModeParser::advance`:
             },
 ```
 
-- [ ] **Step 6: Run parser tests**
+- [x] **Step 6: Run parser tests**
 
 Run:
 
@@ -509,7 +509,7 @@ cargo test -p warp terminal::model::tmux::parser_tests::test_paste_buffer_change
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add app/src/terminal/model/tmux/parser.rs app/src/terminal/model/tmux/parser_tests.rs
