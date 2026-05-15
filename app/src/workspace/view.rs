@@ -19907,6 +19907,11 @@ impl Workspace {
         if *terminal_settings.use_audible_bell {
             context.set.insert(flags::USE_AUDIBLE_BELL_CONTEXT_FLAG);
         }
+        if *terminal_settings.experimental_tmux_clipboard_sync {
+            context
+                .set
+                .insert(flags::EXPERIMENTAL_TMUX_CLIPBOARD_SYNC_FLAG);
+        }
 
         let gpu_settings = GPUSettings::as_ref(app);
         if *gpu_settings.prefer_low_power_gpu {

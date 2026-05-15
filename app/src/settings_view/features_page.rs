@@ -73,7 +73,8 @@ use crate::terminal::session_settings::{
     SessionSettingsChangedEvent, ShouldConfirmCloseSession,
 };
 use crate::terminal::settings::{
-    MaximumGridSize, ShowTerminalZeroStateBlock, TerminalSettings, UseAudibleBell,
+    ExperimentalTmuxClipboardSync, MaximumGridSize, ShowTerminalZeroStateBlock, TerminalSettings,
+    UseAudibleBell,
 };
 use crate::terminal::{BlockListSettings, SnackbarEnabled};
 use crate::undo_close::UndoCloseSettings;
@@ -276,6 +277,19 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
         .is_supported_on_current_platform(
             TerminalSettings::as_ref(app)
                 .use_audible_bell
+                .is_supported_on_current_platform(),
+        ),
+        ToggleSettingActionPair::new(
+            "experimental tmux clipboard sync",
+            builder(SettingsAction::FeaturesPageToggle(
+                FeaturesPageAction::ToggleExperimentalTmuxClipboardSync,
+            )),
+            context,
+            flags::EXPERIMENTAL_TMUX_CLIPBOARD_SYNC_FLAG,
+        )
+        .is_supported_on_current_platform(
+            TerminalSettings::as_ref(app)
+                .experimental_tmux_clipboard_sync
                 .is_supported_on_current_platform(),
         ),
         ToggleSettingActionPair::new(
@@ -582,6 +596,7 @@ pub enum FeaturesPageAction {
     ToggleCodeAsDefaultEditor,
     ToggleShowInputHintText,
     ToggleUseAudibleBell,
+    ToggleExperimentalTmuxClipboardSync,
     ToggleShowTerminalZeroStateBlock,
     TogglePreferLowPowerGPU,
     ToggleVimMode,
@@ -1004,6 +1019,13 @@ impl FeaturesPageAction {
                 TelemetryEvent::FeaturesPageAction {
                     action: "ToggleUseAudibleBell".to_string(),
                     value: to_string(*terminal_settings.use_audible_bell),
+                }
+            }
+            Self::ToggleExperimentalTmuxClipboardSync => {
+                let terminal_settings = TerminalSettings::as_ref(ctx);
+                TelemetryEvent::FeaturesPageAction {
+                    action: "ToggleExperimentalTmuxClipboardSync".to_string(),
+                    value: to_string(*terminal_settings.experimental_tmux_clipboard_sync),
                 }
             }
             Self::ToggleVimMode => TelemetryEvent::FeaturesPageAction {
@@ -1708,6 +1730,13 @@ impl TypedActionView for FeaturesPageView {
                 TerminalSettings::handle(ctx).update(ctx, |terminal_settings, ctx| {
                     report_if_error!(terminal_settings
                         .use_audible_bell
+                        .toggle_and_save_value(ctx));
+                })
+            }
+            ToggleExperimentalTmuxClipboardSync => {
+                TerminalSettings::handle(ctx).update(ctx, |terminal_settings, ctx| {
+                    report_if_error!(terminal_settings
+                        .experimental_tmux_clipboard_sync
                         .toggle_and_save_value(ctx));
                 })
             }
@@ -2708,6 +2737,13 @@ impl FeaturesPageView {
             .is_supported_on_current_platform()
         {
             terminal_widgets.push(Box::new(AudibleBellWidget::default()));
+        }
+
+        if terminal_settings
+            .experimental_tmux_clipboard_sync
+            .is_supported_on_current_platform()
+        {
+            terminal_widgets.push(Box::new(ExperimentalTmuxClipboardSyncWidget::default()));
         }
 
         if FeatureFlag::AgentView.is_enabled() {
@@ -6619,6 +6655,63 @@ impl SettingsWidget for AudibleBellWidget {
                 .build()
                 .on_click(move |ctx, _, _| {
                     ctx.dispatch_typed_action(FeaturesPageAction::ToggleUseAudibleBell)
+                })
+                .finish(),
+            None,
+        )
+    }
+}
+
+#[derive(Default)]
+struct ExperimentalTmuxClipboardSyncWidget {
+    additional_info_link: MouseStateHandle,
+    switch_state: SwitchStateHandle,
+}
+
+impl SettingsWidget for ExperimentalTmuxClipboardSyncWidget {
+    type View = FeaturesPageView;
+
+    fn search_terms(&self) -> &str {
+        "experimental tmux clipboard sync paste buffer copy"
+    }
+
+    fn render(
+        &self,
+        view: &Self::View,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let ui_builder = appearance.ui_builder();
+        let terminal_settings = TerminalSettings::as_ref(app);
+        render_body_item::<FeaturesPageAction>(
+            "Experimental tmux clipboard sync".into(),
+            Some(AdditionalInfo {
+                mouse_state: self.additional_info_link.clone(),
+                on_click_action: None,
+                secondary_text: None,
+                tooltip_override_text: Some(
+                    "Mirror tmux paste buffer changes to the system clipboard.".into(),
+                ),
+            }),
+            LocalOnlyIconState::for_setting(
+                ExperimentalTmuxClipboardSync::storage_key(),
+                ExperimentalTmuxClipboardSync::sync_to_cloud(),
+                &mut view
+                    .button_mouse_states
+                    .local_only_icon_tooltip_states
+                    .borrow_mut(),
+                app,
+            ),
+            ToggleState::Enabled,
+            appearance,
+            ui_builder
+                .switch(self.switch_state.clone())
+                .check(*terminal_settings.experimental_tmux_clipboard_sync)
+                .build()
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(
+                        FeaturesPageAction::ToggleExperimentalTmuxClipboardSync,
+                    )
                 })
                 .finish(),
             None,

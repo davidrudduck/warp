@@ -99,7 +99,7 @@ git commit -m "settings: add experimental tmux clipboard sync flag"
 **Files:**
 - Modify: `app/src/settings_view/features_page.rs`
 
-- [ ] **Step 1: Add imports**
+- [x] **Step 1: Add imports**
 
 Update the existing terminal settings import:
 
@@ -110,7 +110,7 @@ use crate::terminal::settings::{
 };
 ```
 
-- [ ] **Step 2: Add the action variant**
+- [x] **Step 2: Add the action variant**
 
 In `FeaturesPageAction`, add:
 
@@ -120,7 +120,7 @@ In `FeaturesPageAction`, add:
 
 Place it near `ToggleUseAudibleBell` and `ToggleShowTerminalZeroStateBlock`.
 
-- [ ] **Step 3: Add command-palette toggle binding**
+- [x] **Step 3: Add command-palette toggle binding**
 
 In `init_actions_from_parent_view`, add a `ToggleSettingActionPair` near the audible bell binding:
 
@@ -147,7 +147,7 @@ In `app/src/settings_view/mod.rs`, add this flag constant inside `pub mod flags`
         "ExperimentalTmuxClipboardSyncEnabled";
 ```
 
-- [ ] **Step 4: Add telemetry mapping**
+- [x] **Step 4: Add telemetry mapping**
 
 In `impl FeaturesPageAction`, add the telemetry arm:
 
@@ -161,7 +161,7 @@ In `impl FeaturesPageAction`, add the telemetry arm:
             }
 ```
 
-- [ ] **Step 5: Add action handling**
+- [x] **Step 5: Add action handling**
 
 In the `match action` block for feature actions, add:
 
@@ -175,7 +175,7 @@ In the `match action` block for feature actions, add:
             }
 ```
 
-- [ ] **Step 6: Add the widget to the Terminal section**
+- [x] **Step 6: Add the widget to the Terminal section**
 
 In the Terminal widgets list, after `AudibleBellWidget`, add:
 
@@ -188,7 +188,7 @@ In the Terminal widgets list, after `AudibleBellWidget`, add:
         }
 ```
 
-- [ ] **Step 7: Add the widget type**
+- [x] **Step 7: Add the widget type**
 
 Add this widget near `AudibleBellWidget`:
 
@@ -251,7 +251,7 @@ impl SettingsWidget for ExperimentalTmuxClipboardSyncWidget {
 }
 ```
 
-- [ ] **Step 8: Run the UI compile check**
+- [x] **Step 8: Run the UI compile check**
 
 Run:
 
@@ -261,7 +261,7 @@ cargo check -p warp --bin warp-oss
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add app/src/settings_view/features_page.rs app/src/settings_view/mod.rs
