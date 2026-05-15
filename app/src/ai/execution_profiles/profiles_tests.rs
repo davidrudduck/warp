@@ -116,6 +116,42 @@ fn execution_profile_roundtrips_direct_api_selection() {
     );
 }
 
+#[test]
+fn profile_setters_preserve_other_route_selection() {
+    App::test((), |mut app| async move {
+        install_singletons(&mut app, AuthStateProvider::new_logged_out_for_test());
+        let profile_model = app.add_singleton_model(|ctx| {
+            AIExecutionProfilesModel::new(&LaunchMode::new_for_unit_test(), ctx)
+        });
+        let default_profile_id = profile_model.read(&app, |model, _ctx| model.default_profile_id());
+
+        profile_model.update(&mut app, |model, ctx| {
+            model.set_model_routing(default_profile_id, ModelRouting::DirectApi, ctx);
+            model.set_direct_api_model(
+                default_profile_id,
+                Some(DirectApiProfileModelSelection {
+                    provider_id: ProviderId::Anthropic,
+                    model_id: "claude-3-5-sonnet-20241022".to_string(),
+                }),
+                ctx,
+            );
+        });
+
+        profile_model.read(&app, |model, ctx| {
+            let profile = model.default_profile(ctx);
+            assert_eq!(profile.data().model_routing, ModelRouting::DirectApi);
+            assert_eq!(
+                profile
+                    .data()
+                    .direct_api_model
+                    .as_ref()
+                    .map(|selection| selection.label()),
+                Some("Anthropic / claude-3-5-sonnet-20241022".to_string())
+            );
+        });
+    })
+}
+
 /// Regression test for the onboarding autonomy bug where
 /// `edit_profile_internal` would silently drop edits made to an `Unsynced`
 /// default profile whenever `personal_drive` returned `None` (logged-out

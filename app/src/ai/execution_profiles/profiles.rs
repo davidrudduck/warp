@@ -27,7 +27,8 @@ use crate::{
 };
 
 use super::{
-    AIExecutionProfile, ActionPermission, CloudAIExecutionProfileModel, WriteToPtyPermission,
+    AIExecutionProfile, ActionPermission, CloudAIExecutionProfileModel,
+    DirectApiProfileModelSelection, ModelRouting, WriteToPtyPermission,
 };
 
 /// ExecutionProfileId is the identifier that users of the AIExecutionProfilesModel use
@@ -519,6 +520,44 @@ impl AIExecutionProfilesModel {
                 ctx
             );
         }
+    }
+
+    pub fn set_model_routing(
+        &mut self,
+        profile_id: ClientProfileId,
+        routing: ModelRouting,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.edit_profile_internal(
+            profile_id,
+            |profile| {
+                if profile.model_routing != routing {
+                    profile.model_routing = routing;
+                    return true;
+                }
+                false
+            },
+            ctx,
+        );
+    }
+
+    pub fn set_direct_api_model(
+        &mut self,
+        profile_id: ClientProfileId,
+        selection: Option<DirectApiProfileModelSelection>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.edit_profile_internal(
+            profile_id,
+            |profile| {
+                if profile.direct_api_model != selection {
+                    profile.direct_api_model = selection.clone();
+                    return true;
+                }
+                false
+            },
+            ctx,
+        );
     }
 
     pub fn set_coding_model(

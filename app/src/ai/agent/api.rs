@@ -4,7 +4,8 @@ mod convert_to;
 mod r#impl;
 
 pub use ai::agent::convert::ConvertToAPITypeError;
-use ai::api_keys::ApiKeyManager;
+use ai::api_keys::{ApiKeyManager, ApiKeys};
+use ai::model_registry::ProviderId;
 pub use convert_from::{
     user_inputs_from_messages, ConversionParams, ConvertAPIMessageToClientOutputMessage,
     MaybeAIAgentOutputMessage, MessageToAIAgentOutputMessageError,
@@ -31,6 +32,7 @@ use crate::{
 use super::{AIAgentInput, MCPContext, MCPServer, RequestMetadata, Suggestions};
 use crate::ai::blocklist::{BlocklistAIPermissions, RequestInput};
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
+use crate::ai::execution_profiles::{DirectApiProfileModelSelection, ModelRouting};
 use crate::ai::mcp::templatable_manager::TemplatableMCPServerInfo;
 use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::settings::AISettings;
@@ -93,6 +95,61 @@ impl TryFrom<ServerConversationToken>
     }
 }
 
+#[derive(Clone)]
+pub struct DirectApiRouteConfig {
+    pub provider_id: ProviderId,
+    pub model_id: String,
+    pub api_key: Option<String>,
+    pub base_url: Option<String>,
+}
+
+impl std::fmt::Debug for DirectApiRouteConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DirectApiRouteConfig")
+            .field("provider_id", &self.provider_id)
+            .field("model_id", &self.model_id)
+            .field("api_key", &self.api_key.as_ref().map(|_| "<redacted>"))
+            .field("base_url", &self.base_url)
+            .finish()
+    }
+}
+
+impl DirectApiRouteConfig {
+    pub fn from_selection(
+        selection: &DirectApiProfileModelSelection,
+        keys: &ApiKeys,
+    ) -> Option<Self> {
+        let api_key = match selection.provider_id {
+            ProviderId::OpenAI => Some(non_empty_string(keys.openai.clone())?),
+            ProviderId::Anthropic => Some(non_empty_string(keys.anthropic.clone())?),
+            ProviderId::GoogleGemini => Some(non_empty_string(keys.google.clone())?),
+            ProviderId::OpenRouter => Some(non_empty_string(keys.open_router.clone())?),
+            ProviderId::Custom => non_empty_string(keys.custom.clone()),
+            ProviderId::Ollama => None,
+        };
+        let base_url = match selection.provider_id {
+            ProviderId::OpenRouter => non_empty_string(keys.openrouter_base_url.clone()),
+            ProviderId::Ollama => Some(non_empty_string(keys.ollama_base_url.clone())?),
+            ProviderId::Custom => Some(non_empty_string(keys.custom_base_url.clone())?),
+            ProviderId::OpenAI | ProviderId::Anthropic | ProviderId::GoogleGemini => None,
+        };
+
+        Some(Self {
+            provider_id: selection.provider_id,
+            model_id: selection.model_id.clone(),
+            api_key,
+            base_url,
+        })
+    }
+}
+
+fn non_empty_string(value: Option<String>) -> Option<String> {
+    value.and_then(|value| {
+        let trimmed = value.trim().to_string();
+        (!trimmed.is_empty()).then_some(trimmed)
+    })
+}
+
 #[derive(Debug, Clone)]
 pub struct RequestParams {
     pub input: Vec<AIAgentInput>,
@@ -104,6 +161,8 @@ pub struct RequestParams {
     pub metadata: Option<RequestMetadata>,
     pub session_context: SessionContext,
     pub model: LLMId,
+    pub model_routing: ModelRouting,
+    pub direct_api_route_config: Option<DirectApiRouteConfig>,
     #[allow(unused)]
     pub coding_model: LLMId,
     pub cli_agent_model: LLMId,
@@ -234,12 +293,38 @@ impl RequestParams {
 
         let should_redact_secrets = get_secret_obfuscation_mode(app).should_redact_secret();
 
+        let profile_data = AIExecutionProfilesModel::as_ref(app)
+            .active_profile(terminal_view_id, app)
+            .data()
+            .clone();
+        let requested_model_routing = profile_data.model_routing.effective();
+        let direct_api_route_config = if requested_model_routing.is_direct_api() {
+            profile_data
+                .direct_api_model
+                .as_ref()
+                .and_then(|selection| {
+                    let keys = ApiKeyManager::as_ref(app).keys(app);
+                    DirectApiRouteConfig::from_selection(selection, &keys)
+                })
+        } else {
+            None
+        };
+        let model_routing = if direct_api_route_config.is_some() {
+            requested_model_routing
+        } else {
+            ModelRouting::WarpProvider
+        };
+
         let user_workspaces = UserWorkspaces::as_ref(app);
-        let api_keys = ApiKeyManager::as_ref(app).api_keys_for_request(
-            user_workspaces.is_byo_api_key_enabled(),
-            user_workspaces.is_aws_bedrock_credentials_enabled(app),
-            app,
-        );
+        let api_keys = if model_routing.is_direct_api() {
+            None
+        } else {
+            ApiKeyManager::as_ref(app).api_keys_for_request(
+                user_workspaces.is_byo_api_key_enabled(),
+                user_workspaces.is_aws_bedrock_credentials_enabled(app),
+                app,
+            )
+        };
         let allow_use_of_warp_credits_with_byok =
             *AISettings::as_ref(app).can_use_warp_credits_with_byok;
 
@@ -289,10 +374,6 @@ impl RequestParams {
         // current `[min, max]` range. This closes the window between an
         // in-flight model metadata refresh and the next request.
         let context_window_limit = {
-            let profile_data = AIExecutionProfilesModel::as_ref(app)
-                .active_profile(terminal_view_id, app)
-                .data()
-                .clone();
             profile_data
                 .configurable_context_window(app)
                 .and_then(|cw| {
@@ -313,6 +394,8 @@ impl RequestParams {
             metadata,
             session_context,
             model: request_input.model_id.clone(),
+            model_routing,
+            direct_api_route_config,
             coding_model: request_input.coding_model_id.clone(),
             cli_agent_model: request_input.cli_agent_model_id.clone(),
             computer_use_model: request_input.computer_use_model_id.clone(),
@@ -334,5 +417,249 @@ impl RequestParams {
             parent_agent_id: None,
             agent_name: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use ai::api_keys::ApiKeyManager;
+    use ai::model_registry::ProviderId;
+    use chrono::Local;
+    use warp_core::features::FeatureFlag;
+    use warp_core::settings::DirectAPISettings;
+    use warpui::{App, EntityId, SingletonEntity};
+
+    use super::*;
+    use crate::ai::agent::conversation::AIConversationId;
+    use crate::ai::agent::task::TaskId;
+    use crate::ai::blocklist::{BlocklistAIPermissions, RequestInput, SessionContext};
+    use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
+    use crate::ai::execution_profiles::{DirectApiProfileModelSelection, ModelRouting};
+    use crate::ai::llms::{LLMId, LLMPreferences};
+    use crate::ai::mcp::TemplatableMCPServerManager;
+    use crate::auth::{AuthManager, AuthStateProvider};
+    use crate::cloud_object::model::persistence::CloudModel;
+    use crate::network::NetworkStatus;
+    use crate::server::cloud_objects::update_manager::UpdateManager;
+    use crate::server::server_api::ServerApiProvider;
+    use crate::server::sync_queue::SyncQueue;
+    use crate::settings::PrivacySettings;
+    use crate::test_util::settings::initialize_settings_for_tests;
+    use crate::workspaces::team_tester::TeamTesterStatus;
+    use crate::workspaces::user_workspaces::UserWorkspaces;
+    use crate::LaunchMode;
+
+    fn install_request_params_singletons(app: &mut App) -> EntityId {
+        initialize_settings_for_tests(app);
+        DirectAPISettings::register(app);
+        app.add_singleton_model(|_| AuthStateProvider::new_logged_out_for_test());
+        app.add_singleton_model(|_| ServerApiProvider::new_for_test());
+        app.add_singleton_model(AuthManager::new_for_test);
+        app.add_singleton_model(SyncQueue::mock);
+        app.add_singleton_model(|_| NetworkStatus::new());
+        app.add_singleton_model(TeamTesterStatus::mock);
+        app.add_singleton_model(UpdateManager::mock);
+        app.add_singleton_model(CloudModel::mock);
+        app.add_singleton_model(|_| TemplatableMCPServerManager::default());
+        app.add_singleton_model(PrivacySettings::mock);
+        app.add_singleton_model(UserWorkspaces::default_mock);
+        app.add_singleton_model(BlocklistAIPermissions::new);
+        app.add_singleton_model(|ctx| {
+            AIExecutionProfilesModel::new(&LaunchMode::new_for_unit_test(), ctx)
+        });
+        app.add_singleton_model(LLMPreferences::new);
+
+        EntityId::new()
+    }
+
+    fn request_input() -> RequestInput {
+        let model_id = LLMId::from("warp-provider-model");
+        RequestInput {
+            conversation_id: AIConversationId::new(),
+            input_messages: HashMap::from([(TaskId::new("task".to_string()), vec![])]),
+            working_directory: None,
+            model_id: model_id.clone(),
+            coding_model_id: model_id.clone(),
+            cli_agent_model_id: model_id.clone(),
+            computer_use_model_id: model_id,
+            shared_session_response_initiator: None,
+            request_start_ts: Local::now(),
+            supported_tools_override: None,
+        }
+    }
+
+    fn conversation_data() -> ConversationData {
+        ConversationData {
+            id: AIConversationId::new(),
+            tasks: vec![],
+            server_conversation_token: None,
+            forked_from_conversation_token: None,
+            ambient_agent_task_id: None,
+            existing_suggestions: None,
+        }
+    }
+
+    #[test]
+    fn direct_api_route_config_debug_redacts_api_key() {
+        let config = DirectApiRouteConfig {
+            provider_id: ProviderId::OpenAI,
+            model_id: "gpt-4o-mini".to_string(),
+            api_key: Some("sk-secret".to_string()),
+            base_url: None,
+        };
+
+        let debug = format!("{config:?}");
+
+        assert!(debug.contains("<redacted>"));
+        assert!(!debug.contains("sk-secret"));
+    }
+
+    #[test]
+    fn request_params_use_direct_api_route_without_server_api_keys() {
+        App::test((), |mut app| async move {
+            let terminal_view_id = install_request_params_singletons(&mut app);
+            let _solo_byok = FeatureFlag::SoloUserByok.override_enabled(true);
+
+            ApiKeyManager::handle(&app).update(&mut app, |manager, ctx| {
+                manager.set_openai_key(Some("sk-direct".to_string()), ctx);
+            });
+
+            AIExecutionProfilesModel::handle(&app).update(&mut app, |model, ctx| {
+                let profile_id = *model.active_profile(Some(terminal_view_id), ctx).id();
+                model.set_model_routing(profile_id, ModelRouting::DirectApi, ctx);
+                model.set_direct_api_model(
+                    profile_id,
+                    Some(DirectApiProfileModelSelection {
+                        provider_id: ProviderId::OpenAI,
+                        model_id: "gpt-4o-mini".to_string(),
+                    }),
+                    ctx,
+                );
+            });
+
+            let params = app.update(|ctx| {
+                let request_input = request_input();
+                RequestParams::new(
+                    Some(terminal_view_id),
+                    SessionContext::new_for_test(),
+                    &request_input,
+                    conversation_data(),
+                    None,
+                    ctx,
+                )
+            });
+
+            assert_eq!(params.model_routing, ModelRouting::DirectApi);
+            assert_eq!(params.api_keys, None);
+            let route = params
+                .direct_api_route_config
+                .expect("direct route config should be present");
+            assert_eq!(route.provider_id, ProviderId::OpenAI);
+            assert_eq!(route.model_id, "gpt-4o-mini");
+            assert_eq!(route.api_key.as_deref(), Some("sk-direct"));
+        });
+    }
+
+    #[test]
+    fn request_params_fall_back_to_warp_provider_when_direct_api_model_is_missing() {
+        App::test((), |mut app| async move {
+            let terminal_view_id = install_request_params_singletons(&mut app);
+
+            AIExecutionProfilesModel::handle(&app).update(&mut app, |model, ctx| {
+                let profile_id = *model.active_profile(Some(terminal_view_id), ctx).id();
+                model.set_model_routing(profile_id, ModelRouting::DirectApi, ctx);
+                model.set_direct_api_model(profile_id, None, ctx);
+            });
+
+            let params = app.update(|ctx| {
+                let request_input = request_input();
+                RequestParams::new(
+                    Some(terminal_view_id),
+                    SessionContext::new_for_test(),
+                    &request_input,
+                    conversation_data(),
+                    None,
+                    ctx,
+                )
+            });
+
+            assert_eq!(params.model_routing, ModelRouting::WarpProvider);
+            assert!(params.direct_api_route_config.is_none());
+        });
+    }
+
+    #[test]
+    fn request_params_fall_back_to_warp_provider_when_direct_api_key_is_missing() {
+        App::test((), |mut app| async move {
+            let terminal_view_id = install_request_params_singletons(&mut app);
+
+            AIExecutionProfilesModel::handle(&app).update(&mut app, |model, ctx| {
+                let profile_id = *model.active_profile(Some(terminal_view_id), ctx).id();
+                model.set_model_routing(profile_id, ModelRouting::DirectApi, ctx);
+                model.set_direct_api_model(
+                    profile_id,
+                    Some(DirectApiProfileModelSelection {
+                        provider_id: ProviderId::OpenAI,
+                        model_id: "gpt-4o-mini".to_string(),
+                    }),
+                    ctx,
+                );
+            });
+
+            let params = app.update(|ctx| {
+                let request_input = request_input();
+                RequestParams::new(
+                    Some(terminal_view_id),
+                    SessionContext::new_for_test(),
+                    &request_input,
+                    conversation_data(),
+                    None,
+                    ctx,
+                )
+            });
+
+            assert_eq!(params.model_routing, ModelRouting::WarpProvider);
+            assert!(params.direct_api_route_config.is_none());
+        });
+    }
+
+    #[test]
+    fn request_params_fall_back_to_warp_provider_when_direct_api_base_url_is_missing() {
+        App::test((), |mut app| async move {
+            let terminal_view_id = install_request_params_singletons(&mut app);
+
+            ApiKeyManager::handle(&app).update(&mut app, |manager, ctx| {
+                manager.set_custom_key(Some("custom-key".to_string()), ctx);
+            });
+            AIExecutionProfilesModel::handle(&app).update(&mut app, |model, ctx| {
+                let profile_id = *model.active_profile(Some(terminal_view_id), ctx).id();
+                model.set_model_routing(profile_id, ModelRouting::DirectApi, ctx);
+                model.set_direct_api_model(
+                    profile_id,
+                    Some(DirectApiProfileModelSelection {
+                        provider_id: ProviderId::Custom,
+                        model_id: "custom-model".to_string(),
+                    }),
+                    ctx,
+                );
+            });
+
+            let params = app.update(|ctx| {
+                let request_input = request_input();
+                RequestParams::new(
+                    Some(terminal_view_id),
+                    SessionContext::new_for_test(),
+                    &request_input,
+                    conversation_data(),
+                    None,
+                    ctx,
+                )
+            });
+
+            assert_eq!(params.model_routing, ModelRouting::WarpProvider);
+            assert!(params.direct_api_route_config.is_none());
+        });
     }
 }

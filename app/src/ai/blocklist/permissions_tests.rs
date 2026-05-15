@@ -22,7 +22,8 @@ use crate::{
             CommandExecutionPermissionAllowedReason,
         },
         execution_profiles::{
-            profiles::AIExecutionProfilesModel, ActionPermission, WriteToPtyPermission,
+            profiles::AIExecutionProfilesModel, ActionPermission, DirectApiProfileModelSelection,
+            ModelRouting, WriteToPtyPermission,
         },
         mcp::templatable_manager::TemplatableMCPServerManager,
     },
@@ -38,6 +39,7 @@ use crate::{
     },
     AgentNotificationsModel, GlobalResourceHandles, GlobalResourceHandlesProvider, LaunchMode,
 };
+use ai::model_registry::ProviderId;
 
 use super::{BlocklistAIHistoryModel, BlocklistAIPermissions};
 
@@ -102,6 +104,45 @@ fn initialize_permissions_test_with_mode(
         user_workspaces,
         profile_model,
     }
+}
+
+#[test]
+fn permissions_profile_preserves_model_routing_fields() {
+    App::test((), |mut app| async move {
+        let PermissionsTestState {
+            permissions,
+            profile_model,
+            terminal_view_id,
+            ..
+        } = initialize_permissions_test(&mut app);
+
+        let profile_id = profile_model.read(&app, |model, ctx| {
+            *model.active_profile(Some(terminal_view_id), ctx).id()
+        });
+        profile_model.update(&mut app, |model, ctx| {
+            model.set_model_routing(profile_id, ModelRouting::DirectApi, ctx);
+            model.set_direct_api_model(
+                profile_id,
+                Some(DirectApiProfileModelSelection {
+                    provider_id: ProviderId::OpenAI,
+                    model_id: "gpt-4o-mini".to_string(),
+                }),
+                ctx,
+            );
+        });
+
+        permissions.read(&app, |model, ctx| {
+            let profile = model.permissions_profile_for_id(ctx, profile_id);
+            assert_eq!(profile.model_routing, ModelRouting::DirectApi);
+            assert_eq!(
+                profile.direct_api_model,
+                Some(DirectApiProfileModelSelection {
+                    provider_id: ProviderId::OpenAI,
+                    model_id: "gpt-4o-mini".to_string(),
+                })
+            );
+        });
+    })
 }
 
 #[test]

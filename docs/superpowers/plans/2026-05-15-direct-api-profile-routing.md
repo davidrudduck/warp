@@ -224,7 +224,7 @@ git commit -m "Add profile model routing state"
 - Modify `app/src/ai/execution_profiles/profiles_tests.rs`
 - Modify `app/src/ai/agent/api.rs`
 
-- [ ] **Step 1: Add failing setter tests**
+- [x] **Step 1: Add failing setter tests**
 
 Add tests to `app/src/ai/execution_profiles/profiles_tests.rs`:
 
@@ -259,7 +259,7 @@ fn profile_setters_preserve_other_route_selection() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run:
 
@@ -269,7 +269,7 @@ cargo test -p warp profile_setters_preserve_other_route_selection -- --nocapture
 
 Expected: compile failure for missing setter methods.
 
-- [ ] **Step 3: Add setters**
+- [x] **Step 3: Add setters**
 
 Add to `impl AIExecutionProfilesModel` in `app/src/ai/execution_profiles/profiles.rs` near `set_base_model`:
 
@@ -319,7 +319,7 @@ Add imports at the top if they are not in scope:
 use super::{DirectApiProfileModelSelection, ModelRouting};
 ```
 
-- [ ] **Step 4: Add route config to request params**
+- [x] **Step 4: Add route config to request params**
 
 In `app/src/ai/agent/api.rs`, add imports:
 
@@ -402,7 +402,7 @@ Set the new fields in `Self`:
             direct_api_route_config,
 ```
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run:
 
@@ -412,7 +412,7 @@ cargo test -p warp profile_setters_preserve_other_route_selection -- --nocapture
 
 Expected: test passes.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add app/src/ai/execution_profiles/profiles.rs app/src/ai/execution_profiles/profiles_tests.rs app/src/ai/agent/api.rs
