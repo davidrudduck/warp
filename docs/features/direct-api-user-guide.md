@@ -98,9 +98,10 @@ Direct API keys stay in the channel-specific settings file and are not attached 
 
 **Choose a Model**
 
-Default: `gpt-4o` (latest, recommended)
+Default: `gpt-4o-mini` (fast, affordable)
 
 Other options:
+- `gpt-4o` — Higher quality, slower and more expensive
 - `gpt-4-turbo` — Better context understanding, ~2× slower
 - `gpt-3.5-turbo` — Fastest, cheapest
 - Full list: https://platform.openai.com/docs/models
@@ -395,7 +396,8 @@ Models appear in dropdown
 Once the list is populated, click the dropdown to see:
 
 **OpenAI** (example):
-- gpt-4o (default, recommended)
+- gpt-4o-mini (default, recommended)
+- gpt-4o
 - gpt-4-turbo
 - gpt-3.5-turbo
 

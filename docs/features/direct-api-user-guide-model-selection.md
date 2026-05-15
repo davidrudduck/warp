@@ -51,7 +51,8 @@ Models appear in dropdown
 Once the list is populated, open Settings -> Agents -> Profiles and switch a profile to Direct API. The profile model dropdown shows provider-qualified choices:
 
 **OpenAI** (example):
-- gpt-4o (default, recommended)
+- gpt-4o-mini (default, recommended)
+- gpt-4o
 - gpt-4-turbo
 - gpt-3.5-turbo
 

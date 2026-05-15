@@ -1170,10 +1170,10 @@ Example: 20-turn conversation uses ~20KB RAM.
 
 ### Current Limitations
 
-1. **No password masking** in settings UI (EditorView limitation)
-2. **No async test validation** (only format validation)
+1. **No async test validation** (only local format/base-URL validation)
+2. **API key fields are masked by default** with a visibility toggle
 3. **Hardcoded context window limit** (100 messages, ~200K tokens)
-4. **Single model per provider** (no run-time switching)
+4. **No per-message run-time model switching inside an active response**
 5. **No conversation search** (future feature)
 6. **No export** (save conversations to JSON/Markdown)
 7. **No prompt caching** (Anthropic/OpenAI feature not implemented)
