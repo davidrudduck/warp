@@ -302,8 +302,12 @@ pub async fn run(
         if requires_serial {
             // Serialize all calls in original order when any call needs confirmation.
             for (i, tc) in tool_calls.into_iter().enumerate() {
-                let block = dispatch_one(tc, i, conversation_id, &tool_req_tx).await?;
-                results.push(block);
+                let dispatch = dispatch_one(tc, i, conversation_id, &tool_req_tx).fuse();
+                futures::pin_mut!(dispatch);
+                futures::select! {
+                    _ = cancel => return Ok(()),
+                    block = dispatch => results.push(block?),
+                }
             }
         } else {
             // Safe to dispatch concurrently with FuturesUnordered

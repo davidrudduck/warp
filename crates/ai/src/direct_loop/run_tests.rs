@@ -368,6 +368,59 @@ async fn run_cancelled_stops_cleanly() {
 }
 
 #[tokio::test]
+async fn run_cancelled_while_waiting_for_serial_tool_result_stops_cleanly() {
+    let tool_call = ToolCall {
+        id: "tc-shell".into(),
+        name: "RunShellCommand".into(),
+        input: serde_json::json!({"command": "sleep 60"}),
+    };
+
+    let provider: SharedProvider = Arc::new(MockLlmProvider::new().with_stream(vec![
+        StreamEvent::Start,
+        StreamEvent::ToolCallReady(tool_call),
+        StreamEvent::End {
+            finish_reason: FinishReason::ToolUse,
+            usage: None,
+        },
+    ]));
+    let (tx, _rx) = agent_event_channel(16);
+    let (tool_req_tx, mut tool_req_rx) = mpsc::channel(16);
+    let (cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
+    let initial_messages = vec![ChatMessage::User(vec![ContentBlock::Text("test".into())])];
+    let conversation_id = AIConversationId::new();
+
+    let run_handle = tokio::spawn(async move {
+        run(
+            provider,
+            initial_messages,
+            vec![],
+            conversation_id,
+            tx,
+            tool_req_tx,
+            cancel_rx,
+            None,
+        )
+        .await
+    });
+
+    let dispatch_req = tool_req_rx
+        .recv()
+        .await
+        .expect("serial tool dispatch should be sent");
+    assert_eq!(dispatch_req.tool_call.id, "tc-shell");
+    assert_eq!(dispatch_req.index, 0);
+
+    cancel_tx.send(()).expect("cancel signal should send");
+    let result = tokio::time::timeout(std::time::Duration::from_secs(1), run_handle)
+        .await
+        .expect("run should not hang while waiting for serial tool result")
+        .expect("task should not panic");
+
+    assert!(result.is_ok());
+    drop(dispatch_req);
+}
+
+#[tokio::test]
 async fn run_persists_conversation_to_db() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("test.db");
