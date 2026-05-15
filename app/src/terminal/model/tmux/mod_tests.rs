@@ -50,7 +50,15 @@ fn paste_buffer_name_rejects_shell_metacharacters() {
 #[test]
 fn show_paste_buffer_command_formats_show_buffer() {
     let buffer_name = PasteBufferName::parse(b"buffer7").expect("valid buffer name");
-    let command = commands::TmuxCommand::ShowPasteBuffer { buffer_name };
+    let request_id =
+        uuid::Uuid::parse_str("11111111-2222-4333-8444-555555555555").expect("valid uuid");
+    let command = commands::TmuxCommand::ShowPasteBuffer {
+        buffer_name,
+        request_id,
+    };
 
-    assert_eq!(command.get_command_string(), "show-buffer -b buffer7\n");
+    assert_eq!(
+        command.get_command_string(),
+        "display-message -p warp-tmux-paste-buffer-11111111-2222-4333-8444-555555555555 ; list-buffers -F \"warp-tmux-paste-buffer-11111111-2222-4333-8444-555555555555:#{q:buffer_full}\" -f \"#{==:#{buffer_name},buffer7}\"\n"
+    );
 }

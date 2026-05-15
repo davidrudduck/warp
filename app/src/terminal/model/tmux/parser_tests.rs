@@ -64,6 +64,25 @@ fn test_valid_command_output_err() {
 }
 
 #[test]
+fn test_command_output_preserves_carriage_returns() {
+    let mut parser = TmuxControlModeParser::new();
+    let mut handler = TestHandler::new();
+
+    let input = b"%begin 1622462330 1\na\rb\n%end\n";
+    for &byte in input {
+        parser.advance(&mut handler, byte);
+    }
+
+    assert_eq!(handler.messages.len(), 1);
+    assert_eq!(
+        &handler.messages[0],
+        &TmuxMessage::CommandOutput {
+            output_lines: Ok(vec![b"a\rb".to_vec()])
+        }
+    );
+}
+
+#[test]
 fn test_exit_message() {
     let mut parser = TmuxControlModeParser::new();
     let mut handler = TestHandler::new();

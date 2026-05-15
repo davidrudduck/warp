@@ -1790,18 +1790,14 @@ where
 
                 if !handled_internal_command {
                     self.handler
-                        .tmux_control_mode_event(ControlModeEvent::CommandOutput {
-                            output_lines,
-                        });
+                        .tmux_control_mode_event(ControlModeEvent::CommandOutput { output_lines });
                 }
             }
             TmuxMessage::Unknown { tag: _, rest: _ } => {}
             TmuxMessage::WindowClose { window_id: _ } => {}
             TmuxMessage::PasteBufferChanged { buffer_name } => {
                 self.handler
-                    .tmux_control_mode_event(ControlModeEvent::PasteBufferChanged {
-                        buffer_name,
-                    });
+                    .tmux_control_mode_event(ControlModeEvent::PasteBufferChanged { buffer_name });
             }
         }
     }

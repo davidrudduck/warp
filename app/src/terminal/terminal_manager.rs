@@ -104,7 +104,7 @@ pub(super) fn create_terminal_model(
     let is_ai_ugc_telemetry_enabled =
         should_collect_ai_ugc_telemetry(ctx, PrivacySettings::as_ref(ctx).is_telemetry_enabled);
 
-    TerminalModel::new(
+    let mut model = TerminalModel::new(
         restored_blocks.map(|v| v.as_slice()),
         sizes,
         terminal_colors_list(ctx),
@@ -119,7 +119,11 @@ pub(super) fn create_terminal_model(
         is_ai_ugc_telemetry_enabled,
         startup_directory,
         shell_state,
-    )
+    );
+    model.set_experimental_tmux_clipboard_sync_enabled(
+        *TerminalSettings::as_ref(ctx).experimental_tmux_clipboard_sync,
+    );
+    model
 }
 
 pub(super) fn terminal_colors_list(ctx: &AppContext) -> color::List {

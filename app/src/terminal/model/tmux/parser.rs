@@ -166,9 +166,10 @@ impl TmuxControlModeParser {
     /// calls one of the handler methods when it parses a byte of pane output or a complete tmux
     /// message.
     pub fn advance(&mut self, handler: &mut impl TmuxControlModeHandler, byte: u8) {
-        if byte == b'\r' {
+        if byte == b'\r' && !matches!(self.state, ParserState::ReadingCommandOutput { .. }) {
             // This should only ever appear directly before a \n and it simplifies parsing
-            // if we just discard carriage returns and only look for newlines.
+            // if we just discard carriage returns and only look for newlines. Command output
+            // may contain copied clipboard payloads, so preserve carriage returns there.
             return;
         }
         match &mut self.state {

@@ -3,6 +3,7 @@ use crate::util::parse_ascii_u32;
 use lazy_static::lazy_static;
 use regex::bytes::Regex;
 use std::collections::HashMap;
+use uuid::Uuid;
 
 // The below strings are used as a tag/prefix at the beginning of a response
 // from tmux to determine the type of response. These strings must be unique
@@ -12,6 +13,7 @@ use std::collections::HashMap;
 // messing up tmux's shell-like parsing.
 const PRIMARY_WINDOW_PANE_PREFIX: &str = "primary window pane";
 pub const BACKGROUND_WINDOW_PREFIX: &str = "background window";
+pub const SHOW_PASTE_BUFFER_PREFIX: &str = "warp-tmux-paste-buffer";
 
 #[derive(Clone, Debug)]
 pub enum TmuxCommand {
@@ -31,7 +33,10 @@ pub enum TmuxCommand {
     /// Forces the tmux session to inherit the smallest dimensions of any attached client.
     SetWindowSizeToSmallest,
     /// Fetches the contents of a validated tmux paste buffer.
-    ShowPasteBuffer { buffer_name: PasteBufferName },
+    ShowPasteBuffer {
+        buffer_name: PasteBufferName,
+        request_id: Uuid,
+    },
 }
 
 fn safe_env_var_name(name: &str) -> bool {
@@ -111,11 +116,24 @@ impl TmuxCommand {
             }
             TmuxCommand::SetDestroyUnattached => "set destroy-unattached on\n".to_string(),
             TmuxCommand::SetWindowSizeToSmallest => "set window-size smallest\n".to_string(),
-            TmuxCommand::ShowPasteBuffer { buffer_name } => {
-                format!("show-buffer -b {}\n", buffer_name.as_str())
+            TmuxCommand::ShowPasteBuffer {
+                buffer_name,
+                request_id,
+            } => {
+                let marker = show_paste_buffer_marker(*request_id);
+                let mut command = format!(
+                    "display-message -p {marker} ; list-buffers -F \"{marker}:#{{q:buffer_full}}\" -f \"#{{==:#{{buffer_name}},"
+                );
+                command.push_str(buffer_name.as_str());
+                command.push_str("}\"\n");
+                command
             }
         }
     }
+}
+
+pub fn show_paste_buffer_marker(request_id: Uuid) -> String {
+    format!("{SHOW_PASTE_BUFFER_PREFIX}-{request_id}")
 }
 
 pub enum TmuxCommandResponse {

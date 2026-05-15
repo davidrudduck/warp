@@ -3459,6 +3459,15 @@ impl TerminalView {
                         me.refresh_size(ctx);
                     }
                 }
+                TerminalSettingsChangedEvent::ExperimentalTmuxClipboardSync { .. } => {
+                    me.model
+                        .lock()
+                        .set_experimental_tmux_clipboard_sync_enabled(
+                            *terminal_settings
+                                .as_ref(ctx)
+                                .experimental_tmux_clipboard_sync,
+                        );
+                }
                 _ => {}
             },
         );

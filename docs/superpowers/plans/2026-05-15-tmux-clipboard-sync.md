@@ -692,7 +692,7 @@ git commit -m "tmux: forward paste buffer control mode events"
 - Modify: `app/src/terminal/terminal_manager.rs`
 - Modify: `app/src/terminal/view.rs`
 
-- [ ] **Step 1: Add state**
+- [x] **Step 1: Add state**
 
 In `app/src/terminal/model/terminal_model.rs`, merge `VecDeque` into the existing `std::collections` import:
 
@@ -714,7 +714,7 @@ Initialize them in `TerminalModel::new_internal`:
             experimental_tmux_clipboard_sync_enabled: false,
 ```
 
-- [ ] **Step 2: Add a runtime setting setter**
+- [x] **Step 2: Add a runtime setting setter**
 
 Add this method to `impl TerminalModel`:
 
@@ -727,7 +727,7 @@ Add this method to `impl TerminalModel`:
     }
 ```
 
-- [ ] **Step 3: Seed the model from settings at creation time**
+- [x] **Step 3: Seed the model from settings at creation time**
 
 In `app/src/terminal/terminal_manager.rs`, replace the direct `TerminalModel::new(...)` return with a local variable:
 
@@ -754,7 +754,7 @@ In `app/src/terminal/terminal_manager.rs`, replace the direct `TerminalModel::ne
     model
 ```
 
-- [ ] **Step 4: Keep the model synced after settings changes**
+- [x] **Step 4: Keep the model synced after settings changes**
 
 In `app/src/terminal/view.rs`, extend the existing `TerminalSettingsChangedEvent` subscription with:
 
@@ -770,7 +770,7 @@ In `app/src/terminal/view.rs`, extend the existing `TerminalSettingsChangedEvent
                 }
 ```
 
-- [ ] **Step 5: Add output conversion helper**
+- [x] **Step 5: Add output conversion helper**
 
 Near other small helpers in `terminal_model.rs`, add:
 
@@ -788,7 +788,7 @@ fn tmux_command_output_lines_to_text(output_lines: Vec<Vec<u8>>) -> Option<Strin
 }
 ```
 
-- [ ] **Step 6: Handle paste-buffer changed events**
+- [x] **Step 6: Handle paste-buffer changed events**
 
 In `TerminalModel::tmux_control_mode_event`, add:
 
@@ -806,7 +806,7 @@ In `TerminalModel::tmux_control_mode_event`, add:
             }
 ```
 
-- [ ] **Step 7: Handle command output**
+- [x] **Step 7: Handle command output**
 
 In the same match, add:
 
@@ -844,7 +844,7 @@ Add `ClipboardType` to the existing terminal imports in `app/src/terminal/model/
 use crate::terminal::{block_filter::BlockFilterQuery, model::ansi::Handler, ClipboardType};
 ```
 
-- [ ] **Step 8: Clear pending reads on tmux exit**
+- [x] **Step 8: Clear pending reads on tmux exit**
 
 In the existing `ControlModeEvent::Exited` arm, add:
 
@@ -852,7 +852,7 @@ In the existing `ControlModeEvent::Exited` arm, add:
                 self.pending_tmux_paste_buffer_reads.clear();
 ```
 
-- [ ] **Step 9: Run compile check**
+- [x] **Step 9: Run compile check**
 
 Run:
 
@@ -862,7 +862,7 @@ cargo check -p warp --bin warp-oss
 
 Expected: PASS.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add app/src/terminal/model/terminal_model.rs app/src/terminal/terminal_manager.rs app/src/terminal/view.rs

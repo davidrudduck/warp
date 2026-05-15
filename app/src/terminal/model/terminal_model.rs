@@ -17,7 +17,7 @@ use crate::terminal::model::index::VisibleRow;
 use crate::terminal::model::iterm_image::{ITermImage, ITermImageMetadata};
 use crate::terminal::shared_session::{ai_agent::encode_agent_response_event, SharedSessionStatus};
 use crate::terminal::ssh::util::{InteractiveSshCommand, SshLoginState};
-use crate::terminal::{block_filter::BlockFilterQuery, model::ansi::Handler};
+use crate::terminal::{block_filter::BlockFilterQuery, model::ansi::Handler, ClipboardType};
 use crate::terminal::{color, ssh, BlockPadding, ShellHost, SizeUpdate, SizeUpdateReason};
 use crate::terminal::{ShellLaunchData, ShellLaunchState};
 use crate::util::AsciiDebug;
@@ -45,7 +45,7 @@ use super::kitty::{
 use super::secrets::{RespectObfuscatedSecrets, SecretAndHandle};
 use super::selection::ScrollDelta;
 use super::session::{BootstrapSessionType, InBandCommandOutputReceiver, SessionId};
-use super::tmux::commands::TmuxCommand;
+use super::tmux::commands::{show_paste_buffer_marker, TmuxCommand};
 use super::{
     super::{AltScreen, BlockList},
     ansi::BootstrappedValue,
@@ -76,12 +76,13 @@ use session_sharing_protocol::common::{
     AICommandMetadata, OrderedTerminalEventType, ParticipantId,
 };
 use std::cmp::{max, min};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::num::ParseIntError;
 use std::ops::{Range, RangeInclusive};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
+use uuid::Uuid;
 use warp_core::features::FeatureFlag;
 use warp_core::semantic_selection::SemanticSelection;
 pub use warp_terminal::model::BlockIndex;
@@ -93,6 +94,19 @@ use warpui::AppContext;
 
 /// Max size of the window title stack.
 const TITLE_STACK_MAX_DEPTH: usize = 4096;
+const MAX_PENDING_TMUX_PASTE_BUFFER_READS: usize = 16;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PendingTmuxPasteBufferReadState {
+    WaitingForMarker,
+    WaitingForBuffer,
+}
+
+#[derive(Clone, Debug)]
+struct PendingTmuxPasteBufferRead {
+    request_id: Uuid,
+    state: PendingTmuxPasteBufferReadState,
+}
 
 /// The status of a conversation transcript viewer.
 /// This tracks both the loading state and the type of conversation being viewed.
@@ -598,6 +612,8 @@ pub struct TerminalModel {
     is_receiving_agent_conversation_replay: bool,
 
     tmux_background_outputs: HashMap<u32, Vec<u8>>,
+    pending_tmux_paste_buffer_reads: VecDeque<PendingTmuxPasteBufferRead>,
+    experimental_tmux_clipboard_sync_enabled: bool,
 
     /// When some, the TerminalModel emits the event [Event::DetectedEndOfSshLogin]. This
     /// event is emitted either as the initial check or the confirmation check.
@@ -1027,6 +1043,14 @@ impl TerminalModel {
     pub fn set_is_input_dirty(&mut self, value: bool) {
         self.is_input_dirty = value;
     }
+
+    pub fn set_experimental_tmux_clipboard_sync_enabled(&mut self, enabled: bool) {
+        self.experimental_tmux_clipboard_sync_enabled = enabled;
+        if !enabled {
+            self.pending_tmux_paste_buffer_reads.clear();
+        }
+    }
+
     #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     /// Returns a bootstrapped `TerminalModel` with no restored blocks
@@ -1162,6 +1186,8 @@ impl TerminalModel {
             write_to_pty_events_for_shared_session_tx: None,
             is_receiving_agent_conversation_replay: false,
             tmux_background_outputs: HashMap::new(),
+            pending_tmux_paste_buffer_reads: VecDeque::new(),
+            experimental_tmux_clipboard_sync_enabled: false,
             tmux_control_mode_context: None,
             pending_warp_initiated_control_mode: None,
             notify_on_end_of_ssh_login: None,
@@ -3206,6 +3232,7 @@ impl ansi::Handler for TerminalModel {
             }
             tmux::ControlModeEvent::Exited => {
                 self.tmux_control_mode_context = None;
+                self.pending_tmux_paste_buffer_reads.clear();
                 self.emit_handler_event(HandlerEvent::EndTmuxControlMode);
             }
             tmux::ControlModeEvent::ControlModeReady { primary_pane, .. } => {
@@ -3216,8 +3243,106 @@ impl ansi::Handler for TerminalModel {
                 self.event_proxy
                     .send_terminal_event(Event::TmuxControlModeReady { primary_pane });
             }
-            tmux::ControlModeEvent::PasteBufferChanged { buffer_name: _ } => {}
-            tmux::ControlModeEvent::CommandOutput { output_lines: _ } => {}
+            tmux::ControlModeEvent::PasteBufferChanged { buffer_name } => {
+                if !self.experimental_tmux_clipboard_sync_enabled {
+                    return;
+                }
+
+                let request_id = Uuid::new_v4();
+                self.pending_tmux_paste_buffer_reads
+                    .push_back(PendingTmuxPasteBufferRead {
+                        request_id,
+                        state: PendingTmuxPasteBufferReadState::WaitingForMarker,
+                    });
+                while self.pending_tmux_paste_buffer_reads.len()
+                    > MAX_PENDING_TMUX_PASTE_BUFFER_READS
+                {
+                    self.pending_tmux_paste_buffer_reads.pop_front();
+                }
+                self.emit_handler_event(HandlerEvent::RunTmuxCommand(
+                    TmuxCommand::ShowPasteBuffer {
+                        buffer_name,
+                        request_id,
+                    },
+                ));
+            }
+            tmux::ControlModeEvent::CommandOutput { output_lines } => match output_lines {
+                Ok(lines) => {
+                    if let Some(index) =
+                        self.pending_tmux_paste_buffer_reads
+                            .iter()
+                            .position(|pending| {
+                                pending.state == PendingTmuxPasteBufferReadState::WaitingForMarker
+                                    && tmux_command_output_is_paste_buffer_marker(
+                                        pending.request_id,
+                                        &lines,
+                                    )
+                            })
+                    {
+                        if let Some(pending) = self.pending_tmux_paste_buffer_reads.get_mut(index) {
+                            pending.state = PendingTmuxPasteBufferReadState::WaitingForBuffer;
+                        }
+                        return;
+                    }
+
+                    let Some(index) =
+                        self.pending_tmux_paste_buffer_reads
+                            .iter()
+                            .position(|pending| {
+                                pending.state == PendingTmuxPasteBufferReadState::WaitingForBuffer
+                            })
+                    else {
+                        return;
+                    };
+                    let request_id = self.pending_tmux_paste_buffer_reads[index].request_id;
+                    if lines.is_empty() {
+                        self.pending_tmux_paste_buffer_reads.remove(index);
+                        return;
+                    }
+                    let Some(lines) = tmux_paste_buffer_output_lines(request_id, lines) else {
+                        return;
+                    };
+                    self.pending_tmux_paste_buffer_reads.remove(index);
+                    let Some(contents) = tmux_quoted_command_output_lines_to_text(lines) else {
+                        log::warn!("tmux paste buffer contained non-UTF-8 content");
+                        return;
+                    };
+
+                    self.event_proxy.send_terminal_event(Event::ClipboardStore(
+                        ClipboardType::Clipboard,
+                        contents,
+                    ));
+                }
+                Err(lines) => {
+                    if let Some(index) =
+                        self.pending_tmux_paste_buffer_reads
+                            .iter()
+                            .position(|pending| {
+                                pending.state == PendingTmuxPasteBufferReadState::WaitingForMarker
+                                    && tmux_command_output_is_paste_buffer_marker(
+                                        pending.request_id,
+                                        &lines,
+                                    )
+                            })
+                    {
+                        self.pending_tmux_paste_buffer_reads.remove(index);
+                    } else if let Some(index) = self
+                        .pending_tmux_paste_buffer_reads
+                        .iter()
+                        .position(|pending| {
+                            pending.state == PendingTmuxPasteBufferReadState::WaitingForBuffer
+                        })
+                    {
+                        self.pending_tmux_paste_buffer_reads.remove(index);
+                    } else {
+                        return;
+                    }
+                    log::warn!(
+                        "Failed to read tmux paste buffer: {:?}",
+                        AsciiDebug(&lines.concat())
+                    );
+                }
+            },
         }
     }
 
@@ -3584,6 +3709,57 @@ impl ModeProvider for TerminalModel {
     fn is_term_mode_set(&self, mode: TermMode) -> bool {
         self.is_term_mode_set(mode)
     }
+}
+
+fn tmux_quoted_command_output_lines_to_text(output_lines: Vec<Vec<u8>>) -> Option<String> {
+    let mut bytes = Vec::new();
+    for (index, line) in output_lines.into_iter().enumerate() {
+        if index > 0 {
+            bytes.push(b'\n');
+        }
+        bytes.extend(tmux_unescape_quoted_format_line(&line)?);
+    }
+
+    String::from_utf8(bytes).ok()
+}
+
+fn tmux_paste_buffer_output_lines(
+    request_id: Uuid,
+    mut output_lines: Vec<Vec<u8>>,
+) -> Option<Vec<Vec<u8>>> {
+    let marker = tmux_paste_buffer_marker_prefix(request_id);
+    let first_line = output_lines.first_mut()?;
+    let first_content_line = first_line.strip_prefix(marker.as_slice())?.to_vec();
+    *first_line = first_content_line;
+    Some(output_lines)
+}
+
+fn tmux_command_output_is_paste_buffer_marker(request_id: Uuid, output_lines: &[Vec<u8>]) -> bool {
+    let marker = show_paste_buffer_marker(request_id).into_bytes();
+    matches!(output_lines, [line] if line.strip_suffix(b"\r").unwrap_or(line) == marker.as_slice())
+}
+
+fn tmux_paste_buffer_marker_prefix(request_id: Uuid) -> Vec<u8> {
+    let mut marker = show_paste_buffer_marker(request_id).into_bytes();
+    marker.push(b':');
+    marker
+}
+
+fn tmux_unescape_quoted_format_line(line: &[u8]) -> Option<Vec<u8>> {
+    let mut output = Vec::with_capacity(line.len());
+    let mut index = 0;
+    while index < line.len() {
+        let byte = line[index];
+        if byte == b'\\' {
+            index += 1;
+            output.push(*line.get(index)?);
+        } else {
+            output.push(byte);
+        }
+        index += 1;
+    }
+
+    Some(output)
 }
 
 /// Validates and decodes in-band command output sent via `warp_send_generator_output_osc_message`.
