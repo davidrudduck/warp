@@ -561,6 +561,206 @@ fn validate_title_event(event: Result<Event, async_channel::TryRecvError>, expec
     }
 }
 
+fn drain_terminal_events(event_rx: &async_channel::Receiver<Event>) {
+    while event_rx.try_recv().is_ok() {}
+}
+
+#[test]
+fn tmux_quoted_command_output_lines_to_text_preserves_multiline_text() {
+    let text = tmux_quoted_command_output_lines_to_text(vec![
+        b"first\\ line".to_vec(),
+        b"second\\ line".to_vec(),
+    ]);
+
+    assert_eq!(text.as_deref(), Some("first line\nsecond line"));
+}
+
+#[test]
+fn tmux_quoted_command_output_lines_to_text_rejects_non_utf8() {
+    let text = tmux_quoted_command_output_lines_to_text(vec![vec![0xff]]);
+
+    assert_eq!(text, None);
+}
+
+#[test]
+fn tmux_paste_buffer_change_is_ignored_when_setting_disabled() {
+    let (event_tx, event_rx) = async_channel::unbounded();
+    let event_proxy = ChannelEventListener::builder_for_test()
+        .with_terminal_events_tx(event_tx)
+        .build();
+    let mut terminal = TerminalModel::mock(None, Some(event_proxy));
+    drain_terminal_events(&event_rx);
+
+    terminal.tmux_control_mode_event(tmux::ControlModeEvent::PasteBufferChanged {
+        buffer_name: tmux::PasteBufferName::parse(b"buffer1").expect("valid buffer name"),
+    });
+
+    assert!(terminal.pending_tmux_paste_buffer_reads.is_empty());
+    assert!(event_rx.is_empty());
+}
+
+#[test]
+fn tmux_paste_buffer_change_queues_show_buffer_when_setting_enabled() {
+    let (event_tx, event_rx) = async_channel::unbounded();
+    let event_proxy = ChannelEventListener::builder_for_test()
+        .with_terminal_events_tx(event_tx)
+        .build();
+    let mut terminal = TerminalModel::mock(None, Some(event_proxy));
+    terminal.set_experimental_tmux_clipboard_sync_enabled(true);
+    drain_terminal_events(&event_rx);
+
+    terminal.tmux_control_mode_event(tmux::ControlModeEvent::PasteBufferChanged {
+        buffer_name: tmux::PasteBufferName::parse(b"buffer1").expect("valid buffer name"),
+    });
+
+    assert_eq!(terminal.pending_tmux_paste_buffer_reads.len(), 1);
+    match event_rx.try_recv().expect("expected tmux command event") {
+        Event::Handler(HandlerEvent::RunTmuxCommand(TmuxCommand::ShowPasteBuffer {
+            buffer_name,
+            request_id,
+        })) => {
+            assert_eq!(buffer_name.as_str(), "buffer1");
+            assert_eq!(
+                terminal.pending_tmux_paste_buffer_reads[0].request_id,
+                request_id
+            );
+            assert_eq!(
+                terminal.pending_tmux_paste_buffer_reads[0].state,
+                PendingTmuxPasteBufferReadState::WaitingForMarker
+            );
+        }
+        event => panic!("expected show-buffer handler event, got {event:?}"),
+    }
+}
+
+#[test]
+fn tmux_clipboard_sync_disable_clears_pending_read() {
+    let (event_tx, event_rx) = async_channel::unbounded();
+    let event_proxy = ChannelEventListener::builder_for_test()
+        .with_terminal_events_tx(event_tx)
+        .build();
+    let mut terminal = TerminalModel::mock(None, Some(event_proxy));
+    terminal.set_experimental_tmux_clipboard_sync_enabled(true);
+    drain_terminal_events(&event_rx);
+
+    terminal.tmux_control_mode_event(tmux::ControlModeEvent::PasteBufferChanged {
+        buffer_name: tmux::PasteBufferName::parse(b"buffer1").expect("valid buffer name"),
+    });
+    let request_id = match event_rx
+        .try_recv()
+        .expect("discard show-buffer command event")
+    {
+        Event::Handler(HandlerEvent::RunTmuxCommand(TmuxCommand::ShowPasteBuffer {
+            request_id,
+            ..
+        })) => request_id,
+        event => panic!("expected show-buffer handler event, got {event:?}"),
+    };
+    assert_eq!(terminal.pending_tmux_paste_buffer_reads.len(), 1);
+
+    terminal.set_experimental_tmux_clipboard_sync_enabled(false);
+    assert!(terminal.pending_tmux_paste_buffer_reads.is_empty());
+
+    terminal.tmux_control_mode_event(tmux::ControlModeEvent::CommandOutput {
+        output_lines: Ok(vec![show_paste_buffer_marker(request_id).into_bytes()]),
+    });
+    terminal.tmux_control_mode_event(tmux::ControlModeEvent::CommandOutput {
+        output_lines: Ok(vec![format!(
+            "{}:copied\\ text",
+            show_paste_buffer_marker(request_id)
+        )
+        .into_bytes()]),
+    });
+
+    assert!(terminal.pending_tmux_paste_buffer_reads.is_empty());
+    assert!(event_rx.is_empty());
+}
+
+#[test]
+fn tmux_command_output_with_pending_paste_buffer_emits_clipboard_store() {
+    let (event_tx, event_rx) = async_channel::unbounded();
+    let event_proxy = ChannelEventListener::builder_for_test()
+        .with_terminal_events_tx(event_tx)
+        .build();
+    let mut terminal = TerminalModel::mock(None, Some(event_proxy));
+    terminal.set_experimental_tmux_clipboard_sync_enabled(true);
+    drain_terminal_events(&event_rx);
+
+    terminal.tmux_control_mode_event(tmux::ControlModeEvent::PasteBufferChanged {
+        buffer_name: tmux::PasteBufferName::parse(b"buffer1").expect("valid buffer name"),
+    });
+    let request_id = match event_rx
+        .try_recv()
+        .expect("discard show-buffer command event")
+    {
+        Event::Handler(HandlerEvent::RunTmuxCommand(TmuxCommand::ShowPasteBuffer {
+            request_id,
+            ..
+        })) => request_id,
+        event => panic!("expected show-buffer handler event, got {event:?}"),
+    };
+
+    terminal.tmux_control_mode_event(tmux::ControlModeEvent::CommandOutput {
+        output_lines: Ok(vec![show_paste_buffer_marker(request_id).into_bytes()]),
+    });
+    assert!(event_rx.is_empty());
+    assert_eq!(
+        terminal.pending_tmux_paste_buffer_reads[0].state,
+        PendingTmuxPasteBufferReadState::WaitingForBuffer
+    );
+
+    terminal.tmux_control_mode_event(tmux::ControlModeEvent::CommandOutput {
+        output_lines: Ok(vec![format!(
+            "{}:copied\\ text",
+            show_paste_buffer_marker(request_id)
+        )
+        .into_bytes()]),
+    });
+
+    match event_rx.try_recv().expect("expected clipboard event") {
+        Event::ClipboardStore(ClipboardType::Clipboard, contents) => {
+            assert_eq!(contents, "copied text");
+        }
+        event => panic!("expected clipboard store event, got {event:?}"),
+    }
+    assert!(terminal.pending_tmux_paste_buffer_reads.is_empty());
+}
+
+#[test]
+fn tmux_command_output_with_missing_paste_buffer_clears_pending_read() {
+    let (event_tx, event_rx) = async_channel::unbounded();
+    let event_proxy = ChannelEventListener::builder_for_test()
+        .with_terminal_events_tx(event_tx)
+        .build();
+    let mut terminal = TerminalModel::mock(None, Some(event_proxy));
+    terminal.set_experimental_tmux_clipboard_sync_enabled(true);
+    drain_terminal_events(&event_rx);
+
+    terminal.tmux_control_mode_event(tmux::ControlModeEvent::PasteBufferChanged {
+        buffer_name: tmux::PasteBufferName::parse(b"buffer1").expect("valid buffer name"),
+    });
+    let request_id = match event_rx
+        .try_recv()
+        .expect("discard show-buffer command event")
+    {
+        Event::Handler(HandlerEvent::RunTmuxCommand(TmuxCommand::ShowPasteBuffer {
+            request_id,
+            ..
+        })) => request_id,
+        event => panic!("expected show-buffer handler event, got {event:?}"),
+    };
+
+    terminal.tmux_control_mode_event(tmux::ControlModeEvent::CommandOutput {
+        output_lines: Ok(vec![show_paste_buffer_marker(request_id).into_bytes()]),
+    });
+    terminal.tmux_control_mode_event(tmux::ControlModeEvent::CommandOutput {
+        output_lines: Ok(Vec::new()),
+    });
+
+    assert!(terminal.pending_tmux_paste_buffer_reads.is_empty());
+    assert!(event_rx.is_empty());
+}
+
 #[test]
 fn set_custom_title() {
     let (event_tx, event_rx) = async_channel::unbounded();

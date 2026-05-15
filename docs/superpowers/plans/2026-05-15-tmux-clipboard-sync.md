@@ -875,7 +875,7 @@ git commit -m "terminal: mirror tmux paste buffers when enabled"
 - Modify: `app/src/terminal/model/terminal_model.rs`
 - Modify: `app/src/terminal/model/terminal_model_tests.rs`
 
-- [ ] **Step 1: Add helper tests for output conversion**
+- [x] **Step 1: Add helper tests for output conversion**
 
 Add these tests to `app/src/terminal/model/terminal_model_tests.rs`:
 
@@ -898,7 +898,7 @@ fn tmux_command_output_lines_to_text_rejects_non_utf8() {
 }
 ```
 
-- [ ] **Step 2: Add disabled-setting behavior test**
+- [x] **Step 2: Add disabled-setting behavior test**
 
 Add:
 
@@ -920,7 +920,7 @@ fn tmux_paste_buffer_change_is_ignored_when_setting_disabled() {
 }
 ```
 
-- [ ] **Step 3: Add enabled-setting command dispatch test**
+- [x] **Step 3: Add enabled-setting command dispatch test**
 
 Add:
 
@@ -948,7 +948,7 @@ fn tmux_paste_buffer_change_queues_show_buffer_when_setting_enabled() {
 }
 ```
 
-- [ ] **Step 4: Add command output clipboard event test**
+- [x] **Step 4: Add command output clipboard event test**
 
 Add:
 
@@ -981,7 +981,7 @@ fn tmux_command_output_with_pending_paste_buffer_emits_clipboard_store() {
 }
 ```
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 Run:
 
@@ -991,7 +991,7 @@ cargo test -p warp terminal::model::terminal_model --lib
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add app/src/terminal/model/terminal_model.rs app/src/terminal/model/terminal_model_tests.rs
