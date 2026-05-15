@@ -1,4 +1,5 @@
-use crate::ai::execution_profiles::{AIExecutionProfile, ActionPermission};
+use crate::ai::blocklist::BlocklistAIPermissions;
+use crate::ai::execution_profiles::{AIExecutionProfile, ActionPermission, ModelRouting};
 use crate::editor::EditorView;
 use crate::settings::AISettings;
 use crate::ui_components::icons::Icon;
@@ -168,6 +169,43 @@ fn render_filterable_dropdown_row<T: Clone + 'static + std::fmt::Debug + Send + 
     .finish()
 }
 
+fn render_dropdown_row<T: Clone + 'static + std::fmt::Debug + Send + Sync>(
+    appearance: &Appearance,
+    label: &str,
+    desc: &str,
+    dropdown: &ViewHandle<Dropdown<T>>,
+) -> Box<dyn Element> {
+    let label_elem = Text::new(label.to_string(), appearance.ui_font_family(), 13.)
+        .with_color(appearance.theme().active_ui_text_color().into())
+        .finish();
+    let desc_elem = Text::new(desc.to_string(), appearance.ui_font_family(), 11.)
+        .with_color(
+            appearance
+                .theme()
+                .sub_text_color(appearance.theme().surface_1())
+                .into(),
+        )
+        .finish();
+
+    let label_desc_column = Flex::column()
+        .with_child(label_elem)
+        .with_child(desc_elem)
+        .finish();
+
+    Container::new(
+        Flex::column()
+            .with_child(
+                Container::new(label_desc_column)
+                    .with_margin_bottom(4.)
+                    .finish(),
+            )
+            .with_child(Container::new(ChildView::new(dropdown).finish()).finish())
+            .finish(),
+    )
+    .with_margin_bottom(12.)
+    .finish()
+}
+
 fn render_info_section(
     text: &str,
     _subtext: Option<&str>,
@@ -255,34 +293,56 @@ pub fn render_models_section(
     view: &ExecutionProfileEditorView,
     app: &AppContext,
 ) -> Box<dyn Element> {
+    let profile =
+        BlocklistAIPermissions::as_ref(app).permissions_profile_for_id(app, view.profile_id);
+    let routing = profile.model_routing.effective();
     let mut column = Flex::column()
         .with_child(render_separator(appearance))
         .with_child(render_section_label("MODELS", appearance))
-        .with_child(render_filterable_dropdown_row(
+        .with_child(render_dropdown_row(
             appearance,
-            "Base model",
-            "This model serves as the primary engine behind the agent. It powers most interactions and invokes other models for tasks like planning or code generation when necessary. Warp may automatically switch to alternate models based on model availability or for auxiliary tasks such as conversation summarization.",
-            &view.base_model_dropdown,
+            "Model Routing",
+            "Choose whether this profile uses Warp provider models or locally configured Direct API providers.",
+            &view.model_routing_dropdown,
         ));
 
-    if let Some(row) = render_context_window_row(appearance, view, app) {
-        column.add_child(row);
-    }
+    match routing {
+        ModelRouting::WarpProvider | ModelRouting::Unknown => {
+            column.add_child(render_filterable_dropdown_row(
+                appearance,
+                "Base model",
+                "This model serves as the primary engine behind the agent. It powers most interactions and invokes other models for tasks like planning or code generation when necessary. Warp may automatically switch to alternate models based on model availability or for auxiliary tasks such as conversation summarization.",
+                &view.base_model_dropdown,
+            ));
 
-    column = column.with_child(render_filterable_dropdown_row(
-        appearance,
-        "Full terminal use model",
-        "The model used when the agent operates inside interactive terminal applications like database shells, debuggers, REPLs, or dev servers—reading live output and writing commands to the PTY.",
-        &view.full_terminal_use_model_dropdown,
-    ));
+            if let Some(row) = render_context_window_row(appearance, view, app) {
+                column.add_child(row);
+            }
 
-    if FeatureFlag::LocalComputerUse.is_enabled() {
-        column.add_child(render_filterable_dropdown_row(
-            appearance,
-            "Computer use model",
-            "The model used when the agent takes control of your computer to interact with graphical applications through mouse movements, clicks, and keyboard input.",
-            &view.computer_use_model_dropdown,
-        ));
+            column.add_child(render_filterable_dropdown_row(
+                appearance,
+                "Full terminal use model",
+                "The model used when the agent operates inside interactive terminal applications like database shells, debuggers, REPLs, or dev servers—reading live output and writing commands to the PTY.",
+                &view.full_terminal_use_model_dropdown,
+            ));
+
+            if FeatureFlag::LocalComputerUse.is_enabled() {
+                column.add_child(render_filterable_dropdown_row(
+                    appearance,
+                    "Computer use model",
+                    "The model used when the agent takes control of your computer to interact with graphical applications through mouse movements, clicks, and keyboard input.",
+                    &view.computer_use_model_dropdown,
+                ));
+            }
+        }
+        ModelRouting::DirectApi => {
+            column.add_child(render_filterable_dropdown_row(
+                appearance,
+                "Direct API model",
+                "The provider and model used by this profile when routing agent requests through Direct API.",
+                &view.direct_api_model_dropdown,
+            ));
+        }
     }
 
     Container::new(column.finish())

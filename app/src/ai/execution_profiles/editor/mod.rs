@@ -1,8 +1,12 @@
 use crate::ai::blocklist::BlocklistAIPermissions;
+use crate::ai::execution_profiles::direct_api_model_choices::{
+    direct_api_model_choices_from_parts, DirectApiModelChoice,
+};
 use crate::ai::execution_profiles::model_menu_items::available_model_menu_items;
 use crate::ai::execution_profiles::{
     profiles::{AIExecutionProfilesModel, AIExecutionProfilesModelEvent, ClientProfileId},
-    AIExecutionProfile, ActionPermission, WriteToPtyPermission,
+    AIExecutionProfile, ActionPermission, DirectApiProfileModelSelection, ModelRouting,
+    WriteToPtyPermission,
 };
 use crate::ai::llms::{
     DisableReason, LLMContextWindow, LLMId, LLMInfo, LLMPreferences, LLMPreferencesEvent,
@@ -26,6 +30,7 @@ use crate::{
     Appearance,
 };
 use ai::api_keys::{ApiKeyManager, ApiKeyManagerEvent};
+use ai::model_registry::ModelListCache;
 use itertools::Itertools;
 use regex::Regex;
 use thousands::Separable;
@@ -148,6 +153,13 @@ pub enum ExecutionProfileEditorViewAction {
     SetBaseModel {
         id: LLMId,
     },
+    SetModelRouting {
+        routing: ModelRouting,
+    },
+    SetDirectApiModel {
+        selection: DirectApiProfileModelSelection,
+    },
+    RefreshProfileState,
     /// Fired continuously while the user drags the context window slider.
     ContextWindowSliderDragged {
         value: u32,
@@ -233,7 +245,9 @@ pub struct ExecutionProfileEditorView {
     pane_configuration: ModelHandle<PaneConfiguration>,
     focus_handle: Option<PaneFocusHandle>,
     clipped_scroll_state: ClippedScrollStateHandle,
+    model_routing_dropdown: ViewHandle<Dropdown<ExecutionProfileEditorViewAction>>,
     base_model_dropdown: ViewHandle<FilterableDropdown<ExecutionProfileEditorViewAction>>,
+    direct_api_model_dropdown: ViewHandle<FilterableDropdown<ExecutionProfileEditorViewAction>>,
     context_window_slider_state: SliderStateHandle,
     context_window_editor: ViewHandle<EditorView>,
     last_synced_context_window_editor_value: Option<u32>,
@@ -494,7 +508,34 @@ impl ExecutionProfileEditorView {
             .map(|_| Default::default())
             .collect();
 
+        let model_routing_dropdown = ctx.add_typed_action_view(|ctx| {
+            let mut dropdown = Dropdown::new(ctx);
+            dropdown.set_items(
+                vec![
+                    DropdownItem::new(
+                        "Warp Provider",
+                        ExecutionProfileEditorViewAction::SetModelRouting {
+                            routing: ModelRouting::WarpProvider,
+                        },
+                    ),
+                    DropdownItem::new(
+                        "Direct API",
+                        ExecutionProfileEditorViewAction::SetModelRouting {
+                            routing: ModelRouting::DirectApi,
+                        },
+                    ),
+                ],
+                ctx,
+            );
+            dropdown
+        });
+
         let base_model_dropdown = ctx.add_typed_action_view(|ctx| {
+            let mut dropdown = FilterableDropdown::new(ctx);
+            dropdown.set_menu_width(MODEL_MENU_WIDTH, ctx);
+            dropdown
+        });
+        let direct_api_model_dropdown = ctx.add_typed_action_view(|ctx| {
             let mut dropdown = FilterableDropdown::new(ctx);
             dropdown.set_menu_width(MODEL_MENU_WIDTH, ctx);
             dropdown
@@ -610,7 +651,9 @@ impl ExecutionProfileEditorView {
             pane_configuration,
             focus_handle: None,
             clipped_scroll_state: Default::default(),
+            model_routing_dropdown,
             base_model_dropdown,
+            direct_api_model_dropdown,
             context_window_slider_state,
             context_window_editor,
             last_synced_context_window_editor_value,
@@ -790,6 +833,7 @@ impl ExecutionProfileEditorView {
                     current_permissions.coding_model.clone(),
                     ctx,
                 );
+                me.refresh_direct_api_model_dropdown(ctx);
                 me.sync_context_window_editor(ctx, false);
                 ctx.notify();
             },
@@ -923,6 +967,8 @@ impl ExecutionProfileEditorView {
             &self.upgrade_footer_mouse_state,
             ctx,
         );
+        self.refresh_model_routing_dropdown(&current_permissions, ctx);
+        self.refresh_direct_api_model_dropdown(ctx);
 
         Self::refresh_execution_profile_dropdown_menu(
             &self.apply_code_diffs_dropdown,
@@ -983,6 +1029,100 @@ impl ExecutionProfileEditorView {
 
         Self::update_profile_name_editor(&self.profile_name_editor, &current_permissions, ctx);
         self.sync_context_window_editor(ctx, false);
+    }
+
+    fn refresh_model_routing_dropdown(
+        &self,
+        profile: &AIExecutionProfile,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.model_routing_dropdown.update(ctx, |dropdown, ctx| {
+            let selected_index = match profile.model_routing.effective() {
+                ModelRouting::WarpProvider | ModelRouting::Unknown => 0,
+                ModelRouting::DirectApi => 1,
+            };
+            dropdown.set_selected_by_index(selected_index, ctx);
+            ctx.notify();
+        });
+        ctx.notify();
+    }
+
+    fn refresh_direct_api_model_dropdown(&self, ctx: &mut ViewContext<Self>) {
+        let choices = Self::direct_api_model_choices(ctx);
+        let current_profile = AIExecutionProfilesModel::as_ref(ctx)
+            .get_profile_by_id(self.profile_id, ctx)
+            .map(|profile| profile.data().clone());
+        let current_selection = current_profile
+            .as_ref()
+            .and_then(|profile| profile.direct_api_model.clone());
+        let selected_action = current_selection.and_then(|selection| {
+            choices
+                .iter()
+                .any(|choice| choice.selection == selection)
+                .then_some(ExecutionProfileEditorViewAction::SetDirectApiModel { selection })
+        });
+
+        self.direct_api_model_dropdown.update(ctx, |dropdown, ctx| {
+            if choices.is_empty() {
+                dropdown.set_items(
+                    vec![DropdownItem::new(
+                        "Configure Direct API provider in Agents settings",
+                        ExecutionProfileEditorViewAction::SetModelRouting {
+                            routing: ModelRouting::DirectApi,
+                        },
+                    )],
+                    ctx,
+                );
+                dropdown.set_selected_by_index(0, ctx);
+                dropdown.set_disabled(ctx);
+                ctx.notify();
+                return;
+            }
+
+            let items = choices
+                .into_iter()
+                .map(
+                    |DirectApiModelChoice {
+                         selection, label, ..
+                     }| {
+                        DropdownItem::new(
+                            label,
+                            ExecutionProfileEditorViewAction::SetDirectApiModel { selection },
+                        )
+                    },
+                )
+                .collect();
+
+            dropdown.set_enabled(ctx);
+            dropdown.set_items(items, ctx);
+            if let Some(action) = selected_action {
+                dropdown.set_selected_by_action(action, ctx);
+            } else {
+                dropdown.reset_selection(ctx);
+            }
+            ctx.notify();
+        });
+        ctx.notify();
+    }
+
+    fn direct_api_model_choices(ctx: &mut ViewContext<Self>) -> Vec<DirectApiModelChoice> {
+        let keys = ApiKeyManager::as_ref(ctx).keys(ctx);
+        let cache = ModelListCache::new().ok();
+        direct_api_model_choices_from_parts(&keys, cache.as_ref())
+    }
+
+    fn selected_direct_api_model_for_choices(
+        &self,
+        choices: &[DirectApiModelChoice],
+        ctx: &mut ViewContext<Self>,
+    ) -> Option<DirectApiProfileModelSelection> {
+        let current_selection = AIExecutionProfilesModel::as_ref(ctx)
+            .get_profile_by_id(self.profile_id, ctx)
+            .and_then(|profile| profile.data().direct_api_model.clone());
+
+        current_selection
+            .filter(|selection| choices.iter().any(|choice| &choice.selection == selection))
+            .or_else(|| choices.first().map(|choice| choice.selection.clone()))
     }
 
     fn refresh_execution_profile_dropdown_menu(
@@ -1497,6 +1637,71 @@ impl TypedActionView for ExecutionProfileEditorView {
                     profiles_model.set_context_window_limit(self.profile_id, None, ctx);
                 });
                 self.sync_context_window_editor(ctx, true);
+                ctx.notify();
+            }
+            ExecutionProfileEditorViewAction::SetModelRouting { routing } => {
+                let choices = match routing {
+                    ModelRouting::DirectApi => Some(Self::direct_api_model_choices(ctx)),
+                    ModelRouting::WarpProvider | ModelRouting::Unknown => None,
+                };
+                let direct_api_selection = choices
+                    .as_deref()
+                    .and_then(|choices| self.selected_direct_api_model_for_choices(choices, ctx));
+
+                AIExecutionProfilesModel::handle(ctx).update(ctx, |profiles_model, ctx| {
+                    match routing {
+                        ModelRouting::WarpProvider | ModelRouting::Unknown => {
+                            profiles_model.set_model_routing(
+                                self.profile_id,
+                                ModelRouting::WarpProvider,
+                                ctx,
+                            );
+                        }
+                        ModelRouting::DirectApi => {
+                            if let Some(selection) = direct_api_selection {
+                                profiles_model.set_direct_api_model(
+                                    self.profile_id,
+                                    Some(selection),
+                                    ctx,
+                                );
+                                profiles_model.set_model_routing(
+                                    self.profile_id,
+                                    ModelRouting::DirectApi,
+                                    ctx,
+                                );
+                            } else {
+                                log::warn!(
+                                    "Cannot switch execution profile to Direct API: no configured Direct API models available"
+                                );
+                                profiles_model.set_model_routing(
+                                    self.profile_id,
+                                    ModelRouting::WarpProvider,
+                                    ctx,
+                                );
+                            }
+                        }
+                    }
+                });
+                ctx.dispatch_typed_action_deferred(
+                    ExecutionProfileEditorViewAction::RefreshProfileState,
+                );
+                ctx.notify();
+            }
+            ExecutionProfileEditorViewAction::SetDirectApiModel { selection } => {
+                AIExecutionProfilesModel::handle(ctx).update(ctx, |profiles_model, ctx| {
+                    profiles_model.set_direct_api_model(
+                        self.profile_id,
+                        Some(selection.clone()),
+                        ctx,
+                    );
+                });
+                ctx.dispatch_typed_action_deferred(
+                    ExecutionProfileEditorViewAction::RefreshProfileState,
+                );
+                ctx.notify();
+            }
+            ExecutionProfileEditorViewAction::RefreshProfileState => {
+                self.refresh_profile_state(ctx);
                 ctx.notify();
             }
             ExecutionProfileEditorViewAction::ContextWindowSliderDragged { value } => {

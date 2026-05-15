@@ -577,7 +577,7 @@ git commit -m "Build Direct API model choices for profiles"
 - Modify `app/src/ai/execution_profiles/editor/mod.rs`
 - Modify `app/src/ai/execution_profiles/editor/ui_helpers.rs`
 
-- [ ] **Step 1: Add editor actions and fields**
+- [x] **Step 1: Add editor actions and fields**
 
 In `app/src/ai/execution_profiles/editor/mod.rs`, extend imports:
 
@@ -606,7 +606,7 @@ Add fields to `ExecutionProfileEditorView` after `base_model_dropdown`:
     direct_api_model_dropdown: ViewHandle<FilterableDropdown<ExecutionProfileEditorViewAction>>,
 ```
 
-- [ ] **Step 2: Create dropdown views**
+- [x] **Step 2: Create dropdown views**
 
 In `ExecutionProfileEditorView::new`, create these before `base_model_dropdown`:
 
@@ -645,7 +645,7 @@ In `ExecutionProfileEditorView::new`, create these before `base_model_dropdown`:
 
 Store both fields in `Self`.
 
-- [ ] **Step 3: Add refresh helpers**
+- [x] **Step 3: Add refresh helpers**
 
 Add methods to `impl ExecutionProfileEditorView`:
 
@@ -700,7 +700,7 @@ Add methods to `impl ExecutionProfileEditorView`:
 
 The required dropdown methods are the same methods already used by `refresh_model_selection_dropdown` in `app/src/ai/execution_profiles/editor/mod.rs`: update the item list, selected index, enabled state, and placeholder through the dropdown view handles.
 
-- [ ] **Step 4: Handle actions**
+- [x] **Step 4: Handle actions**
 
 Add cases to `handle_action`:
 
@@ -723,7 +723,7 @@ Add cases to `handle_action`:
             }
 ```
 
-- [ ] **Step 5: Render routing rows**
+- [x] **Step 5: Render routing rows**
 
 In `app/src/ai/execution_profiles/editor/ui_helpers.rs`, update `render_models_section`:
 
@@ -781,7 +781,7 @@ In `app/src/ai/execution_profiles/editor/ui_helpers.rs`, update `render_models_s
     }
 ```
 
-- [ ] **Step 6: Run compile check**
+- [x] **Step 6: Run compile check**
 
 Run:
 
@@ -791,7 +791,7 @@ cargo check -p warp --bin warp-oss
 
 Expected: compile succeeds.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add app/src/ai/execution_profiles/editor/mod.rs app/src/ai/execution_profiles/editor/ui_helpers.rs
