@@ -46,3 +46,11 @@ fn paste_buffer_name_rejects_shell_metacharacters() {
         None
     );
 }
+
+#[test]
+fn show_paste_buffer_command_formats_show_buffer() {
+    let buffer_name = PasteBufferName::parse(b"buffer7").expect("valid buffer name");
+    let command = commands::TmuxCommand::ShowPasteBuffer { buffer_name };
+
+    assert_eq!(command.get_command_string(), "show-buffer -b buffer7\n");
+}

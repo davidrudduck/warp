@@ -522,7 +522,7 @@ git commit -m "tmux: parse paste buffer change notifications"
 - Modify: `app/src/terminal/model/tmux/commands.rs`
 - Modify: `app/src/terminal/model/tmux/mod_tests.rs`
 
-- [ ] **Step 1: Write the command formatting test**
+- [x] **Step 1: Write the command formatting test**
 
 Add to `app/src/terminal/model/tmux/mod_tests.rs`:
 
@@ -536,7 +536,7 @@ fn show_paste_buffer_command_formats_show_buffer() {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify failure**
+- [x] **Step 2: Run tests to verify failure**
 
 Run:
 
@@ -546,7 +546,7 @@ cargo test -p warp terminal::model::tmux::mod_tests::show_paste_buffer_command_f
 
 Expected: FAIL because `ShowPasteBuffer` does not exist.
 
-- [ ] **Step 3: Add the command**
+- [x] **Step 3: Add the command**
 
 In `app/src/terminal/model/tmux/commands.rs`, import the type:
 
@@ -571,7 +571,7 @@ Add to `get_command_string`:
             }
 ```
 
-- [ ] **Step 4: Run the command test**
+- [x] **Step 4: Run the command test**
 
 Run:
 
@@ -581,7 +581,7 @@ cargo test -p warp terminal::model::tmux::mod_tests::show_paste_buffer_command_f
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app/src/terminal/model/tmux/commands.rs app/src/terminal/model/tmux/mod_tests.rs

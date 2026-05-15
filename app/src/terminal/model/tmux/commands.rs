@@ -1,3 +1,4 @@
+use super::PasteBufferName;
 use crate::util::parse_ascii_u32;
 use lazy_static::lazy_static;
 use regex::bytes::Regex;
@@ -29,6 +30,8 @@ pub enum TmuxCommand {
     SetDestroyUnattached,
     /// Forces the tmux session to inherit the smallest dimensions of any attached client.
     SetWindowSizeToSmallest,
+    /// Fetches the contents of a validated tmux paste buffer.
+    ShowPasteBuffer { buffer_name: PasteBufferName },
 }
 
 fn safe_env_var_name(name: &str) -> bool {
@@ -108,6 +111,9 @@ impl TmuxCommand {
             }
             TmuxCommand::SetDestroyUnattached => "set destroy-unattached on\n".to_string(),
             TmuxCommand::SetWindowSizeToSmallest => "set window-size smallest\n".to_string(),
+            TmuxCommand::ShowPasteBuffer { buffer_name } => {
+                format!("show-buffer -b {}\n", buffer_name.as_str())
+            }
         }
     }
 }
