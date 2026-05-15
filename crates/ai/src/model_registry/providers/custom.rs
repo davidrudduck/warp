@@ -1,6 +1,7 @@
 //! Custom provider implementation for OpenAI-compatible endpoints.
 
 use crate::model_registry::{ModelDescriptor, ModelListError, ModelListProvider, ProviderId};
+use crate::url_validation::{normalize_openai_compatible_base_url, BaseUrlValidationError};
 use reqwest::Client;
 
 /// Provider for custom OpenAI-compatible endpoints.
@@ -12,12 +13,13 @@ pub struct CustomListProvider {
 
 impl CustomListProvider {
     /// Create a new custom provider.
-    pub fn new(base_url: String, api_key: Option<String>) -> Self {
-        Self {
+    pub fn new(base_url: String, api_key: Option<String>) -> Result<Self, BaseUrlValidationError> {
+        let base_url = normalize_openai_compatible_base_url(&base_url)?;
+        Ok(Self {
             api_key,
             base_url,
             client: Client::new(),
-        }
+        })
     }
 }
 

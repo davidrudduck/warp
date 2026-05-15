@@ -17,4 +17,5 @@ pub mod paths;
 pub mod project_context;
 pub mod skills;
 pub mod telemetry;
+pub mod url_validation;
 pub mod workspace;

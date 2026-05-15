@@ -28,7 +28,8 @@ async fn custom_list_models_success() {
         .create_async()
         .await;
 
-    let provider = CustomListProvider::new(server.url(), Some("test-key".to_string()));
+    let provider =
+        CustomListProvider::new(server.url(), Some("test-key".to_string())).expect("valid URL");
 
     let result = provider.list_models().await;
     assert!(result.is_ok());
@@ -51,6 +52,35 @@ async fn custom_list_models_success() {
 }
 
 #[tokio::test]
+async fn custom_list_models_does_not_double_append_v1() {
+    install_crypto_provider();
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+        .mock("GET", "/v1/models")
+        .with_status(200)
+        .with_body(r#"{"data":[{"id":"custom-model"}]}"#)
+        .create_async()
+        .await;
+
+    let provider =
+        CustomListProvider::new(format!("{}/v1", server.url()), None).expect("valid URL");
+
+    let result = provider.list_models().await;
+    assert!(result.is_ok());
+    assert_eq!(result.expect("should succeed")[0].id, "custom-model");
+
+    mock.assert_async().await;
+}
+
+#[test]
+fn custom_provider_rejects_public_plaintext_http() {
+    let provider =
+        CustomListProvider::new("http://8.8.8.8".to_string(), Some("test-key".to_string()));
+
+    assert!(provider.is_err());
+}
+
+#[tokio::test]
 async fn custom_list_models_without_auth() {
     install_crypto_provider();
     let mut server = mockito::Server::new_async().await;
@@ -68,7 +98,7 @@ async fn custom_list_models_without_auth() {
         .await;
 
     // Create provider without API key
-    let provider = CustomListProvider::new(server.url(), None);
+    let provider = CustomListProvider::new(server.url(), None).expect("valid URL");
 
     let result = provider.list_models().await;
     assert!(result.is_ok());
@@ -90,7 +120,8 @@ async fn custom_auth_failed_on_403() {
         .create_async()
         .await;
 
-    let provider = CustomListProvider::new(server.url(), Some("bad-key".to_string()));
+    let provider =
+        CustomListProvider::new(server.url(), Some("bad-key".to_string())).expect("valid URL");
 
     let result = provider.list_models().await;
     assert!(result.is_err());
@@ -114,7 +145,8 @@ async fn custom_unsupported_on_parse_failure() {
         .create_async()
         .await;
 
-    let provider = CustomListProvider::new(server.url(), Some("test-key".to_string()));
+    let provider =
+        CustomListProvider::new(server.url(), Some("test-key".to_string())).expect("valid URL");
 
     let result = provider.list_models().await;
     assert!(result.is_err());
@@ -134,7 +166,8 @@ async fn custom_offline_on_connection_error() {
     let provider = CustomListProvider::new(
         "http://localhost:1".to_string(),
         Some("test-key".to_string()),
-    );
+    )
+    .expect("valid URL");
 
     let result = provider.list_models().await;
     assert!(result.is_err());
@@ -156,7 +189,8 @@ async fn custom_rate_limited_on_429() {
         .create_async()
         .await;
 
-    let provider = CustomListProvider::new(server.url(), Some("test-key".to_string()));
+    let provider =
+        CustomListProvider::new(server.url(), Some("test-key".to_string())).expect("valid URL");
 
     let result = provider.list_models().await;
     assert!(result.is_err());

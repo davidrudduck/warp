@@ -1,4 +1,9 @@
-use super::{is_safe_for_http, visibility_tooltip, ProviderType};
+use super::{visibility_tooltip, ProviderType};
+use ai::url_validation::validate_direct_api_base_url;
+
+fn is_safe_for_http(url: &str) -> bool {
+    validate_direct_api_base_url(url).is_ok()
+}
 
 #[test]
 fn api_key_placeholder_for_each_provider() {
@@ -477,6 +482,13 @@ fn is_safe_for_http_rejects_non_http_schemes() {
     assert!(!is_safe_for_http("file:///path/to/file"));
     assert!(!is_safe_for_http(""));
     assert!(!is_safe_for_http("not-a-url"));
+}
+
+#[test]
+fn is_safe_for_http_rejects_query_fragment_and_userinfo() {
+    assert!(!is_safe_for_http("https://api.example.com/v1?tenant=x"));
+    assert!(!is_safe_for_http("https://api.example.com/v1#models"));
+    assert!(!is_safe_for_http("https://user:pass@api.example.com/v1"));
 }
 
 #[test]

@@ -807,7 +807,7 @@ git commit -m "Add Direct API routing controls to profiles"
 - Modify `crates/ai/src/model_registry/providers/custom.rs`
 - Modify `crates/ai/src/model_registry/providers/custom_tests.rs`
 
-- [ ] **Step 1: Add URL validation module**
+- [x] **Step 1: Add URL validation module**
 
 Create `crates/ai/src/url_validation.rs`:
 
@@ -900,7 +900,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Export module**
+- [x] **Step 2: Export module**
 
 Add to `crates/ai/src/lib.rs`:
 
@@ -908,7 +908,7 @@ Add to `crates/ai/src/lib.rs`:
 pub mod url_validation;
 ```
 
-- [ ] **Step 3: Replace settings page validation**
+- [x] **Step 3: Replace settings page validation**
 
 In `app/src/settings_view/direct_api_page.rs`, replace the local `is_safe_http_url` function with:
 
@@ -928,7 +928,7 @@ if validate_direct_api_base_url(&url).is_err() {
 }
 ```
 
-- [ ] **Step 4: Normalize custom model list URL**
+- [x] **Step 4: Normalize custom model list URL**
 
 In `crates/ai/src/model_registry/providers/custom.rs`, import:
 
@@ -956,7 +956,7 @@ Keep `list_models` as:
 let url = format!("{}/v1/models", self.base_url);
 ```
 
-- [ ] **Step 5: Run URL tests**
+- [x] **Step 5: Run URL tests**
 
 Run:
 
@@ -966,7 +966,7 @@ cargo test -p ai url_validation -- --nocapture
 
 Expected: all URL validation tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add crates/ai/src/url_validation.rs crates/ai/src/lib.rs app/src/settings_view/direct_api_page.rs crates/ai/src/model_registry/providers/custom.rs crates/ai/src/model_registry/providers/custom_tests.rs

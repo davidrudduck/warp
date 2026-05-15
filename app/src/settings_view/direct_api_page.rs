@@ -18,6 +18,7 @@ use ::ai::model_registry::{
     ModelDescriptor, ModelListCache, ModelListError, ModelListProvider, ProviderId,
 };
 use ::ai::telemetry::AITelemetryEvent;
+use ::ai::url_validation::{normalize_direct_api_base_url, normalize_openai_compatible_base_url};
 use std::cell::{Cell, RefCell};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -58,45 +59,19 @@ fn visibility_tooltip(show: bool) -> &'static str {
     }
 }
 
-/// Check if a URL is safe to use with HTTP (localhost or private LAN).
-/// Returns true if the URL can use HTTP, false if it requires HTTPS.
-pub(crate) fn is_safe_for_http(url: &str) -> bool {
-    if url.starts_with("https://") {
-        return true;
-    }
+fn invalid_base_url_message() -> String {
+    "Base URL must use https://, except http:// localhost or private LAN addresses".to_string()
+}
 
-    if !url.starts_with("http://") {
-        return false;
-    }
-
-    // Extract hostname from http://host:port/path
-    let without_scheme = url.trim_start_matches("http://");
-    let host = without_scheme.split(&[':', '/'][..]).next().unwrap_or("");
-
-    // Allow localhost variants
-    if host == "localhost" || host.starts_with("127.") {
-        return true;
-    }
-
-    // Allow private IPv4 ranges (RFC 1918)
-    if host.starts_with("10.") {
-        return true; // 10.0.0.0/8
-    }
-    if host.starts_with("192.168.") {
-        return true; // 192.168.0.0/16
-    }
-    if host.starts_with("172.") {
-        // 172.16.0.0/12 (172.16.0.0 - 172.31.255.255)
-        if let Some(second_octet) = host.split('.').nth(1) {
-            if let Ok(n) = second_octet.parse::<u8>() {
-                if (16..=31).contains(&n) {
-                    return true;
-                }
-            }
+fn normalized_base_url_for_provider(provider: &ProviderType, url: &str) -> Result<String, String> {
+    match provider {
+        ProviderType::Custom => normalize_openai_compatible_base_url(url),
+        ProviderType::Ollama | ProviderType::OpenRouter => normalize_direct_api_base_url(url),
+        ProviderType::OpenAI | ProviderType::Anthropic | ProviderType::GoogleGemini => {
+            normalize_direct_api_base_url(url)
         }
     }
-
-    false
+    .map_err(|_| invalid_base_url_message())
 }
 
 fn render_chromed_input(
@@ -574,15 +549,18 @@ impl DirectApiSettingsPageView {
                 ctx.notify();
                 return;
             }
-            if !url.is_empty() && !is_safe_for_http(&url) {
-                *self.test_result.borrow_mut() = Some(Err(
-                    "Base URL must use https:// (http:// only allowed for localhost/LAN)"
-                        .to_string(),
-                ));
-                ctx.notify();
-                return;
+            if url.is_empty() {
+                None
+            } else {
+                match normalized_base_url_for_provider(&provider, &url) {
+                    Ok(url) => Some(url),
+                    Err(msg) => {
+                        *self.test_result.borrow_mut() = Some(Err(msg));
+                        ctx.notify();
+                        return;
+                    }
+                }
             }
-            (!url.is_empty()).then_some(url)
         } else {
             None
         };
@@ -673,7 +651,14 @@ impl DirectApiSettingsPageView {
             if url.is_empty() {
                 None
             } else {
-                Some(url)
+                match normalized_base_url_for_provider(&provider_type, &url) {
+                    Ok(url) => Some(url),
+                    Err(msg) => {
+                        *self.test_result.borrow_mut() = Some(Err(msg));
+                        ctx.notify();
+                        return;
+                    }
+                }
             }
         } else {
             None
@@ -694,23 +679,10 @@ impl DirectApiSettingsPageView {
                 }
             },
             None => match provider_id {
-                ProviderId::OpenRouter => {
-                    // Validate base URL if provided
-                    if let Some(ref url) = base_url {
-                        if !is_safe_for_http(url) {
-                            *self.test_result.borrow_mut() = Some(Err(
-                                "Base URL must use https:// (http:// only allowed for localhost/LAN)"
-                                    .to_string(),
-                            ));
-                            ctx.notify();
-                            return;
-                        }
-                    }
-                    Arc::new(OpenRouterListProvider::new(
-                        api_key.unwrap_or_default(),
-                        base_url,
-                    ))
-                }
+                ProviderId::OpenRouter => Arc::new(OpenRouterListProvider::new(
+                    api_key.unwrap_or_default(),
+                    base_url,
+                )),
                 ProviderId::Custom => {
                     let Some(url) = base_url else {
                         *self.test_result.borrow_mut() =
@@ -718,16 +690,14 @@ impl DirectApiSettingsPageView {
                         ctx.notify();
                         return;
                     };
-                    // Validate base URL to prevent plaintext leaks or malformed requests
-                    if !is_safe_for_http(&url) {
-                        *self.test_result.borrow_mut() = Some(Err(
-                            "Base URL must use https:// (http:// only allowed for localhost/LAN)"
-                                .to_string(),
-                        ));
-                        ctx.notify();
-                        return;
+                    match CustomListProvider::new(url, api_key) {
+                        Ok(provider) => Arc::new(provider),
+                        Err(_) => {
+                            *self.test_result.borrow_mut() = Some(Err(invalid_base_url_message()));
+                            ctx.notify();
+                            return;
+                        }
                     }
-                    Arc::new(CustomListProvider::new(url, api_key))
                 }
                 ProviderId::OpenAI
                 | ProviderId::Anthropic
