@@ -50,25 +50,32 @@ pub fn direct_api_model_choices_from_parts(
 
 fn direct_api_providers_with_possible_models(keys: &ApiKeys) -> Vec<ProviderId> {
     let mut providers = Vec::new();
-    if has_non_empty_value(&keys.openai) {
+    if provider_is_enabled(keys, ProviderId::OpenAI) && has_non_empty_value(&keys.openai) {
         providers.push(ProviderId::OpenAI);
     }
-    if has_non_empty_value(&keys.anthropic) {
+    if provider_is_enabled(keys, ProviderId::Anthropic) && has_non_empty_value(&keys.anthropic) {
         providers.push(ProviderId::Anthropic);
     }
-    if has_non_empty_value(&keys.google) {
+    if provider_is_enabled(keys, ProviderId::GoogleGemini) && has_non_empty_value(&keys.google) {
         providers.push(ProviderId::GoogleGemini);
     }
-    if has_non_empty_value(&keys.ollama_base_url) {
+    if provider_is_enabled(keys, ProviderId::Ollama) && has_non_empty_value(&keys.ollama_base_url) {
         providers.push(ProviderId::Ollama);
     }
-    if has_non_empty_value(&keys.open_router) {
+    if provider_is_enabled(keys, ProviderId::OpenRouter) && has_non_empty_value(&keys.open_router) {
         providers.push(ProviderId::OpenRouter);
     }
-    if has_non_empty_value(&keys.custom_base_url) {
+    if provider_is_enabled(keys, ProviderId::Custom) && has_non_empty_value(&keys.custom_base_url) {
         providers.push(ProviderId::Custom);
     }
     providers
+}
+
+fn provider_is_enabled(keys: &ApiKeys, provider_id: ProviderId) -> bool {
+    keys.enabled_providers
+        .get(&provider_id)
+        .copied()
+        .unwrap_or(true)
 }
 
 fn has_non_empty_value(value: &Option<String>) -> bool {

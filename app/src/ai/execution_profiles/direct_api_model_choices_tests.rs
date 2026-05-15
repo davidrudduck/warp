@@ -37,6 +37,29 @@ fn direct_api_choices_include_safe_default_model_without_cache() {
 }
 
 #[test]
+fn direct_api_choices_ignore_disabled_configured_provider() {
+    let mut keys = ApiKeys {
+        openai: Some("sk-test".to_string()),
+        open_router: Some("sk-or-test".to_string()),
+        ..ApiKeys::default()
+    };
+    keys.enabled_providers.insert(ProviderId::OpenAI, false);
+    keys.enabled_providers.insert(ProviderId::OpenRouter, true);
+    keys.selected_models
+        .insert(ProviderId::OpenRouter, "openrouter/model".to_string());
+
+    let choices = direct_api_model_choices_from_parts(&keys, None);
+
+    assert_eq!(
+        choices
+            .iter()
+            .map(|choice| choice.label.as_str())
+            .collect::<Vec<_>>(),
+        vec!["OpenRouter / openrouter/model"]
+    );
+}
+
+#[test]
 fn direct_api_choices_include_saved_manual_model_without_cache() {
     let mut keys = ApiKeys {
         openai: Some("sk-test".to_string()),

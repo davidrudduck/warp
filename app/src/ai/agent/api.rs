@@ -124,6 +124,10 @@ impl DirectApiRouteConfig {
         selection: &DirectApiProfileModelSelection,
         keys: &ApiKeys,
     ) -> Option<Self> {
+        if !direct_api_provider_is_enabled(keys, selection.provider_id) {
+            return None;
+        }
+
         let api_key = match selection.provider_id {
             ProviderId::OpenAI => Some(non_empty_string(keys.openai.clone())?),
             ProviderId::Anthropic => Some(non_empty_string(keys.anthropic.clone())?),
@@ -156,6 +160,13 @@ impl DirectApiRouteConfig {
             base_url,
         })
     }
+}
+
+fn direct_api_provider_is_enabled(keys: &ApiKeys, provider_id: ProviderId) -> bool {
+    keys.enabled_providers
+        .get(&provider_id)
+        .copied()
+        .unwrap_or(true)
 }
 
 fn non_empty_string(value: Option<String>) -> Option<String> {
@@ -606,6 +617,47 @@ mod tests {
     fn request_params_keep_direct_api_routing_when_direct_api_key_is_missing() {
         App::test((), |mut app| async move {
             let terminal_view_id = install_request_params_singletons(&mut app);
+
+            AIExecutionProfilesModel::handle(&app).update(&mut app, |model, ctx| {
+                let profile_id = *model.active_profile(Some(terminal_view_id), ctx).id();
+                model.set_model_routing(profile_id, ModelRouting::DirectApi, ctx);
+                model.set_direct_api_model(
+                    profile_id,
+                    Some(DirectApiProfileModelSelection {
+                        provider_id: ProviderId::OpenAI,
+                        model_id: "gpt-4o-mini".to_string(),
+                    }),
+                    ctx,
+                );
+            });
+
+            let params = app.update(|ctx| {
+                let request_input = request_input();
+                RequestParams::new(
+                    Some(terminal_view_id),
+                    SessionContext::new_for_test(),
+                    &request_input,
+                    conversation_data(),
+                    None,
+                    ctx,
+                )
+            });
+
+            assert_eq!(params.model_routing, ModelRouting::DirectApi);
+            assert!(params.direct_api_route_config.is_none());
+            assert_eq!(params.api_keys, None);
+        });
+    }
+
+    #[test]
+    fn request_params_do_not_route_to_disabled_direct_api_provider() {
+        App::test((), |mut app| async move {
+            let terminal_view_id = install_request_params_singletons(&mut app);
+
+            ApiKeyManager::handle(&app).update(&mut app, |manager, ctx| {
+                manager.set_openai_key(Some("sk-direct".to_string()), ctx);
+                manager.set_provider_enabled(ProviderId::OpenAI, false, ctx);
+            });
 
             AIExecutionProfilesModel::handle(&app).update(&mut app, |model, ctx| {
                 let profile_id = *model.active_profile(Some(terminal_view_id), ctx).id();

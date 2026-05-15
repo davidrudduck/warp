@@ -70,10 +70,25 @@ fn from_str_as_str_roundtrip_for_each_provider() {
         let label = provider.as_str();
         assert_eq!(
             ProviderType::from_str(label),
-            Some(provider.clone()),
+            Some(provider),
             "round-trip failed for {label}"
         );
     }
+}
+
+#[test]
+fn providers_are_alphabetical_with_custom_last() {
+    assert_eq!(
+        ProviderType::all(),
+        vec![
+            ProviderType::Anthropic,
+            ProviderType::GoogleGemini,
+            ProviderType::Ollama,
+            ProviderType::OpenAI,
+            ProviderType::OpenRouter,
+            ProviderType::Custom,
+        ]
+    );
 }
 
 #[test]
@@ -340,18 +355,24 @@ fn save_path_keeps_key_buffer_masked_for_follow_up_actions() {
         let (_window_id, view) =
             app.add_window(WindowStyle::NotStealFocus, DirectApiSettingsPageView::new);
         view.update(&mut app, |view, ctx| {
-            view.api_key_editor.update(ctx, |editor, ctx| {
+            let row = view
+                .provider_row(ProviderType::OpenAI)
+                .expect("OpenAI row should exist");
+            row.api_key_editor.update(ctx, |editor, ctx| {
                 editor.set_buffer_text("sk-test-key", ctx);
             });
-            view.apply_api_key_visibility(true, ctx);
+            view.apply_api_key_visibility(ProviderType::OpenAI, true, ctx);
 
-            view.handle_save_api_key(ctx);
+            view.handle_save_api_key(ProviderType::OpenAI, ctx);
 
+            let row = view
+                .provider_row(ProviderType::OpenAI)
+                .expect("OpenAI row should exist");
             assert_eq!(
-                view.api_key_editor.as_ref(ctx).buffer_text(ctx),
+                row.api_key_editor.as_ref(ctx).buffer_text(ctx),
                 "sk-test-key"
             );
-            assert!(!view.show_api_key.get());
+            assert!(!row.show_api_key.get());
         });
 
         app.read(|ctx| {
@@ -359,6 +380,75 @@ fn save_path_keeps_key_buffer_masked_for_follow_up_actions() {
             assert_eq!(
                 settings.api_key_openai.value().as_deref(),
                 Some("sk-test-key")
+            );
+        });
+    });
+}
+
+#[test]
+fn provider_rows_load_persisted_base_urls_on_startup() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        DirectAPISettings::register(&mut app);
+        app.add_singleton_model(|_| AuthStateProvider::new_logged_out_for_test());
+        app.add_singleton_model(|_| Appearance::mock());
+        app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
+
+        DirectAPISettings::handle(&app).update(&mut app, |settings, ctx| {
+            settings
+                .base_url_custom
+                .set_value(Some("https://custom.example.com/v1".to_string()), ctx)
+                .expect("custom base URL should save");
+            settings
+                .base_url_openrouter
+                .set_value(Some("https://openrouter.example/v1".to_string()), ctx)
+                .expect("OpenRouter base URL should save");
+            settings
+                .base_url_ollama
+                .set_value(Some("http://localhost:11434/v1".to_string()), ctx)
+                .expect("Ollama base URL should save");
+        });
+
+        let (_window_id, view) =
+            app.add_window(WindowStyle::NotStealFocus, DirectApiSettingsPageView::new);
+        view.read(&app, |view, ctx| {
+            let custom_row = view
+                .provider_row(ProviderType::Custom)
+                .expect("Custom row should exist");
+            assert_eq!(
+                custom_row
+                    .base_url_editor
+                    .as_ref()
+                    .expect("Custom should have a base URL editor")
+                    .as_ref(ctx)
+                    .buffer_text(ctx),
+                "https://custom.example.com/v1"
+            );
+
+            let openrouter_row = view
+                .provider_row(ProviderType::OpenRouter)
+                .expect("OpenRouter row should exist");
+            assert_eq!(
+                openrouter_row
+                    .base_url_editor
+                    .as_ref()
+                    .expect("OpenRouter should have a base URL editor")
+                    .as_ref(ctx)
+                    .buffer_text(ctx),
+                "https://openrouter.example/v1"
+            );
+
+            let ollama_row = view
+                .provider_row(ProviderType::Ollama)
+                .expect("Ollama row should exist");
+            assert_eq!(
+                ollama_row
+                    .base_url_editor
+                    .as_ref()
+                    .expect("Ollama should have a base URL editor")
+                    .as_ref(ctx)
+                    .buffer_text(ctx),
+                "http://localhost:11434/v1"
             );
         });
     });

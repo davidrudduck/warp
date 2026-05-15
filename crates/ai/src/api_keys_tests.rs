@@ -157,6 +157,7 @@ fn parses_legacy_payload_without_new_fields() {
     assert_eq!(keys.openrouter_base_url, None);
     assert_eq!(keys.ollama_base_url, None);
     assert!(keys.selected_models.is_empty());
+    assert!(keys.enabled_providers.is_empty());
 }
 
 #[test]
@@ -170,6 +171,9 @@ fn roundtrips_full_payload() {
         ProviderId::Anthropic,
         "claude-3-5-sonnet-latest".to_string(),
     );
+    let mut enabled_providers = BTreeMap::new();
+    enabled_providers.insert(ProviderId::OpenAI, true);
+    enabled_providers.insert(ProviderId::OpenRouter, false);
 
     let original = ApiKeys {
         google: Some("google-key".to_string()),
@@ -182,6 +186,7 @@ fn roundtrips_full_payload() {
         openrouter_base_url: Some("https://openrouter.ai/api/v1".to_string()),
         ollama_base_url: Some("http://localhost:11434".to_string()),
         selected_models,
+        enabled_providers,
     };
 
     let json = serde_json::to_string(&original).expect("failed to serialize");
@@ -315,6 +320,8 @@ fn direct_api_configuration_writes_to_settings_without_secure_storage() {
             manager.set_custom_base_url(Some("https://api.example.com/v1".to_string()), ctx);
             manager.set_openrouter_base_url(Some("https://openrouter.example/v1".to_string()), ctx);
             manager.set_ollama_base_url(Some("http://localhost:11434".to_string()), ctx);
+            manager.set_provider_enabled(ProviderId::Custom, true, ctx);
+            manager.set_provider_enabled(ProviderId::OpenRouter, false, ctx);
         });
 
         app.read(|ctx| {
@@ -351,6 +358,9 @@ fn direct_api_configuration_writes_to_settings_without_secure_storage() {
         assert!(settings_toml.contains("custom = \"https://api.example.com/v1\""));
         assert!(settings_toml.contains("openrouter = \"https://openrouter.example/v1\""));
         assert!(settings_toml.contains("ollama = \"http://localhost:11434\""));
+        assert!(settings_toml.contains("[agents.direct_api.enabled_providers]"));
+        assert!(settings_toml.contains("Custom = true"));
+        assert!(settings_toml.contains("OpenRouter = false"));
 
         manager.read(&app, |manager, ctx| {
             let keys = manager.keys(ctx);
@@ -367,6 +377,11 @@ fn direct_api_configuration_writes_to_settings_without_secure_storage() {
             assert_eq!(
                 keys.ollama_base_url.as_deref(),
                 Some("http://localhost:11434")
+            );
+            assert_eq!(keys.enabled_providers.get(&ProviderId::Custom), Some(&true));
+            assert_eq!(
+                keys.enabled_providers.get(&ProviderId::OpenRouter),
+                Some(&false)
             );
         });
     });

@@ -35,6 +35,8 @@ pub struct ApiKeys {
     pub ollama_base_url: Option<String>,
     #[serde(default)]
     pub selected_models: std::collections::BTreeMap<ProviderId, String>,
+    #[serde(default)]
+    pub enabled_providers: std::collections::BTreeMap<ProviderId, bool>,
 }
 
 impl ApiKeys {
@@ -269,6 +271,22 @@ impl ApiKeyManager {
         self.write_keys_to_settings(ctx);
     }
 
+    pub fn set_provider_enabled(
+        &mut self,
+        provider: ProviderId,
+        enabled: bool,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.ensure_keys_loaded(ctx);
+
+        if let Some(ref mut keys) = self.keys_cache.borrow_mut().as_mut() {
+            keys.enabled_providers.insert(provider, enabled);
+        }
+
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_settings(ctx);
+    }
+
     /// Returns the selected model for a given provider, falling back to per-provider defaults.
     ///
     /// Call when creating a Direct API conversation to determine the model_id for
@@ -425,6 +443,24 @@ impl ApiKeyManager {
             })
             .collect();
 
+        let enabled_providers = settings
+            .enabled_providers
+            .value()
+            .iter()
+            .filter_map(|(provider_str, enabled)| {
+                let provider_id = match provider_str.as_str() {
+                    "OpenAI" => ProviderId::OpenAI,
+                    "Anthropic" => ProviderId::Anthropic,
+                    "GoogleGemini" => ProviderId::GoogleGemini,
+                    "Ollama" => ProviderId::Ollama,
+                    "OpenRouter" => ProviderId::OpenRouter,
+                    "Custom" => ProviderId::Custom,
+                    _ => return None,
+                };
+                Some((provider_id, *enabled))
+            })
+            .collect();
+
         ApiKeys {
             openai: settings.api_key_openai.value().clone(),
             anthropic: settings.api_key_anthropic.value().clone(),
@@ -436,6 +472,7 @@ impl ApiKeyManager {
             openrouter_base_url: settings.base_url_openrouter.value().clone(),
             ollama_base_url: settings.base_url_ollama.value().clone(),
             selected_models,
+            enabled_providers,
         }
     }
 
@@ -530,6 +567,28 @@ impl ApiKeyManager {
 
             if let Err(e) = settings.selected_models.set_value(selected_models_map, ctx) {
                 log::error!("Failed to save selected models: {e:#}");
+            }
+
+            let enabled_providers_map: std::collections::HashMap<String, bool> = keys
+                .enabled_providers
+                .iter()
+                .map(|(provider_id, enabled)| {
+                    let provider_str = match provider_id {
+                        ProviderId::OpenAI => "OpenAI",
+                        ProviderId::Anthropic => "Anthropic",
+                        ProviderId::GoogleGemini => "GoogleGemini",
+                        ProviderId::Ollama => "Ollama",
+                        ProviderId::OpenRouter => "OpenRouter",
+                        ProviderId::Custom => "Custom",
+                    };
+                    (provider_str.to_string(), *enabled)
+                })
+                .collect();
+            if let Err(e) = settings
+                .enabled_providers
+                .set_value(enabled_providers_map, ctx)
+            {
+                log::error!("Failed to save enabled providers: {e:#}");
             }
         });
     }

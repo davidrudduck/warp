@@ -41,8 +41,10 @@ use warpui::{
 const MODEL_CACHE_TTL: Duration = Duration::from_secs(86_400);
 
 const ITEM_VERTICAL_SPACING: f32 = 24.;
+const ROW_VERTICAL_SPACING: f32 = 14.;
 const DROPDOWN_WIDTH: f32 = 225.;
-const INPUT_MAX_WIDTH: f32 = 360.;
+const ROW_KEY_INPUT_MAX_WIDTH: f32 = 260.;
+const BASE_URL_INPUT_MAX_WIDTH: f32 = 420.;
 const INPUT_BORDER_RADIUS: f32 = 6.;
 const INPUT_PADDING_VERTICAL: f32 = 10.;
 const INPUT_PADDING_HORIZONTAL: f32 = 12.;
@@ -75,9 +77,10 @@ fn normalized_base_url_for_provider(provider: &ProviderType, url: &str) -> Resul
     .map_err(|_| invalid_base_url_message())
 }
 
-fn render_chromed_input(
+fn render_chromed_input_with_max_width(
     editor: ViewHandle<EditorView>,
     appearance: &Appearance,
+    max_width: f32,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
     let bg_fill = theme.surface_2();
@@ -106,21 +109,21 @@ fn render_chromed_input(
         .finish();
 
     ConstrainedBox::new(input)
-        .with_max_width(INPUT_MAX_WIDTH)
+        .with_max_width(max_width)
         .finish()
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DirectApiPageAction {
-    SelectProvider(String),
-    TestConnection,
-    SaveApiKey,
-    UpdateModelList,
-    ToggleApiKeyVisibility,
+    TestConnection(String),
+    SaveApiKey(String),
+    UpdateModelList(String),
+    ToggleProviderEnabled(String),
+    ToggleApiKeyVisibility(String),
     SelectModel(String),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) enum ProviderType {
     OpenAI,
     Anthropic,
@@ -156,13 +159,24 @@ impl ProviderType {
 
     pub(super) fn all() -> Vec<Self> {
         vec![
-            ProviderType::OpenAI,
             ProviderType::Anthropic,
             ProviderType::GoogleGemini,
             ProviderType::Ollama,
+            ProviderType::OpenAI,
             ProviderType::OpenRouter,
             ProviderType::Custom,
         ]
+    }
+
+    pub(super) fn from_provider_id(provider_id: ProviderId) -> Self {
+        match provider_id {
+            ProviderId::OpenAI => ProviderType::OpenAI,
+            ProviderId::Anthropic => ProviderType::Anthropic,
+            ProviderId::GoogleGemini => ProviderType::GoogleGemini,
+            ProviderId::Ollama => ProviderType::Ollama,
+            ProviderId::OpenRouter => ProviderType::OpenRouter,
+            ProviderId::Custom => ProviderType::Custom,
+        }
     }
 
     pub(super) fn needs_base_url(&self) -> bool {
@@ -265,68 +279,61 @@ impl ProviderType {
 pub struct DirectApiSettingsPageView {
     page: PageType<Self>,
     api_key_manager: ModelHandle<ApiKeyManager>,
-    provider_dropdown: ViewHandle<Dropdown<DirectApiPageAction>>,
-    model_dropdown: ViewHandle<Dropdown<DirectApiPageAction>>,
-    api_key_editor: ViewHandle<EditorView>,
-    base_url_editor: ViewHandle<EditorView>,
-    selected_provider: RefCell<ProviderType>,
-    test_result: RefCell<Option<Result<String, String>>>,
-    is_testing: RefCell<bool>,
-    show_api_key: Cell<bool>,
-    test_button: ViewHandle<ActionButton>,
-    save_button: ViewHandle<ActionButton>,
-    update_model_list_button: ViewHandle<ActionButton>,
-    toggle_visibility_button: ViewHandle<ActionButton>,
+    provider_rows: Vec<ProviderRowState>,
     /// JSON-backed cache of provider model lists. Wrapped in `Arc` so the
     /// async fetch closure can clone a reference cheaply without taking
     /// ownership of the view's copy.
     model_cache: Arc<ModelListCache>,
-    /// In-memory snapshot of the cached models for the currently-selected
-    /// provider. Refreshed by `refresh_model_dropdown()` whenever the
-    /// provider changes or a fetch completes.
+}
+
+struct ProviderRowState {
+    provider: ProviderType,
+    api_key_editor: ViewHandle<EditorView>,
+    base_url_editor: Option<ViewHandle<EditorView>>,
+    test_button: ViewHandle<ActionButton>,
+    save_button: ViewHandle<ActionButton>,
+    refresh_button: ViewHandle<ActionButton>,
+    enable_button: ViewHandle<ActionButton>,
+    toggle_visibility_button: ViewHandle<ActionButton>,
+    model_dropdown: ViewHandle<Dropdown<DirectApiPageAction>>,
+    test_result: RefCell<Option<Result<String, String>>>,
+    show_api_key: Cell<bool>,
     cached_models: RefCell<Vec<ModelDescriptor>>,
-    /// Tracks which provider currently has an in-flight model list fetch.
-    /// Used to prevent duplicate fetches and enable early-return on double-click.
-    /// Set to Some(provider_id) when fetch starts, None when fetch completes or errors.
-    fetch_in_flight: Cell<Option<ProviderId>>,
+    model_dropdown_has_items: Cell<bool>,
+    fetch_in_flight: Cell<bool>,
 }
 
 impl DirectApiSettingsPageView {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         let api_key_manager = ApiKeyManager::handle(ctx);
+        let provider_rows = ProviderType::all()
+            .into_iter()
+            .map(|provider| Self::build_provider_row(provider, ctx))
+            .collect();
 
+        let model_cache = Arc::new(ModelListCache::new().unwrap_or_else(|e| {
+            log::warn!("Failed to create ModelListCache, using default: {e}");
+            ModelListCache::default()
+        }));
+
+        let mut view = Self {
+            page: Self::build_page(ctx),
+            api_key_manager,
+            provider_rows,
+            model_cache,
+        };
+
+        view.hydrate_provider_rows_from_settings(ctx);
+        for provider in ProviderType::all() {
+            view.refresh_model_dropdown(provider, ctx);
+        }
+        view.sync_enable_button_labels(ctx);
+        view
+    }
+
+    fn build_provider_row(provider: ProviderType, ctx: &mut ViewContext<Self>) -> ProviderRowState {
         let ui_font_size = Appearance::as_ref(ctx).ui_font_size();
-
-        // Create provider dropdown
-        let provider_dropdown = ctx.add_typed_action_view(|ctx| {
-            let mut dropdown = Dropdown::new(ctx);
-            dropdown.set_top_bar_max_width(DROPDOWN_WIDTH);
-            dropdown.set_menu_width(DROPDOWN_WIDTH, ctx);
-
-            let items = ProviderType::all()
-                .into_iter()
-                .map(|provider| {
-                    DropdownItem::new(
-                        provider.as_str().to_string(),
-                        DirectApiPageAction::SelectProvider(provider.as_str().to_string()),
-                    )
-                })
-                .collect();
-            dropdown.add_items(items, ctx);
-            dropdown.set_selected_by_index(0, ctx);
-            dropdown
-        });
-
-        // Create model dropdown. Starts empty; populated by
-        // `refresh_model_dropdown` once cached models are available.
-        let model_dropdown = ctx.add_typed_action_view(|ctx| {
-            let mut dropdown = Dropdown::new(ctx);
-            dropdown.set_top_bar_max_width(DROPDOWN_WIDTH);
-            dropdown.set_menu_width(DROPDOWN_WIDTH, ctx);
-            dropdown
-        });
-
-        // Create API key input editor (masked by default; toggle button reveals)
+        let provider_name = provider.as_str().to_string();
         let api_key_editor = ctx.add_typed_action_view(|ctx| {
             let options = SingleLineEditorOptions {
                 text: TextOptions {
@@ -341,171 +348,145 @@ impl DirectApiSettingsPageView {
 
         api_key_editor.update(ctx, |editor, ctx| {
             editor.set_buffer_text("", ctx);
-            editor.set_placeholder_text(ProviderType::OpenAI.api_key_placeholder(), ctx);
+            editor.set_placeholder_text(provider.api_key_placeholder(), ctx);
         });
 
-        // Create base URL editor
-        let base_url_editor = ctx.add_typed_action_view(|ctx| {
-            let options = SingleLineEditorOptions {
-                text: TextOptions {
-                    font_size_override: Some(ui_font_size),
+        let base_url_editor = provider.needs_base_url().then(|| {
+            let editor = ctx.add_typed_action_view(|ctx| {
+                let options = SingleLineEditorOptions {
+                    text: TextOptions {
+                        font_size_override: Some(ui_font_size),
+                        ..Default::default()
+                    },
                     ..Default::default()
-                },
-                ..Default::default()
-            };
-            EditorView::single_line(options, ctx)
+                };
+                EditorView::single_line(options, ctx)
+            });
+
+            editor.update(ctx, |editor, ctx| {
+                editor.set_buffer_text(provider.default_base_url(), ctx);
+                editor.set_placeholder_text(provider.base_url_placeholder(), ctx);
+            });
+            editor
         });
 
-        base_url_editor.update(ctx, |editor, ctx| {
-            editor.set_buffer_text("http://localhost:11434", ctx);
-        });
-
-        // Create Test Connection button
-        let test_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Test Connection", NakedTheme).on_click(|ctx| {
-                ctx.dispatch_typed_action(DirectApiPageAction::TestConnection);
+        let test_provider = provider_name.clone();
+        let test_button = ctx.add_typed_action_view(move |_| {
+            let provider = test_provider.clone();
+            ActionButton::new("Test", NakedTheme).on_click(move |ctx| {
+                ctx.dispatch_typed_action(DirectApiPageAction::TestConnection(provider.clone()));
             })
         });
 
-        // Create Save button
-        let save_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Save Settings", NakedTheme).on_click(|ctx| {
-                ctx.dispatch_typed_action(DirectApiPageAction::SaveApiKey);
+        let save_provider = provider_name.clone();
+        let save_button = ctx.add_typed_action_view(move |_| {
+            let provider = save_provider.clone();
+            ActionButton::new("Save", NakedTheme).on_click(move |ctx| {
+                ctx.dispatch_typed_action(DirectApiPageAction::SaveApiKey(provider.clone()));
             })
         });
 
-        // Create Update Model List button
-        let update_model_list_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Update Model List", NakedTheme).on_click(|ctx| {
-                ctx.dispatch_typed_action(DirectApiPageAction::UpdateModelList);
+        let refresh_provider = provider_name.clone();
+        let refresh_button = ctx.add_typed_action_view(move |_| {
+            let provider = refresh_provider.clone();
+            ActionButton::new("Refresh models", NakedTheme).on_click(move |ctx| {
+                ctx.dispatch_typed_action(DirectApiPageAction::UpdateModelList(provider.clone()));
             })
         });
 
-        // Create show/hide visibility toggle for the API Key input
-        let toggle_visibility_button = ctx.add_typed_action_view(|_| {
+        let enable_provider = provider_name.clone();
+        let enable_button = ctx.add_typed_action_view(move |_| {
+            let provider = enable_provider.clone();
+            ActionButton::new("Enable", NakedTheme).on_click(move |ctx| {
+                ctx.dispatch_typed_action(DirectApiPageAction::ToggleProviderEnabled(
+                    provider.clone(),
+                ));
+            })
+        });
+
+        let visibility_provider = provider_name;
+        let toggle_visibility_button = ctx.add_typed_action_view(move |_| {
+            let provider = visibility_provider.clone();
             ActionButton::new("", NakedTheme)
                 .with_icon(Icon::Eye)
                 .with_tooltip("Show API key")
-                .on_click(|ctx| {
-                    ctx.dispatch_typed_action(DirectApiPageAction::ToggleApiKeyVisibility);
+                .on_click(move |ctx| {
+                    ctx.dispatch_typed_action(DirectApiPageAction::ToggleApiKeyVisibility(
+                        provider.clone(),
+                    ));
                 })
         });
 
-        let model_cache = Arc::new(ModelListCache::new().unwrap_or_else(|e| {
-            log::warn!("Failed to create ModelListCache, using default: {e}");
-            ModelListCache::default()
-        }));
+        let model_dropdown = ctx.add_typed_action_view(|ctx| {
+            let mut dropdown = Dropdown::new(ctx);
+            dropdown.set_top_bar_max_width(DROPDOWN_WIDTH);
+            dropdown.set_menu_width(DROPDOWN_WIDTH, ctx);
+            dropdown
+        });
 
-        let mut view = Self {
-            page: Self::build_page(ctx),
-            api_key_manager,
-            provider_dropdown,
-            model_dropdown,
+        ProviderRowState {
+            provider,
             api_key_editor,
             base_url_editor,
-            selected_provider: RefCell::new(ProviderType::OpenAI),
-            test_result: RefCell::new(None),
-            is_testing: RefCell::new(false),
-            show_api_key: Cell::new(false),
             test_button,
             save_button,
-            update_model_list_button,
+            refresh_button,
+            enable_button,
             toggle_visibility_button,
-            model_cache,
+            model_dropdown,
+            test_result: RefCell::new(None),
+            show_api_key: Cell::new(false),
             cached_models: RefCell::new(Vec::new()),
-            fetch_in_flight: Cell::new(None),
-        };
-
-        view.refresh_model_dropdown(ctx);
-        view
+            model_dropdown_has_items: Cell::new(false),
+            fetch_in_flight: Cell::new(false),
+        }
     }
 
     fn build_page(_ctx: &mut ViewContext<Self>) -> PageType<Self> {
         let categories = vec![
             Category::new("", vec![Box::new(TitleWidget::default())]),
-            Category::new(
-                "Provider Configuration",
-                vec![
-                    Box::new(ProviderSelectorWidget::default()),
-                    Box::new(BaseUrlInputWidget::default()),
-                    Box::new(ApiKeyInputWidget::default()),
-                    Box::new(ModelSelectorWidget::default()),
-                    Box::new(ActionButtonsWidget::default()),
-                    Box::new(StatusWidget::default()),
-                ],
-            ),
-            Category::new(
-                "Current Status",
-                vec![Box::new(ConfiguredKeysWidget::default())],
-            ),
+            Category::new("Providers", vec![Box::new(ProviderRowsWidget::default())]),
         ];
 
         PageType::new_categorized(categories, None)
     }
 
-    fn handle_select_provider(&mut self, provider_name: &str, ctx: &mut ViewContext<Self>) {
-        let Some(provider) = ProviderType::from_str(provider_name) else {
-            return;
-        };
-
-        let api_key_placeholder = provider.api_key_placeholder();
-        let base_url_placeholder = provider.base_url_placeholder();
-        let default_base_url = provider.default_base_url();
-        let needs_base_url = provider.needs_base_url();
-
-        self.api_key_editor.update(ctx, |editor, ctx| {
-            editor.set_placeholder_text(api_key_placeholder, ctx);
-        });
-
-        if needs_base_url {
-            self.base_url_editor.update(ctx, |editor, ctx| {
-                // Only seed the buffer when empty — preserve any URL the user
-                // typed previously, e.g. a Custom provider's endpoint, instead
-                // of clobbering it on every re-selection of the dropdown.
-                if editor.buffer_text(ctx).is_empty() {
-                    editor.set_buffer_text(default_base_url, ctx);
-                }
-                editor.set_placeholder_text(base_url_placeholder, ctx);
-            });
-        }
-
-        // Switching providers always clears the API key buffer and re-masks
-        // the field — prevents a key entered for one provider from lingering
-        // (possibly unmasked) under a different provider's label.
-        self.clear_and_remask_api_key(ctx);
-
-        *self.selected_provider.borrow_mut() = provider;
-        *self.test_result.borrow_mut() = None;
-        self.refresh_model_dropdown(ctx);
-        ctx.notify();
+    fn provider_row(&self, provider: ProviderType) -> Option<&ProviderRowState> {
+        self.provider_rows
+            .iter()
+            .find(|row| row.provider == provider)
     }
 
-    fn handle_test_connection(&mut self, ctx: &mut ViewContext<Self>) {
-        let provider = self.selected_provider.borrow().clone();
-        let api_key = self.api_key_editor.as_ref(ctx).buffer_text(ctx);
+    fn handle_test_connection(&mut self, provider: ProviderType, ctx: &mut ViewContext<Self>) {
+        let Some(row) = self.provider_row(provider) else {
+            return;
+        };
+        let api_key = row.api_key_editor.as_ref(ctx).buffer_text(ctx);
 
         // Format validation first — shared with the save path.
         if let Err(msg) = provider.validate_api_key(&api_key) {
-            *self.test_result.borrow_mut() = Some(Err(msg));
+            *row.test_result.borrow_mut() = Some(Err(msg));
             ctx.notify();
             return;
         }
 
         // Custom providers also need a Base URL to be testable.
         if provider == ProviderType::Custom {
-            let base_url = self.base_url_editor.as_ref(ctx).buffer_text(ctx);
+            let base_url = row
+                .base_url_editor
+                .as_ref()
+                .map(|editor| editor.as_ref(ctx).buffer_text(ctx))
+                .unwrap_or_default();
             if base_url.is_empty() {
-                *self.test_result.borrow_mut() =
+                *row.test_result.borrow_mut() =
                     Some(Err("Base URL is required for custom providers".to_string()));
                 ctx.notify();
                 return;
             }
         }
 
-        // Set testing state and update button
-        *self.is_testing.borrow_mut() = true;
-        *self.test_result.borrow_mut() = None;
-        self.test_button.update(ctx, |button, ctx| {
+        *row.test_result.borrow_mut() = None;
+        row.test_button.update(ctx, |button, ctx| {
             button.set_disabled(true, ctx);
         });
         ctx.notify();
@@ -521,31 +502,36 @@ impl DirectApiSettingsPageView {
             | ProviderType::OpenRouter => "API key format valid (full test pending)".to_string(),
         };
 
-        *self.is_testing.borrow_mut() = false;
-        *self.test_result.borrow_mut() = Some(Ok(msg));
-        self.test_button.update(ctx, |button, ctx| {
+        *row.test_result.borrow_mut() = Some(Ok(msg));
+        row.test_button.update(ctx, |button, ctx| {
             button.set_disabled(false, ctx);
         });
         ctx.notify();
     }
 
-    fn handle_save_api_key(&mut self, ctx: &mut ViewContext<Self>) {
-        let provider = self.selected_provider.borrow().clone();
-        let api_key = self.api_key_editor.as_ref(ctx).buffer_text(ctx);
+    fn handle_save_api_key(&mut self, provider: ProviderType, ctx: &mut ViewContext<Self>) {
+        let Some(row) = self.provider_row(provider) else {
+            return;
+        };
+        let api_key = row.api_key_editor.as_ref(ctx).buffer_text(ctx);
 
         // Same format validation as Test Connection — refuses to save a key
         // that would later fail format checks (e.g. a Stripe key pasted into
         // the Anthropic slot).
         if let Err(msg) = provider.validate_api_key(&api_key) {
-            *self.test_result.borrow_mut() = Some(Err(msg));
+            *row.test_result.borrow_mut() = Some(Err(msg));
             ctx.notify();
             return;
         }
 
         let base_url = if provider.needs_base_url() {
-            let url = self.base_url_editor.as_ref(ctx).buffer_text(ctx);
+            let url = row
+                .base_url_editor
+                .as_ref()
+                .map(|editor| editor.as_ref(ctx).buffer_text(ctx))
+                .unwrap_or_default();
             if provider == ProviderType::Custom && url.is_empty() {
-                *self.test_result.borrow_mut() =
+                *row.test_result.borrow_mut() =
                     Some(Err("Base URL is required for custom providers".to_string()));
                 ctx.notify();
                 return;
@@ -556,7 +542,7 @@ impl DirectApiSettingsPageView {
                 match normalized_base_url_for_provider(&provider, &url) {
                     Ok(url) => Some(url),
                     Err(msg) => {
-                        *self.test_result.borrow_mut() = Some(Err(msg));
+                        *row.test_result.borrow_mut() = Some(Err(msg));
                         ctx.notify();
                         return;
                     }
@@ -610,29 +596,61 @@ impl DirectApiSettingsPageView {
 
         // Keep the saved key in the editor for follow-up actions (test,
         // save again, refresh models), but force it back to masked.
-        self.apply_api_key_visibility(false, ctx);
+        self.apply_api_key_visibility(provider, false, ctx);
+        self.sync_enable_button_label(provider, ctx);
 
-        *self.test_result.borrow_mut() = Some(Ok(format!(
-            "{} settings saved successfully",
-            provider.as_str()
-        )));
+        if let Some(row) = self.provider_row(provider) {
+            *row.test_result.borrow_mut() = Some(Ok(format!(
+                "{} settings saved successfully",
+                provider.as_str()
+            )));
+        }
         ctx.notify();
     }
 
-    fn handle_update_model_list(&mut self, ctx: &mut ViewContext<Self>) {
-        let provider_type = self.selected_provider.borrow().clone();
-        let provider_id = provider_type.to_provider_id();
+    fn handle_toggle_provider_enabled(
+        &mut self,
+        provider: ProviderType,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let provider_id = provider.to_provider_id();
+        let currently_enabled = {
+            let keys = self.api_key_manager.as_ref(ctx).keys(ctx);
+            provider_is_enabled(&keys, provider_id)
+        };
+        self.api_key_manager.update(ctx, |manager, ctx| {
+            manager.set_provider_enabled(provider_id, !currently_enabled, ctx);
+        });
+        self.sync_enable_button_label(provider, ctx);
 
-        // Guard: if a fetch is already in flight for this provider, ignore the
-        // double-click to prevent overlapping network calls.
-        if self.fetch_in_flight.get() == Some(provider_id) {
+        if let Some(row) = self.provider_row(provider) {
+            *row.test_result.borrow_mut() = Some(Ok(format!(
+                "{} {}",
+                provider.as_str(),
+                if currently_enabled {
+                    "disabled"
+                } else {
+                    "enabled"
+                }
+            )));
+        }
+        ctx.notify();
+    }
+
+    fn handle_update_model_list(
+        &mut self,
+        provider_type: ProviderType,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let provider_id = provider_type.to_provider_id();
+        let Some(row) = self.provider_row(provider_type) else {
+            return;
+        };
+
+        if row.fetch_in_flight.get() {
             return;
         }
 
-        // Pull the current API key (if any) from the saved settings entries.
-        // The in-memory editor buffer is intentionally not consulted — saving
-        // is required first, which keeps "fetch models" and "save key" flows
-        // distinct and avoids leaking unsaved keys into network calls.
         let api_keys = self.api_key_manager.as_ref(ctx).keys(ctx);
         let api_key = match provider_id {
             ProviderId::OpenAI => api_keys.openai.clone(),
@@ -643,17 +661,19 @@ impl DirectApiSettingsPageView {
             ProviderId::Custom => api_keys.custom.clone(),
         };
 
-        // Resolve base URL for providers that need one, preferring the live
-        // editor buffer so the user can fetch against an unsaved URL.
         let base_url = if provider_type.needs_base_url() {
-            let url = self.base_url_editor.as_ref(ctx).buffer_text(ctx);
+            let url = row
+                .base_url_editor
+                .as_ref()
+                .map(|editor| editor.as_ref(ctx).buffer_text(ctx))
+                .unwrap_or_default();
             if url.is_empty() {
                 None
             } else {
                 match normalized_base_url_for_provider(&provider_type, &url) {
                     Ok(url) => Some(url),
                     Err(msg) => {
-                        *self.test_result.borrow_mut() = Some(Err(msg));
+                        *row.test_result.borrow_mut() = Some(Err(msg));
                         ctx.notify();
                         return;
                     }
@@ -663,15 +683,11 @@ impl DirectApiSettingsPageView {
             None
         };
 
-        // Build the provider-specific list implementation. Three buckets:
-        //   - genai-backed (OpenAI/Anthropic/Gemini/Ollama)
-        //   - OpenRouter (raw reqwest)
-        //   - Custom (raw reqwest, OpenAI-compatible)
         let provider_impl: Arc<dyn ModelListProvider> = match provider_id.as_genai_adapter_kind() {
             Some(_) => match GenaiBackedListProvider::new(provider_id, api_key, base_url.clone()) {
                 Ok(p) => Arc::new(p),
                 Err(e) => {
-                    *self.test_result.borrow_mut() =
+                    *row.test_result.borrow_mut() =
                         Some(Err(format!("Failed to create provider: {e}")));
                     ctx.notify();
                     return;
@@ -684,7 +700,7 @@ impl DirectApiSettingsPageView {
                 )),
                 ProviderId::Custom => {
                     let Some(url) = base_url else {
-                        *self.test_result.borrow_mut() =
+                        *row.test_result.borrow_mut() =
                             Some(Err("Base URL is required for custom providers".to_string()));
                         ctx.notify();
                         return;
@@ -692,7 +708,7 @@ impl DirectApiSettingsPageView {
                     match CustomListProvider::new(url, api_key) {
                         Ok(provider) => Arc::new(provider),
                         Err(_) => {
-                            *self.test_result.borrow_mut() = Some(Err(invalid_base_url_message()));
+                            *row.test_result.borrow_mut() = Some(Err(invalid_base_url_message()));
                             ctx.notify();
                             return;
                         }
@@ -702,22 +718,18 @@ impl DirectApiSettingsPageView {
                 | ProviderId::Anthropic
                 | ProviderId::GoogleGemini
                 | ProviderId::Ollama => {
-                    *self.test_result.borrow_mut() = Some(Err("Unsupported provider".to_string()));
+                    *row.test_result.borrow_mut() = Some(Err("Unsupported provider".to_string()));
                     ctx.notify();
                     return;
                 }
             },
         };
 
-        // Stage a "fetching" message and disable the button so the user
-        // doesn't kick off overlapping fetches against the same provider.
-        *self.test_result.borrow_mut() = Some(Ok("Fetching models...".to_string()));
-        self.update_model_list_button.update(ctx, |button, ctx| {
+        *row.test_result.borrow_mut() = Some(Ok("Fetching models...".to_string()));
+        row.refresh_button.update(ctx, |button, ctx| {
             button.set_disabled(true, ctx);
         });
-
-        // Mark this provider's fetch as in-flight to guard against double-clicks.
-        self.fetch_in_flight.set(Some(provider_id));
+        row.fetch_in_flight.set(true);
 
         ctx.notify();
 
@@ -747,12 +759,12 @@ impl DirectApiSettingsPageView {
         ctx: &mut ViewContext<Self>,
     ) {
         let (provider_id, cache, models_result, duration_ms) = result;
+        let provider = ProviderType::from_provider_id(provider_id);
+        let Some(row) = self.provider_row(provider) else {
+            return;
+        };
 
-        // Clear the in-flight guard for this provider now that the fetch completed
-        // (success or error). This allows subsequent fetches to proceed.
-        if self.fetch_in_flight.get() == Some(provider_id) {
-            self.fetch_in_flight.set(None);
-        }
+        row.fetch_in_flight.set(false);
 
         match models_result {
             Ok(models) => {
@@ -767,12 +779,11 @@ impl DirectApiSettingsPageView {
                 );
                 match cache.set(provider_id, models) {
                     Ok(()) => {
-                        *self.test_result.borrow_mut() =
-                            Some(Ok(format!("Fetched {count} models")));
+                        *row.test_result.borrow_mut() = Some(Ok(format!("Fetched {count} models")));
                     }
                     Err(e) => {
                         log::error!("Failed to cache models: {e}");
-                        *self.test_result.borrow_mut() = Some(Err(format!(
+                        *row.test_result.borrow_mut() = Some(Err(format!(
                             "Fetched {count} models but cache write failed: {e}"
                         )));
                     }
@@ -809,33 +820,32 @@ impl DirectApiSettingsPageView {
                     ModelListError::ParseFailed(msg) => format!("Parse error: {msg}"),
                     ModelListError::Cancelled => "Cancelled".to_string(),
                 };
-                *self.test_result.borrow_mut() = Some(Err(msg));
+                *row.test_result.borrow_mut() = Some(Err(msg));
             }
         }
 
-        // Only refresh the dropdown if the response is for the currently
-        // selected provider — otherwise we'd clobber the user's view with
-        // a stale provider's list.
-        if self.selected_provider.borrow().to_provider_id() == provider_id {
-            self.refresh_model_dropdown(ctx);
-        }
+        self.refresh_model_dropdown(provider, ctx);
 
-        self.update_model_list_button.update(ctx, |button, ctx| {
-            button.set_disabled(false, ctx);
-        });
+        if let Some(row) = self.provider_row(provider) {
+            row.refresh_button.update(ctx, |button, ctx| {
+                button.set_disabled(false, ctx);
+            });
+        }
         ctx.notify();
     }
 
-    fn handle_select_model(&mut self, model_id: String, ctx: &mut ViewContext<Self>) {
-        let provider_id = self.selected_provider.borrow().to_provider_id();
+    fn handle_select_model(
+        &mut self,
+        provider: ProviderType,
+        model_id: String,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let provider_id = provider.to_provider_id();
 
         self.api_key_manager.update(ctx, |manager, ctx| {
             manager.set_selected_model(provider_id, model_id.clone(), ctx);
         });
 
-        // Hash the model ID rather than logging it raw — custom providers can
-        // expose internal model names which we don't want to ship to
-        // telemetry.
         let mut hasher = DefaultHasher::new();
         model_id.hash(&mut hasher);
         let model_id_hash = hasher.finish();
@@ -847,21 +857,14 @@ impl DirectApiSettingsPageView {
             ctx
         );
 
-        *self.test_result.borrow_mut() = Some(Ok(format!("Selected model: {model_id}")));
+        if let Some(row) = self.provider_row(provider) {
+            *row.test_result.borrow_mut() = Some(Ok(format!("Selected model: {model_id}")));
+        }
         ctx.notify();
     }
 
-    /// Rebuild the model dropdown items from the cache for the currently
-    /// selected provider, then restore the previously-selected model (if any
-    /// matches a freshly-cached ID).
-    ///
-    /// **Stale model handling**: If the user's saved selection is no longer
-    /// in the fresh model list, it's added to the dropdown with a "(stale)"
-    /// suffix. This allows the user to see their prior choice and either keep
-    /// it (for temporary provider outages) or switch to a current model. Stale
-    /// models appear at the end of the list after all fresh models.
-    fn refresh_model_dropdown(&mut self, ctx: &mut ViewContext<Self>) {
-        let provider_id = self.selected_provider.borrow().to_provider_id();
+    fn refresh_model_dropdown(&mut self, provider: ProviderType, ctx: &mut ViewContext<Self>) {
+        let provider_id = provider.to_provider_id();
 
         let models = self
             .model_cache
@@ -877,88 +880,167 @@ impl DirectApiSettingsPageView {
             .get(&provider_id)
             .cloned();
 
-        // Build dropdown items from fresh models, then append stale selection
-        // if it's not in the fresh list.
         let mut items: Vec<DropdownItem<DirectApiPageAction>> = models
             .iter()
             .map(|m| {
                 let label = m.display_name.clone().unwrap_or_else(|| m.id.clone());
-                DropdownItem::new(label, DirectApiPageAction::SelectModel(m.id.clone()))
+                DropdownItem::new(
+                    label,
+                    DirectApiPageAction::SelectModel(format!("{}|{}", provider.as_str(), m.id)),
+                )
             })
             .collect();
 
-        // Check if saved selection is stale (not in fresh model list)
         let is_stale = if let Some(ref model_id) = saved_selection {
             !models.iter().any(|m| &m.id == model_id)
         } else {
             false
         };
 
-        // If stale, add it as a special item with "(stale)" suffix at the end.
-        // Truncate the model_id to prevent malicious/buggy upstream providers
-        // from breaking the dropdown layout with excessively long IDs.
         if is_stale {
             if let Some(ref model_id) = saved_selection {
                 let truncated = model_id.chars().take(80).collect::<String>();
                 let stale_label = format!("{truncated} (stale)");
                 items.push(DropdownItem::new(
                     stale_label,
-                    DirectApiPageAction::SelectModel(model_id.clone()),
+                    DirectApiPageAction::SelectModel(format!("{}|{}", provider.as_str(), model_id)),
                 ));
             }
         }
 
-        self.model_dropdown.update(ctx, |dropdown, ctx| {
-            dropdown.set_items(items, ctx);
+        if let Some(row) = self.provider_row(provider) {
+            row.model_dropdown_has_items.set(!items.is_empty());
+            row.model_dropdown.update(ctx, |dropdown, ctx| {
+                dropdown.set_items(items, ctx);
 
-            if !models.is_empty() || is_stale {
-                if let Some(model_id) = saved_selection {
-                    dropdown
-                        .set_selected_by_action(DirectApiPageAction::SelectModel(model_id), ctx);
+                if !models.is_empty() || is_stale {
+                    if let Some(model_id) = saved_selection {
+                        dropdown.set_selected_by_action(
+                            DirectApiPageAction::SelectModel(format!(
+                                "{}|{}",
+                                provider.as_str(),
+                                model_id
+                            )),
+                            ctx,
+                        );
+                    } else {
+                        dropdown.set_selected_by_index(0, ctx);
+                    }
                 } else {
-                    dropdown.set_selected_by_index(0, ctx);
+                    dropdown.set_selected_to_none(ctx);
                 }
-            } else {
-                dropdown.set_selected_to_none(ctx);
-            }
-        });
+            });
 
-        *self.cached_models.borrow_mut() = models;
+            *row.cached_models.borrow_mut() = models;
+        }
     }
 
-    fn handle_toggle_api_key_visibility(&mut self, ctx: &mut ViewContext<Self>) {
-        let new_show = !self.show_api_key.get();
-        self.apply_api_key_visibility(new_show, ctx);
+    fn handle_toggle_api_key_visibility(
+        &mut self,
+        provider: ProviderType,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let Some(row) = self.provider_row(provider) else {
+            return;
+        };
+        let new_show = !row.show_api_key.get();
+        self.apply_api_key_visibility(provider, new_show, ctx);
         ctx.notify();
     }
 
-    /// Drive the API key visibility state machine: editor masking, toggle
-    /// button's active styling, tooltip, and the page's local `show_api_key`
-    /// flag. Centralised so `handle_select_provider` and `handle_save_api_key`
-    /// can reset to masked without duplicating the wiring.
-    fn apply_api_key_visibility(&mut self, show: bool, ctx: &mut ViewContext<Self>) {
-        self.show_api_key.set(show);
+    fn apply_api_key_visibility(
+        &mut self,
+        provider: ProviderType,
+        show: bool,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let Some(row) = self.provider_row(provider) else {
+            return;
+        };
+        row.show_api_key.set(show);
 
-        self.api_key_editor.update(ctx, |editor, ctx| {
+        row.api_key_editor.update(ctx, |editor, ctx| {
             editor.set_is_password(!show, ctx);
         });
 
         let tooltip = visibility_tooltip(show);
-        self.toggle_visibility_button.update(ctx, |button, ctx| {
+        row.toggle_visibility_button.update(ctx, |button, ctx| {
             button.set_active(show, ctx);
             button.set_tooltip(Some(tooltip), ctx);
         });
     }
 
-    /// Clear the API key buffer and force the visibility back to masked.
-    /// Called whenever the provider changes, so a previously-typed
-    /// (possibly revealed) key never bleeds across provider switches.
-    fn clear_and_remask_api_key(&mut self, ctx: &mut ViewContext<Self>) {
-        self.api_key_editor.update(ctx, |editor, ctx| {
-            editor.set_buffer_text("", ctx);
-        });
-        self.apply_api_key_visibility(false, ctx);
+    fn sync_enable_button_labels(&mut self, ctx: &mut ViewContext<Self>) {
+        for provider in ProviderType::all() {
+            self.sync_enable_button_label(provider, ctx);
+        }
     }
+
+    fn hydrate_provider_rows_from_settings(&mut self, ctx: &mut ViewContext<Self>) {
+        let keys = self.api_key_manager.as_ref(ctx).keys(ctx);
+        for provider in ProviderType::all() {
+            let base_url = match provider {
+                ProviderType::Ollama => keys
+                    .ollama_base_url
+                    .clone()
+                    .filter(|url| !url.trim().is_empty())
+                    .unwrap_or_else(|| provider.default_base_url().to_string()),
+                ProviderType::OpenRouter => keys
+                    .openrouter_base_url
+                    .clone()
+                    .filter(|url| !url.trim().is_empty())
+                    .unwrap_or_else(|| provider.default_base_url().to_string()),
+                ProviderType::Custom => keys.custom_base_url.clone().unwrap_or_default(),
+                ProviderType::OpenAI | ProviderType::Anthropic | ProviderType::GoogleGemini => {
+                    continue;
+                }
+            };
+
+            if let Some(row) = self.provider_row(provider) {
+                if let Some(editor) = &row.base_url_editor {
+                    editor.update(ctx, |editor, ctx| {
+                        editor.set_buffer_text(&base_url, ctx);
+                    });
+                }
+            }
+        }
+    }
+
+    fn sync_enable_button_label(&mut self, provider: ProviderType, ctx: &mut ViewContext<Self>) {
+        let provider_id = provider.to_provider_id();
+        let enabled = {
+            let keys = self.api_key_manager.as_ref(ctx).keys(ctx);
+            provider_is_enabled(&keys, provider_id)
+        };
+
+        if let Some(row) = self.provider_row(provider) {
+            row.enable_button.update(ctx, |button, ctx| {
+                button.set_label(if enabled { "Disable" } else { "Enable" }, ctx);
+            });
+        }
+    }
+}
+
+fn provider_is_enabled(keys: &::ai::api_keys::ApiKeys, provider_id: ProviderId) -> bool {
+    keys.enabled_providers
+        .get(&provider_id)
+        .copied()
+        .unwrap_or_else(|| provider_has_required_config(keys, provider_id))
+}
+
+fn provider_has_required_config(keys: &::ai::api_keys::ApiKeys, provider_id: ProviderId) -> bool {
+    match provider_id {
+        ProviderId::OpenAI => has_non_empty_value(&keys.openai),
+        ProviderId::Anthropic => has_non_empty_value(&keys.anthropic),
+        ProviderId::GoogleGemini => has_non_empty_value(&keys.google),
+        ProviderId::Ollama => has_non_empty_value(&keys.ollama_base_url),
+        ProviderId::OpenRouter => has_non_empty_value(&keys.open_router),
+        ProviderId::Custom => has_non_empty_value(&keys.custom_base_url),
+    }
+}
+
+fn has_non_empty_value(value: &Option<String>) -> bool {
+    value.as_ref().is_some_and(|value| !value.trim().is_empty())
 }
 
 impl Entity for DirectApiSettingsPageView {
@@ -970,23 +1052,37 @@ impl TypedActionView for DirectApiSettingsPageView {
 
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
-            DirectApiPageAction::SelectProvider(provider_name) => {
-                self.handle_select_provider(provider_name, ctx);
+            DirectApiPageAction::TestConnection(provider_name) => {
+                if let Some(provider) = ProviderType::from_str(provider_name) {
+                    self.handle_test_connection(provider, ctx);
+                }
             }
-            DirectApiPageAction::TestConnection => {
-                self.handle_test_connection(ctx);
+            DirectApiPageAction::SaveApiKey(provider_name) => {
+                if let Some(provider) = ProviderType::from_str(provider_name) {
+                    self.handle_save_api_key(provider, ctx);
+                }
             }
-            DirectApiPageAction::SaveApiKey => {
-                self.handle_save_api_key(ctx);
+            DirectApiPageAction::UpdateModelList(provider_name) => {
+                if let Some(provider) = ProviderType::from_str(provider_name) {
+                    self.handle_update_model_list(provider, ctx);
+                }
             }
-            DirectApiPageAction::UpdateModelList => {
-                self.handle_update_model_list(ctx);
+            DirectApiPageAction::ToggleProviderEnabled(provider_name) => {
+                if let Some(provider) = ProviderType::from_str(provider_name) {
+                    self.handle_toggle_provider_enabled(provider, ctx);
+                }
             }
-            DirectApiPageAction::ToggleApiKeyVisibility => {
-                self.handle_toggle_api_key_visibility(ctx);
+            DirectApiPageAction::ToggleApiKeyVisibility(provider_name) => {
+                if let Some(provider) = ProviderType::from_str(provider_name) {
+                    self.handle_toggle_api_key_visibility(provider, ctx);
+                }
             }
-            DirectApiPageAction::SelectModel(model_id) => {
-                self.handle_select_model(model_id.clone(), ctx);
+            DirectApiPageAction::SelectModel(payload) => {
+                if let Some((provider_name, model_id)) = payload.split_once('|') {
+                    if let Some(provider) = ProviderType::from_str(provider_name) {
+                        self.handle_select_model(provider, model_id.to_string(), ctx);
+                    }
+                }
             }
         }
     }
@@ -1063,288 +1159,13 @@ impl SettingsWidget for TitleWidget {
 }
 
 #[derive(Default)]
-struct ProviderSelectorWidget {}
+struct ProviderRowsWidget {}
 
-impl SettingsWidget for ProviderSelectorWidget {
+impl SettingsWidget for ProviderRowsWidget {
     type View = DirectApiSettingsPageView;
 
     fn search_terms(&self) -> &str {
-        "provider select openai anthropic ollama gemini dropdown"
-    }
-
-    fn render(
-        &self,
-        view: &DirectApiSettingsPageView,
-        appearance: &Appearance,
-        _app: &AppContext,
-    ) -> Box<dyn Element> {
-        use warpui::elements::ChildView;
-
-        let mut column = Flex::column();
-
-        // Label
-        let label = appearance
-            .ui_builder()
-            .span("Provider")
-            .build()
-            .with_margin_bottom(8.)
-            .finish();
-        column.add_child(label);
-
-        // Dropdown
-        let dropdown = ChildView::new(&view.provider_dropdown).finish();
-        column.add_child(
-            Container::new(dropdown)
-                .with_margin_bottom(ITEM_VERTICAL_SPACING)
-                .finish(),
-        );
-
-        column.finish()
-    }
-}
-
-#[derive(Default)]
-struct BaseUrlInputWidget {}
-
-impl SettingsWidget for BaseUrlInputWidget {
-    type View = DirectApiSettingsPageView;
-
-    fn search_terms(&self) -> &str {
-        "base url endpoint server ollama openrouter custom"
-    }
-
-    fn render(
-        &self,
-        view: &DirectApiSettingsPageView,
-        appearance: &Appearance,
-        _app: &AppContext,
-    ) -> Box<dyn Element> {
-        let provider = view.selected_provider.borrow().clone();
-
-        // Only show for providers that need base URL.
-        if !provider.needs_base_url() {
-            return Container::new(appearance.ui_builder().span("").build().finish()).finish();
-        }
-
-        let mut column = Flex::column();
-
-        // Label
-        let label = appearance
-            .ui_builder()
-            .span("Base URL")
-            .build()
-            .with_margin_bottom(8.)
-            .finish();
-        column.add_child(label);
-
-        // Chromed editor
-        let editor = render_chromed_input(view.base_url_editor.clone(), appearance);
-        column.add_child(
-            Container::new(editor)
-                .with_margin_bottom(ITEM_VERTICAL_SPACING)
-                .finish(),
-        );
-
-        column.finish()
-    }
-}
-
-#[derive(Default)]
-struct ApiKeyInputWidget {}
-
-impl SettingsWidget for ApiKeyInputWidget {
-    type View = DirectApiSettingsPageView;
-
-    fn search_terms(&self) -> &str {
-        "api key input text field password"
-    }
-
-    fn render(
-        &self,
-        view: &DirectApiSettingsPageView,
-        appearance: &Appearance,
-        _app: &AppContext,
-    ) -> Box<dyn Element> {
-        use warpui::elements::ChildView;
-
-        let mut column = Flex::column();
-
-        // Label
-        let label = appearance
-            .ui_builder()
-            .span("API Key")
-            .build()
-            .with_margin_bottom(8.)
-            .finish();
-        column.add_child(label);
-
-        // Chromed editor + eye toggle, side-by-side
-        let editor = render_chromed_input(view.api_key_editor.clone(), appearance);
-        let toggle = ChildView::new(&view.toggle_visibility_button).finish();
-        let row = Flex::row()
-            .with_child(Container::new(editor).with_margin_right(8.).finish())
-            .with_child(toggle)
-            .finish();
-
-        column.add_child(
-            Container::new(row)
-                .with_margin_bottom(ITEM_VERTICAL_SPACING)
-                .finish(),
-        );
-
-        column.finish()
-    }
-}
-
-#[derive(Default)]
-struct ModelSelectorWidget {}
-
-impl SettingsWidget for ModelSelectorWidget {
-    type View = DirectApiSettingsPageView;
-
-    fn search_terms(&self) -> &str {
-        "model select dropdown llm gpt claude gemini llama list"
-    }
-
-    fn render(
-        &self,
-        view: &DirectApiSettingsPageView,
-        appearance: &Appearance,
-        _app: &AppContext,
-    ) -> Box<dyn Element> {
-        use warpui::elements::ChildView;
-
-        // Hide widget when DirectApiModelSelection feature flag is disabled
-        if !FeatureFlag::DirectApiModelSelection.is_enabled() {
-            return Container::new(Flex::column().finish()).finish();
-        }
-
-        let mut column = Flex::column();
-
-        // Label
-        let label = appearance
-            .ui_builder()
-            .span("Model")
-            .build()
-            .with_margin_bottom(8.)
-            .finish();
-        column.add_child(label);
-
-        let cached_models = view.cached_models.borrow();
-
-        if cached_models.is_empty() {
-            // Placeholder when no models are cached yet. Drives users to the
-            // "Update Model List" button before they try to pick a model.
-            let placeholder = appearance
-                .ui_builder()
-                .span("Click 'Update Model List' to fetch available models")
-                .build()
-                .with_margin_bottom(ITEM_VERTICAL_SPACING)
-                .finish();
-            column.add_child(placeholder);
-        } else {
-            let dropdown = ChildView::new(&view.model_dropdown).finish();
-            column.add_child(
-                Container::new(dropdown)
-                    .with_margin_bottom(ITEM_VERTICAL_SPACING)
-                    .finish(),
-            );
-        }
-
-        column.finish()
-    }
-}
-
-#[derive(Default)]
-struct ActionButtonsWidget {}
-
-impl SettingsWidget for ActionButtonsWidget {
-    type View = DirectApiSettingsPageView;
-
-    fn search_terms(&self) -> &str {
-        "test connection save button action"
-    }
-
-    fn render(
-        &self,
-        view: &DirectApiSettingsPageView,
-        _appearance: &Appearance,
-        _app: &AppContext,
-    ) -> Box<dyn Element> {
-        use warpui::elements::ChildView;
-
-        let mut row = Flex::row();
-
-        // Test Connection button
-        row.add_child(
-            Container::new(ChildView::new(&view.test_button).finish())
-                .with_margin_right(12.)
-                .finish(),
-        );
-
-        // Save button
-        row.add_child(
-            Container::new(ChildView::new(&view.save_button).finish())
-                .with_margin_right(12.)
-                .finish(),
-        );
-
-        // Update Model List button
-        row.add_child(ChildView::new(&view.update_model_list_button).finish());
-
-        Container::new(row.finish())
-            .with_margin_bottom(ITEM_VERTICAL_SPACING)
-            .finish()
-    }
-}
-
-#[derive(Default)]
-struct StatusWidget {}
-
-impl SettingsWidget for StatusWidget {
-    type View = DirectApiSettingsPageView;
-
-    fn search_terms(&self) -> &str {
-        "status result error success message feedback"
-    }
-
-    fn render(
-        &self,
-        view: &DirectApiSettingsPageView,
-        appearance: &Appearance,
-        _app: &AppContext,
-    ) -> Box<dyn Element> {
-        let test_result = view.test_result.borrow();
-
-        if let Some(result) = test_result.as_ref() {
-            match result {
-                Ok(msg) => {
-                    let message = format!("✓ {}", msg);
-                    Container::new(appearance.ui_builder().span(message).build().finish())
-                        .with_margin_bottom(ITEM_VERTICAL_SPACING)
-                        .finish()
-                }
-                Err(msg) => {
-                    let message = format!("✗ {}", msg);
-                    Container::new(appearance.ui_builder().span(message).build().finish())
-                        .with_margin_bottom(ITEM_VERTICAL_SPACING)
-                        .finish()
-                }
-            }
-        } else {
-            Container::new(appearance.ui_builder().span("").build().finish()).finish()
-        }
-    }
-}
-
-#[derive(Default)]
-struct ConfiguredKeysWidget {}
-
-impl SettingsWidget for ConfiguredKeysWidget {
-    type View = DirectApiSettingsPageView;
-
-    fn search_terms(&self) -> &str {
-        "configured keys status openai anthropic gemini current"
+        "provider api key save test enable disable model refresh openai anthropic ollama gemini openrouter custom"
     }
 
     fn render(
@@ -1353,75 +1174,133 @@ impl SettingsWidget for ConfiguredKeysWidget {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
+        use warpui::elements::ChildView;
+
+        let keys = view.api_key_manager.as_ref(app).keys(app);
         let mut column = Flex::column();
 
-        let description = appearance
-            .ui_builder()
-            .span("Currently configured API keys:")
-            .build()
-            .with_margin_bottom(12.)
-            .finish();
-        column.add_child(description);
+        for row in &view.provider_rows {
+            let provider_id = row.provider.to_provider_id();
+            let enabled = provider_is_enabled(&keys, provider_id);
 
-        // Show current API key status
-        let keys = view.api_key_manager.as_ref(app).keys(app);
-        let mut has_keys = false;
+            let provider_label = appearance
+                .ui_builder()
+                .span(row.provider.as_str())
+                .build()
+                .finish();
+            let provider_cell = ConstrainedBox::new(provider_label)
+                .with_width(170.)
+                .finish();
 
-        if keys.openai.is_some() {
-            has_keys = true;
-            column.add_child(
-                appearance
-                    .ui_builder()
-                    .span("✓ OpenAI API key configured")
-                    .build()
-                    .with_margin_bottom(4.)
-                    .finish(),
+            let key_editor = render_chromed_input_with_max_width(
+                row.api_key_editor.clone(),
+                appearance,
+                ROW_KEY_INPUT_MAX_WIDTH,
             );
-        }
+            let key_cell = Flex::row()
+                .with_child(Container::new(key_editor).with_margin_right(8.).finish())
+                .with_child(ChildView::new(&row.toggle_visibility_button).finish())
+                .finish();
 
-        if keys.anthropic.is_some() {
-            has_keys = true;
-            column.add_child(
-                appearance
-                    .ui_builder()
-                    .span("✓ Anthropic API key configured")
-                    .build()
-                    .with_margin_bottom(4.)
-                    .finish(),
-            );
-        }
+            let enabled_status = appearance
+                .ui_builder()
+                .span(if enabled { "Enabled" } else { "Disabled" })
+                .build()
+                .finish();
 
-        if keys.google.is_some() {
-            has_keys = true;
-            column.add_child(
-                appearance
-                    .ui_builder()
-                    .span("✓ Google Gemini API key configured")
-                    .build()
-                    .with_margin_bottom(4.)
-                    .finish(),
-            );
-        }
+            let actions = Flex::row()
+                .with_child(
+                    Container::new(ChildView::new(&row.save_button).finish())
+                        .with_margin_right(8.)
+                        .finish(),
+                )
+                .with_child(
+                    Container::new(ChildView::new(&row.test_button).finish())
+                        .with_margin_right(8.)
+                        .finish(),
+                )
+                .with_child(
+                    Container::new(ChildView::new(&row.enable_button).finish())
+                        .with_margin_right(8.)
+                        .finish(),
+                )
+                .with_child(ChildView::new(&row.refresh_button).finish())
+                .finish();
 
-        if keys.open_router.is_some() {
-            has_keys = true;
-            column.add_child(
-                appearance
-                    .ui_builder()
-                    .span("✓ OpenRouter API key configured")
-                    .build()
-                    .with_margin_bottom(4.)
-                    .finish(),
-            );
-        }
+            let top_row = Flex::row()
+                .with_child(
+                    Container::new(provider_cell)
+                        .with_margin_right(12.)
+                        .finish(),
+                )
+                .with_child(Container::new(key_cell).with_margin_right(12.).finish())
+                .with_child(Container::new(actions).with_margin_right(12.).finish())
+                .with_child(enabled_status)
+                .finish();
 
-        if !has_keys {
+            let mut row_column = Flex::column().with_child(top_row);
+
+            if let Some(base_url_editor) = &row.base_url_editor {
+                let base_label = appearance.ui_builder().span("Base URL").build().finish();
+                let base_editor = render_chromed_input_with_max_width(
+                    base_url_editor.clone(),
+                    appearance,
+                    BASE_URL_INPUT_MAX_WIDTH,
+                );
+                let base_row = Flex::row()
+                    .with_child(
+                        Container::new(ConstrainedBox::new(base_label).with_width(170.).finish())
+                            .with_margin_right(12.)
+                            .finish(),
+                    )
+                    .with_child(base_editor)
+                    .finish();
+                row_column.add_child(
+                    Container::new(base_row)
+                        .with_margin_top(8.)
+                        .with_margin_left(182.)
+                        .finish(),
+                );
+            }
+
+            if FeatureFlag::DirectApiModelSelection.is_enabled() {
+                if row.model_dropdown_has_items.get() {
+                    let model_label = appearance.ui_builder().span("Model").build().finish();
+                    let model_row = Flex::row()
+                        .with_child(
+                            Container::new(
+                                ConstrainedBox::new(model_label).with_width(170.).finish(),
+                            )
+                            .with_margin_right(12.)
+                            .finish(),
+                        )
+                        .with_child(ChildView::new(&row.model_dropdown).finish())
+                        .finish();
+                    row_column.add_child(
+                        Container::new(model_row)
+                            .with_margin_top(8.)
+                            .with_margin_left(182.)
+                            .finish(),
+                    );
+                }
+            }
+
+            if let Some(result) = row.test_result.borrow().as_ref() {
+                let message = match result {
+                    Ok(msg) => format!("OK: {msg}"),
+                    Err(msg) => format!("Error: {msg}"),
+                };
+                row_column.add_child(
+                    Container::new(appearance.ui_builder().span(message).build().finish())
+                        .with_margin_top(8.)
+                        .with_margin_left(182.)
+                        .finish(),
+                );
+            }
+
             column.add_child(
-                appearance
-                    .ui_builder()
-                    .span("⚠ No API keys configured yet")
-                    .build()
-                    .with_margin_bottom(4.)
+                Container::new(row_column.finish())
+                    .with_margin_bottom(ROW_VERTICAL_SPACING)
                     .finish(),
             );
         }

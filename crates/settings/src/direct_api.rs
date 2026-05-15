@@ -107,4 +107,15 @@ define_settings_group!(DirectAPISettings, settings: [
         max_table_depth: 1,
         description: "Selected model for each Direct API provider",
     },
+
+    enabled_providers: DirectAPIEnabledProviders {
+        type: HashMap<String, bool>,
+        default: HashMap::new(),
+        supported_platforms: SupportedPlatforms::ALL,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agents.direct_api.enabled_providers",
+        max_table_depth: 1,
+        description: "Whether each Direct API provider is available for agent model routing",
+    },
 ]);
