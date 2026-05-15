@@ -59,7 +59,8 @@ The Direct API feature enables OSS fork users to configure their own LLM provide
         └──────────────┬───────────────┘
                        │
         ┌──────────────▼───────────────┐
-        │  ~/.warp/warp.db             │
+        │  channel state path          │
+        │  warp.sqlite                 │
         │  direct_conversations table  │
         │  direct_messages table       │
         └──────────────────────────────┘
@@ -1216,8 +1217,11 @@ Logs include:
 # Install sqlite3
 brew install sqlite3
 
-# Connect to Warp DB
-sqlite3 ~/.warp/warp.db
+# Connect to the channel-specific Warp DB.
+# For a typical macOS OSS fallback path:
+sqlite3 ~/.warp-oss/warp.sqlite
+#
+# Bundled builds may use the secure/app-group state directory instead.
 
 # List conversations
 sqlite> SELECT conversation_id, provider_kind, model_id, title, message_count

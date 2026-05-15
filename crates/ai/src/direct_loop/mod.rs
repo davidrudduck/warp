@@ -56,14 +56,17 @@ pub async fn collect_and_emit_stream(
     sender: &AgentEventSender,
     mut cancel: &mut FusedCancel,
 ) -> Result<(FinishReason, Option<TokenUsage>, Vec<ToolCall>), ProviderError> {
-    let mut stream = provider.chat_stream(request).await?;
+    let mut stream = futures::select_biased! {
+        _ = cancel => return Err(ProviderError::Cancelled),
+        stream = provider.chat_stream(request).fuse() => stream?,
+    };
 
     // Accumulate tool-call fragments keyed by index.
     let mut pending_tool_calls: Vec<(String, String, String)> = Vec::new(); // (id, name, args)
     let mut collected_tool_calls: Vec<ToolCall> = Vec::new();
 
     loop {
-        futures::select! {
+        futures::select_biased! {
             _ = cancel => return Err(ProviderError::Cancelled),
             event = stream.next().fuse() => match event {
                 Some(Ok(StreamEvent::Start)) => {}
@@ -304,7 +307,7 @@ pub async fn run(
             for (i, tc) in tool_calls.into_iter().enumerate() {
                 let dispatch = dispatch_one(tc, i, conversation_id, &tool_req_tx).fuse();
                 futures::pin_mut!(dispatch);
-                futures::select! {
+                futures::select_biased! {
                     _ = cancel => return Ok(()),
                     block = dispatch => results.push(block?),
                 }
@@ -323,7 +326,7 @@ pub async fn run(
                 .collect();
 
             loop {
-                futures::select! {
+                futures::select_biased! {
                     _ = cancel => return Ok(()),
                     item = pending.next().fuse() => match item {
                         Some(Ok(pair)) => results.push(pair),
