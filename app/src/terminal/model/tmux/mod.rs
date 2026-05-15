@@ -5,6 +5,25 @@ use crate::util::parse_ascii_u32;
 use lazy_static::lazy_static;
 use regex::bytes::{Regex, RegexBuilder};
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PasteBufferName(String);
+
+impl PasteBufferName {
+    pub fn parse(bytes: &[u8]) -> Option<Self> {
+        let suffix = bytes.strip_prefix(b"buffer")?;
+        if suffix.is_empty() || !suffix.iter().all(u8::is_ascii_digit) {
+            return None;
+        }
+
+        let name = std::str::from_utf8(bytes).ok()?.to_string();
+        Some(Self(name))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 pub enum ControlModeEvent {
     /// This event is sent when the control mode has started
     /// we don't have enough info from the tmux output to know

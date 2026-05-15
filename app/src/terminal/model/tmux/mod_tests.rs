@@ -22,3 +22,27 @@ fn test_parse_generator_output() {
     let result = parse_generator_output(input);
     assert!(result.is_none());
 }
+
+#[test]
+fn paste_buffer_name_accepts_tmux_auto_buffer_names() {
+    let name = PasteBufferName::parse(b"buffer123").expect("buffer name should parse");
+    assert_eq!(name.as_str(), "buffer123");
+}
+
+#[test]
+fn paste_buffer_name_rejects_empty_suffix() {
+    assert_eq!(PasteBufferName::parse(b"buffer"), None);
+}
+
+#[test]
+fn paste_buffer_name_rejects_non_buffer_prefix() {
+    assert_eq!(PasteBufferName::parse(b"foo123"), None);
+}
+
+#[test]
+fn paste_buffer_name_rejects_shell_metacharacters() {
+    assert_eq!(
+        PasteBufferName::parse(b"buffer1;display-message owned"),
+        None
+    );
+}

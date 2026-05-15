@@ -274,7 +274,7 @@ git commit -m "ui: add experimental tmux clipboard sync toggle"
 - Modify: `app/src/terminal/model/tmux/mod.rs`
 - Modify: `app/src/terminal/model/tmux/mod_tests.rs`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `app/src/terminal/model/tmux/mod_tests.rs`:
 
@@ -301,7 +301,7 @@ fn paste_buffer_name_rejects_shell_metacharacters() {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify failure**
+- [x] **Step 2: Run tests to verify failure**
 
 Run:
 
@@ -311,7 +311,7 @@ cargo test -p warp terminal::model::tmux::mod_tests::paste_buffer_name --lib
 
 Expected: FAIL with `use of undeclared type PasteBufferName`.
 
-- [ ] **Step 3: Add the type**
+- [x] **Step 3: Add the type**
 
 Add to `app/src/terminal/model/tmux/mod.rs` after the imports:
 
@@ -336,7 +336,7 @@ impl PasteBufferName {
 }
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run:
 
@@ -346,7 +346,7 @@ cargo test -p warp terminal::model::tmux::mod_tests::paste_buffer_name --lib
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app/src/terminal/model/tmux/mod.rs app/src/terminal/model/tmux/mod_tests.rs
