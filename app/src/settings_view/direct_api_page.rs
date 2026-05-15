@@ -573,8 +573,10 @@ impl DirectApiSettingsPageView {
                     manager.set_open_router_key(Some(api_key.clone()), ctx);
                 }
                 ProviderType::Custom => {
-                    // Custom providers can optionally have API keys
-                    manager.set_custom_key((!api_key.is_empty()).then_some(api_key.clone()), ctx);
+                    // Blank optional-key fields mean "leave existing key unchanged".
+                    if !api_key.is_empty() {
+                        manager.set_custom_key(Some(api_key.clone()), ctx);
+                    }
                 }
             }
 

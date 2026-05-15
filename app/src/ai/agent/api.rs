@@ -119,20 +119,53 @@ impl std::fmt::Debug for DirectApiRouteConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DirectApiRouteConfigError {
+    ProviderDisabled(ProviderId),
+}
+
+impl std::fmt::Display for DirectApiRouteConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DirectApiRouteConfigError::ProviderDisabled(provider_id) => {
+                write!(
+                    f,
+                    "Direct API provider {} is disabled",
+                    provider_id.display_name()
+                )
+            }
+        }
+    }
+}
+
 impl DirectApiRouteConfig {
     pub fn from_selection(
         selection: &DirectApiProfileModelSelection,
         keys: &ApiKeys,
-    ) -> Option<Self> {
+    ) -> Result<Option<Self>, DirectApiRouteConfigError> {
         if !direct_api_provider_is_enabled(keys, selection.provider_id) {
-            return None;
+            return Err(DirectApiRouteConfigError::ProviderDisabled(
+                selection.provider_id,
+            ));
         }
 
         let api_key = match selection.provider_id {
-            ProviderId::OpenAI => Some(non_empty_string(keys.openai.clone())?),
-            ProviderId::Anthropic => Some(non_empty_string(keys.anthropic.clone())?),
-            ProviderId::GoogleGemini => Some(non_empty_string(keys.google.clone())?),
-            ProviderId::OpenRouter => Some(non_empty_string(keys.open_router.clone())?),
+            ProviderId::OpenAI => match non_empty_string(keys.openai.clone()) {
+                Some(key) => Some(key),
+                None => return Ok(None),
+            },
+            ProviderId::Anthropic => match non_empty_string(keys.anthropic.clone()) {
+                Some(key) => Some(key),
+                None => return Ok(None),
+            },
+            ProviderId::GoogleGemini => match non_empty_string(keys.google.clone()) {
+                Some(key) => Some(key),
+                None => return Ok(None),
+            },
+            ProviderId::OpenRouter => match non_empty_string(keys.open_router.clone()) {
+                Some(key) => Some(key),
+                None => return Ok(None),
+            },
             ProviderId::Custom => non_empty_string(keys.custom.clone()),
             ProviderId::Ollama => None,
         };
@@ -140,25 +173,38 @@ impl DirectApiRouteConfig {
             ProviderId::OpenRouter => {
                 let url = non_empty_string(keys.openrouter_base_url.clone())
                     .unwrap_or_else(|| OPENROUTER_DEFAULT_BASE_URL.to_string());
-                Some(normalize_direct_api_base_url(&url).ok()?)
+                match normalize_direct_api_base_url(&url).ok() {
+                    Some(url) => Some(url),
+                    None => return Ok(None),
+                }
             }
-            ProviderId::Ollama => Some(
-                normalize_direct_api_base_url(&non_empty_string(keys.ollama_base_url.clone())?)
-                    .ok()?,
-            ),
-            ProviderId::Custom => Some(
-                normalize_direct_api_base_url(&non_empty_string(keys.custom_base_url.clone())?)
-                    .ok()?,
-            ),
+            ProviderId::Ollama => {
+                let Some(url) = non_empty_string(keys.ollama_base_url.clone()) else {
+                    return Ok(None);
+                };
+                match normalize_direct_api_base_url(&url).ok() {
+                    Some(url) => Some(url),
+                    None => return Ok(None),
+                }
+            }
+            ProviderId::Custom => {
+                let Some(url) = non_empty_string(keys.custom_base_url.clone()) else {
+                    return Ok(None);
+                };
+                match normalize_direct_api_base_url(&url).ok() {
+                    Some(url) => Some(url),
+                    None => return Ok(None),
+                }
+            }
             ProviderId::OpenAI | ProviderId::Anthropic | ProviderId::GoogleGemini => None,
         };
 
-        Some(Self {
+        Ok(Some(Self {
             provider_id: selection.provider_id,
             model_id: selection.model_id.clone(),
             api_key,
             base_url,
-        })
+        }))
     }
 }
 
@@ -189,6 +235,7 @@ pub struct RequestParams {
     pub model: LLMId,
     pub model_routing: ModelRouting,
     pub direct_api_route_config: Option<DirectApiRouteConfig>,
+    pub direct_api_route_error: Option<String>,
     #[allow(unused)]
     pub coding_model: LLMId,
     pub cli_agent_model: LLMId,
@@ -324,13 +371,20 @@ impl RequestParams {
             .data()
             .clone();
         let requested_model_routing = profile_data.model_routing.effective();
+        let mut direct_api_route_error = None;
         let direct_api_route_config = if requested_model_routing.is_direct_api() {
             profile_data
                 .direct_api_model
                 .as_ref()
                 .and_then(|selection| {
                     let keys = ApiKeyManager::as_ref(app).keys(app);
-                    DirectApiRouteConfig::from_selection(selection, &keys)
+                    match DirectApiRouteConfig::from_selection(selection, &keys) {
+                        Ok(config) => config,
+                        Err(err) => {
+                            direct_api_route_error = Some(err.to_string());
+                            None
+                        }
+                    }
                 })
         } else {
             None
@@ -418,6 +472,7 @@ impl RequestParams {
             model: request_input.model_id.clone(),
             model_routing,
             direct_api_route_config,
+            direct_api_route_error,
             coding_model: request_input.coding_model_id.clone(),
             cli_agent_model: request_input.cli_agent_model_id.clone(),
             computer_use_model: request_input.computer_use_model_id.clone(),
@@ -609,6 +664,7 @@ mod tests {
 
             assert_eq!(params.model_routing, ModelRouting::DirectApi);
             assert!(params.direct_api_route_config.is_none());
+            assert_eq!(params.direct_api_route_error, None);
             assert_eq!(params.api_keys, None);
         });
     }
@@ -645,6 +701,7 @@ mod tests {
 
             assert_eq!(params.model_routing, ModelRouting::DirectApi);
             assert!(params.direct_api_route_config.is_none());
+            assert_eq!(params.direct_api_route_error, None);
             assert_eq!(params.api_keys, None);
         });
     }
@@ -686,6 +743,10 @@ mod tests {
 
             assert_eq!(params.model_routing, ModelRouting::DirectApi);
             assert!(params.direct_api_route_config.is_none());
+            assert_eq!(
+                params.direct_api_route_error.as_deref(),
+                Some("Direct API provider OpenAI is disabled")
+            );
             assert_eq!(params.api_keys, None);
         });
     }

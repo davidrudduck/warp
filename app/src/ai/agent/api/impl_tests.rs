@@ -31,6 +31,7 @@ fn request_params_with_ask_user_question_enabled(ask_user_question_enabled: bool
         model: model.clone(),
         model_routing: ModelRouting::WarpProvider,
         direct_api_route_config: None,
+        direct_api_route_error: None,
         coding_model: model.clone(),
         cli_agent_model: model.clone(),
         computer_use_model: model,
@@ -67,6 +68,18 @@ fn direct_api_routing_requires_route_config() {
         err.to_string(),
         "Direct API routing is selected but no Direct API model is configured"
     );
+}
+
+#[test]
+fn direct_api_routing_reports_route_resolution_error() {
+    let mut params = request_params_with_ask_user_question_enabled(false);
+    params.model_routing = ModelRouting::DirectApi;
+    params.direct_api_route_config = None;
+    params.direct_api_route_error = Some("Direct API provider OpenAI is disabled".to_string());
+
+    let err = super::super::direct::validate_direct_route(&params).unwrap_err();
+
+    assert_eq!(err.to_string(), "Direct API provider OpenAI is disabled");
 }
 
 #[test]

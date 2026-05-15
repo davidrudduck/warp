@@ -14,6 +14,9 @@ use crate::server::server_api::AIApiError;
 
 pub fn validate_direct_route(params: &RequestParams) -> anyhow::Result<()> {
     let Some(config) = &params.direct_api_route_config else {
+        if let Some(err) = params.direct_api_route_error.as_ref() {
+            anyhow::bail!("{err}");
+        }
         anyhow::bail!("Direct API routing is selected but no Direct API model is configured");
     };
     if config.model_id.trim().is_empty() {
