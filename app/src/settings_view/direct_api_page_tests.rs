@@ -1,5 +1,12 @@
-use super::{visibility_tooltip, ProviderType};
+use super::{visibility_tooltip, DirectApiSettingsPageView, ProviderType};
+use crate::appearance::Appearance;
+use crate::auth::AuthStateProvider;
+use crate::settings_view::keybindings::KeybindingChangedNotifier;
+use crate::test_util::settings::initialize_settings_for_tests;
 use ai::url_validation::validate_direct_api_base_url;
+use warp_core::settings::{DirectAPISettings, Setting};
+use warpui::platform::WindowStyle;
+use warpui::{App, SingletonEntity as _};
 
 fn is_safe_for_http(url: &str) -> bool {
     validate_direct_api_base_url(url).is_ok()
@@ -321,30 +328,40 @@ fn preserves_custom_base_url_buffer_on_reselection() {
     // 3. If empty, leave it empty (don't prefill)
 }
 
-// TODO: Test that save action clears buffer and re-masks
-// This requires ViewContext and mock setup to test view behavior.
-// The test should:
-// 1. Create a DirectApiSettingsPageView
-// 2. Set API key in editor buffer with show_api_key=true
-// 3. Trigger SaveApiKey action
-// 4. Assert that api_key_editor buffer is cleared
-// 5. Assert that show_api_key is reset to false (masked)
-//
-// Implementation blocked on: Need to understand how to create ViewContext
-// and EditorView in tests without full app context.
 #[test]
-#[ignore = "Requires ViewContext mock setup - see TODO comment"]
-fn save_path_clears_buffer_and_remasks() {
-    // Stub: This test validates that saving API key:
-    // - Clears the API key editor buffer after successful save
-    // - Resets show_api_key to false (re-masks)
-    //
-    // Expected behavior from direct_api_page.rs:
-    // When SaveApiKey action completes successfully:
-    // 1. Save key to settings via ApiKeyManager
-    // 2. Clear api_key_editor buffer
-    // 3. Set show_api_key to false
-    // 4. Update test_result with success message
+fn save_path_keeps_key_buffer_masked_for_follow_up_actions() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        DirectAPISettings::register(&mut app);
+        app.add_singleton_model(|_| AuthStateProvider::new_logged_out_for_test());
+        app.add_singleton_model(|_| Appearance::mock());
+        app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
+
+        let (_window_id, view) =
+            app.add_window(WindowStyle::NotStealFocus, DirectApiSettingsPageView::new);
+        view.update(&mut app, |view, ctx| {
+            view.api_key_editor.update(ctx, |editor, ctx| {
+                editor.set_buffer_text("sk-test-key", ctx);
+            });
+            view.apply_api_key_visibility(true, ctx);
+
+            view.handle_save_api_key(ctx);
+
+            assert_eq!(
+                view.api_key_editor.as_ref(ctx).buffer_text(ctx),
+                "sk-test-key"
+            );
+            assert!(!view.show_api_key.get());
+        });
+
+        app.read(|ctx| {
+            let settings = DirectAPISettings::as_ref(ctx);
+            assert_eq!(
+                settings.api_key_openai.value().as_deref(),
+                Some("sk-test-key")
+            );
+        });
+    });
 }
 
 #[test]

@@ -96,6 +96,41 @@ fn with_base_url_sets_openai_compatible_provider_kind() {
     }
 }
 
+#[tokio::test]
+async fn openrouter_stream_sends_authorization_header_to_custom_endpoint() {
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+        .mock("POST", "/chat/completions")
+        .match_header("authorization", "Bearer test-openrouter-key")
+        .with_status(200)
+        .with_header("content-type", "text/event-stream")
+        .with_body(
+            "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"}}]}\n\n\
+             data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n\
+             data: [DONE]\n\n",
+        )
+        .create_async()
+        .await;
+
+    let adapter = GenaiAdapter::new("openrouter", "test-openrouter-key", "moonshotai/kimi-k2.6")
+        .with_base_url(&server.url());
+    let request = ChatRequest {
+        messages: vec![ChatMessage::User(vec![ContentBlock::Text("hello".into())])],
+        tools: vec![],
+        options: Default::default(),
+    };
+
+    let mut stream = adapter
+        .chat_stream(request)
+        .await
+        .expect("stream should start");
+    while let Some(event) = stream.next().await {
+        event.expect("stream event should parse");
+    }
+
+    mock.assert_async().await;
+}
+
 #[test]
 fn stream_end_emits_complete_tool_calls_before_end() {
     let events = convert_genai_stream_event(ChatStreamEvent::End(genai::chat::StreamEnd {

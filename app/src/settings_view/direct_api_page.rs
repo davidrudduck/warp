@@ -608,11 +608,9 @@ impl DirectApiSettingsPageView {
             }
         });
 
-        // Wipe the buffer and re-mask after a successful save. settings.toml
-        // is the source of truth from here on; leaving the cleartext key
-        // visible (and revealable via the eye toggle) after the user has
-        // already saved it is a shoulder-surfing footgun.
-        self.clear_and_remask_api_key(ctx);
+        // Keep the saved key in the editor for follow-up actions (test,
+        // save again, refresh models), but force it back to masked.
+        self.apply_api_key_visibility(false, ctx);
 
         *self.test_result.borrow_mut() = Some(Ok(format!(
             "{} settings saved successfully",
@@ -953,9 +951,8 @@ impl DirectApiSettingsPageView {
     }
 
     /// Clear the API key buffer and force the visibility back to masked.
-    /// Called after a successful save and whenever the provider changes, so
-    /// a previously-typed (possibly revealed) key never bleeds across
-    /// provider switches or lingers after the user has saved it.
+    /// Called whenever the provider changes, so a previously-typed
+    /// (possibly revealed) key never bleeds across provider switches.
     fn clear_and_remask_api_key(&mut self, ctx: &mut ViewContext<Self>) {
         self.api_key_editor.update(ctx, |editor, ctx| {
             editor.set_buffer_text("", ctx);
