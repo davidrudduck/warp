@@ -93,7 +93,7 @@ Direct API keys stay in the channel-specific settings file and are not attached 
 2. Select **OpenAI** from the Provider dropdown
 3. Paste your API key into the **API Key** field
 4. Click **Test Connection**
-5. You should see: ✓ Connected to OpenAI
+5. You should see: ✓ API key format valid (full test pending)
 6. Click **Save Settings**
 
 **Choose a Model**
@@ -124,7 +124,7 @@ Other options:
 2. Select **Anthropic** from the Provider dropdown
 3. Paste your API key
 4. Click **Test Connection**
-5. You should see: ✓ Connected to Anthropic
+5. You should see: ✓ API key format valid (full test pending)
 6. Click **Save Settings**
 
 **Choose a Model**
@@ -155,7 +155,7 @@ Other options:
 2. Select **Google Gemini** from the Provider dropdown
 3. Paste your API key
 4. Click **Test Connection**
-5. You should see: ✓ Connected to Google Gemini
+5. You should see: ✓ API key format valid (full test pending)
 6. Click **Save Settings**
 
 **Choose a Model**
@@ -202,7 +202,7 @@ You should see your downloaded models.
 3. Leave **API Key** blank (not required)
 4. **Base URL** should be `http://localhost:11434` (default)
 5. Click **Test Connection**
-6. You should see: ✓ Connected to Ollama
+6. You should see: ✓ Ollama runs locally - no API key needed
 7. Click **Save Settings**
 
 **Choose a Model**
@@ -241,7 +241,7 @@ Available models from `ollama pull` command:
 3. Paste your API key
 4. **Base URL** should be `https://openrouter.ai/api/v1` (default)
 5. Click **Test Connection**
-6. You should see: ✓ Connected to OpenRouter
+6. You should see: ✓ API key format valid (full test pending)
 7. Click **Save Settings**
 
 **Choose a Model**
@@ -268,7 +268,8 @@ For endpoints compatible with OpenAI's API format (including LM Studio, Vllm, cu
 3. Enter your **API Key** (or leave blank if endpoint doesn't require auth)
 4. Enter your **Base URL** (e.g., `http://localhost:8000`)
 5. Click **Test Connection**
-6. Click **Save Settings**
+6. You should see: ✓ Custom provider configured (full test pending)
+7. Click **Save Settings**
 
 **Example: LM Studio**
 
@@ -285,12 +286,14 @@ After entering your API key:
 1. Click **Test Connection** button
 2. Warp will validate:
    - API key format is correct
-   - Provider endpoint is reachable
-   - Authentication succeeds
+   - Required custom-provider base URL is present
+   - Full provider reachability and authentication testing is pending
 3. You'll see one of:
-   - ✓ Connected to [Provider]
-   - ✗ Authentication failed: Check your API key
-   - ✗ Connection failed: Check your base URL
+   - ✓ API key format valid (full test pending)
+   - ✓ Ollama runs locally - no API key needed
+   - ✓ Custom provider configured (full test pending)
+   - ✗ Provider-specific key validation errors, such as a missing key or an unexpected key prefix
+   - ✗ Base URL is required for custom providers
 
 ## Saving Settings
 
@@ -475,14 +478,14 @@ Model selection is gated behind `FeatureFlag::DirectApiModelSelection` in DOGFOO
 
 ### Common Issues
 
-**Q: "Authentication failed" error**
+**Q: "Authentication failed" error during model refresh or Direct API requests**
 
 - Check API key is exactly correct (no extra spaces)
 - Verify key is still valid (not revoked)
 - Check provider account has billing enabled
 - For OpenAI: Verify organization access if using org API keys
 
-**Q: "Connection failed" error**
+**Q: "Connection failed" error during model refresh or Direct API requests**
 
 - Check internet connection (unless using Ollama)
 - For custom endpoints: Verify base URL is correct and server is running

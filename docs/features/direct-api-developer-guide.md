@@ -470,8 +470,8 @@ pub struct DirectApiSettingsPageView {
 
 1. **Provider Dropdown** — Select from 6 providers
 2. **API Key Input** — EditorView for entering key
-3. **Base URL Input** — For Ollama/custom endpoints (hidden for cloud providers)
-4. **Test Connection Button** — Validates key format and connectivity
+3. **Base URL Input** — Shown for providers with configurable base URLs, including Ollama, OpenRouter, and custom endpoints
+4. **Test Connection Button** — Performs local key-format and required-base-URL validation; full provider reachability and authentication testing is pending
 5. **Save Settings Button** — Persists to DirectAPISettings
 6. **Status Display** — Shows ✓/✗ results
 
@@ -690,7 +690,7 @@ impl ModelListProvider for OpenAIModelProvider {
 - ✅ Anthropic (static list - no public models API)
 - ✅ Google Gemini (static list - no public models API)
 - ❌ Ollama (pending - requires local tags API)
-- ❌ OpenRouter (pending - requires `/v1/models` endpoint)
+- ✅ OpenRouter (via `/v1/models` endpoint)
 - ❌ Custom (not applicable - user configures manually)
 
 #### ModelListCache
