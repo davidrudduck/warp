@@ -10,12 +10,29 @@ The Direct API feature enables OSS fork users to configure their own LLM provide
 ┌──────────────────────────────────────────────┐
 │         Warp Terminal (UI)                   │
 │  Settings → Agents → Direct API              │
+│  Settings → Agents → Profiles                │
 └────────────────┬─────────────────────────────┘
                  │
         ┌────────▼──────────┐
         │  ApiKeyManager    │
         │  (settings.toml)  │
         └────────┬──────────┘
+                 │
+        ┌────────▼──────────┐
+        │ AIExecutionProfile│
+        │ ModelRouting      │
+        └────────┬──────────┘
+                 │
+        ┌────────▼──────────┐
+        │ RequestParams     │
+        │ DirectApiRouteConfig │
+        └────────┬──────────┘
+                 │
+        ┌────────▼─────────────────────────────┐
+        │ generate_multi_agent_output          │
+        │ WarpProvider -> server stream        │
+        │ DirectApi -> local provider stream   │
+        └────────┬─────────────────────────────┘
                  │
         ┌────────▼──────────────────────┐
         │  LlmProvider Trait             │
@@ -101,6 +118,31 @@ app/src/settings_view/
 └── ...
 ```
 
+### app/src/ai/execution_profiles/
+
+Profile routing and profile editor UI:
+
+```text
+app/src/ai/execution_profiles/
+├── profiles.rs                  # AIExecutionProfile, ModelRouting, Direct API selection persistence
+├── direct_api_model_choices.rs  # Provider / Model choices from Direct API settings and cache
+└── editor/
+    ├── mod.rs                   # Model Routing and Direct API model actions
+    └── ui_helpers.rs            # Profile editor routing rows
+```
+
+### app/src/ai/agent/api/
+
+Agent request routing:
+
+```text
+app/src/ai/agent/api/
+├── api.rs                       # RequestParams and DirectApiRouteConfig construction
+├── impl.rs                      # generate_multi_agent_output routing branch
+├── direct.rs                    # Local Direct API response stream
+└── direct_tools.rs              # Provider message/tool conversion
+```
+
 ## Component Details
 
 ### 1. ApiKeyManager — Settings-Backed Key Storage
@@ -129,6 +171,25 @@ impl ApiKeyManager {
 2. **Session Cache**: Once loaded, cached in memory for the session
 3. **Thread-Safe**: Uses Arc<Mutex> but only accessed from main thread (WarpUI invariant)
 4. **Channel-Local**: Uses the active build channel's settings path, so warp-oss and official Warp do not conflict
+
+### 1.1. Per-Profile Direct API Routing
+
+**Files**:
+- `app/src/ai/execution_profiles/profiles.rs`
+- `app/src/ai/execution_profiles/editor/mod.rs`
+- `app/src/ai/execution_profiles/direct_api_model_choices.rs`
+- `app/src/ai/agent/api.rs`
+- `app/src/ai/agent/api/impl.rs`
+- `app/src/ai/agent/api/direct.rs`
+
+Execution profiles now carry `ModelRouting`:
+
+- `WarpProvider` keeps the original Warp provider model path.
+- `DirectApi` uses a profile-level Direct API provider/model selection.
+
+The profile editor renders **Model Routing** above the base model controls. When a profile selects Direct API, the model picker is populated from locally configured Direct API providers and cached model lists. Labels are rendered as `Provider / Model`.
+
+At request time, `RequestParams` carries both `model_routing` and an optional `DirectApiRouteConfig`. `generate_multi_agent_output` clears server API keys and routes Direct API profiles into the local Direct API stream. Direct API keys are read from `DirectAPISettings` and are not attached to Warp server requests for this route.
 
 **Usage**:
 
@@ -461,15 +522,9 @@ fn handle_save_api_key(&mut self, ctx: &mut ViewContext<Self>) {
 
 **File**: `crates/ai/src/logging/mod.rs`
 
-File-based logging with automatic secret redaction.
+File-based logging with automatic secret redaction. `DirectApiLogger` writes to a caller-provided directory, but production Direct API routing currently uses the normal Warp app logging path unless a caller explicitly wires this logger.
 
-**Log Files**:
-
-```bash
-~/.warp/logs/
-├── direct-api.log          # INFO level (always enabled)
-└── direct-api-debug.log    # DEBUG level (toggle in settings)
-```
+On macOS, the OSS app log is `warp-oss.log` under `~/Library/Logs/`.
 
 **Features**:
 
@@ -1145,9 +1200,7 @@ Example: 20-turn conversation uses ~20KB RAM.
 
 ### Enable Debug Logs
 
-In Settings → Agents → Direct API, enable **Debug Logging**.
-
-Logs appear in: `~/.warp/logs/direct-api-debug.log`
+Direct API-specific debug log files are not currently wired in production builds. Use the normal app log for your build, or explicitly wire `DirectApiLogger` to a caller-provided directory when debugging provider calls.
 
 ### Check Direct Loop
 

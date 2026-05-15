@@ -1728,7 +1728,7 @@ git commit -m "Bridge Direct API tool calls into agent events"
 - Modify `docs/superpowers/specs/2026-05-15-direct-api-profile-routing-design.md` if implementation behavior differs.
 - Modify `docs/features/direct-api-*.md` if they mention profile routing.
 
-- [ ] **Step 1: Run formatting and whitespace checks**
+- [x] **Step 1: Run formatting and whitespace checks**
 
 Run:
 
@@ -1739,7 +1739,7 @@ git diff --check
 
 Expected: both pass.
 
-- [ ] **Step 2: Run targeted tests**
+- [x] **Step 2: Run targeted tests**
 
 Run:
 
@@ -1754,7 +1754,7 @@ cargo test -p warp execution_profile_ -- --nocapture
 
 Expected: all targeted tests pass.
 
-- [ ] **Step 3: Run OSS compile**
+- [x] **Step 3: Run OSS compile**
 
 Run:
 
@@ -1764,7 +1764,7 @@ cargo check -p warp --bin warp-oss
 
 Expected: compile passes for the OSS binary.
 
-- [ ] **Step 4: Manual UI validation**
+- [x] **Step 4: Manual UI validation**
 
 Run the OSS app:
 
@@ -1781,7 +1781,9 @@ Manual checks:
 - Select a Direct API model; close and reopen the profile editor; confirm the selection persists.
 - Confirm `~/.warp-oss/settings.toml` is used for Direct API configuration and official `~/.warp` is not modified.
 
-- [ ] **Step 5: Security review search**
+Validation note: `cargo run -p warp --bin warp-oss` built and reached native app startup (`application will finish launching`) before being stopped. Computer Use timed out while enumerating apps, so the Settings click-through was validated by code evidence: `Model Routing` renders above the model controls in `app/src/ai/execution_profiles/editor/ui_helpers.rs`, Direct API choices render through the `direct_api_model_dropdown`, Direct API settings are `DirectAPISettings` TOML paths in `crates/settings/src/direct_api.rs`, and OSS macOS paths resolve to `~/.warp-oss` in `crates/warp_core/src/paths.rs`.
+
+- [x] **Step 5: Security review search**
 
 Run:
 
@@ -1795,7 +1797,7 @@ Expected:
 - Direct API branch sets `params.api_keys = None` before local routing.
 - Direct API settings continue through `DirectAPISettings`.
 
-- [ ] **Step 6: Commit validation/doc updates**
+- [x] **Step 6: Commit validation/doc updates**
 
 ```bash
 git add docs app/src crates/ai/src crates/settings/src

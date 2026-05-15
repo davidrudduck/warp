@@ -2,7 +2,16 @@
 
 ## Selecting a Model
 
-Phase 2 adds per-provider model selection, allowing you to choose which specific model to use for each provider. This is useful when:
+Direct API model use has two layers:
+
+1. **Settings -> Agents -> Direct API** configures provider keys, base URLs, and cached model lists.
+2. **Settings -> Agents -> Profiles** chooses whether each execution profile uses **Warp Provider** or **Direct API** routing.
+
+To use Direct API for Agent Mode, edit the profile and set **Model Routing** to **Direct API**. Then choose a model from **Direct API model**. Profile choices are displayed as `Provider / Model`, for example `OpenAI / gpt-4o-mini`, `Anthropic / claude-3-5-sonnet-20241022`, or `Ollama / llama3`.
+
+Warp Provider remains the default for existing and new profiles. Direct API keys stay local in the channel-specific settings file and are not sent to Warp server requests when a profile routes through Direct API.
+
+Per-provider model selection allows you to choose which specific model to use for each provider. This is useful when:
 
 - You want to use a faster/cheaper model for quick tasks
 - You need a specific model for certain capabilities
@@ -10,10 +19,12 @@ Phase 2 adds per-provider model selection, allowing you to choose which specific
 
 ### Accessing Model Selection
 
-1. Open Warp Settings → Agents → Direct API
-2. Select your provider (e.g., OpenAI, Anthropic)
-3. Enter and save your API key if not already done
-4. Look for the **"Available Models"** dropdown
+1. Open Warp Settings -> Agents -> Direct API.
+2. Select your provider (e.g., OpenAI, Anthropic).
+3. Enter and save your API key or base URL if not already done.
+4. Update or confirm the provider's available model list.
+5. Open Warp Settings -> Agents -> Profiles.
+6. Edit a profile, set **Model Routing** to **Direct API**, then choose the desired `Provider / Model`.
 
 ### Updating the Model List
 
@@ -35,9 +46,9 @@ Fetching models... (shows loading state)
 Models appear in dropdown
 ```
 
-**Step 2: Select Your Model**
+**Step 2: Select Your Model in a Profile**
 
-Once the list is populated, click the dropdown to see:
+Once the list is populated, open Settings -> Agents -> Profiles and switch a profile to Direct API. The profile model dropdown shows provider-qualified choices:
 
 **OpenAI** (example):
 - gpt-4o (default, recommended)
@@ -53,9 +64,9 @@ Once the list is populated, click the dropdown to see:
 - gemini-2.0-flash (default, recommended)
 - gemini-1.5-pro
 
-**Step 3: Save Selection**
+**Step 3: Save the Profile**
 
-Your model choice is saved automatically and persists across:
+Your profile model choice persists across:
 - App restarts
 - Settings page navigation
 - New conversations

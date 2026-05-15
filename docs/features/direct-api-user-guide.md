@@ -30,6 +30,13 @@ Direct API allows you to configure your own LLM provider API keys directly in Wa
 
 ## Accessing Direct API Settings
 
+Direct API setup has two parts:
+
+1. Configure provider keys and base URLs in **Settings -> Agents -> Direct API**.
+2. Enable Direct API per execution profile in **Settings -> Agents -> Profiles**.
+
+Warp Provider remains the default route for existing and new profiles until a profile is explicitly switched to Direct API.
+
 ### Step 1: Open Settings
 
 **macOS**
@@ -55,6 +62,20 @@ You should see a page showing which API keys are currently configured.
 ### Step 3: Configure Provider
 
 See provider-specific setup below.
+
+## Using Direct API in an Agent Profile
+
+After at least one Direct API provider is configured:
+
+1. Open **Settings -> Agents -> Profiles**.
+2. Open the profile you want to edit.
+3. Set **Model Routing** to **Direct API**.
+4. Choose a model from **Direct API model**. Choices are shown as `Provider / Model`, for example `OpenAI / gpt-4o-mini` or `Ollama / llama3`.
+5. Save the profile.
+
+When **Model Routing** is **Warp Provider**, the existing Warp-provided model controls are used. When **Model Routing** is **Direct API**, the profile routes Agent Mode requests locally through the selected Direct API provider/model.
+
+Direct API keys stay in the channel-specific settings file and are not attached to Warp server requests for Direct API-routed profiles. For the warp-oss macOS build, the settings file is `~/.warp-oss/settings.toml`.
 
 ## Provider Setup Guides
 
@@ -281,21 +302,16 @@ After a successful test:
 
 ## Using Your API Key
 
-Once saved, your API key is automatically used whenever you:
+Once saved, your API key is available to execution profiles that use Direct API routing. It is not used by default.
 
-1. **Use Agent Mode in terminal**
-   ```bash
-   @agent help me install Node.js
-   ```
+To use it:
 
-2. **Use Claude Code or compatible CLI agents**
-   ```bash
-   claude-code
-   ```
+1. Open **Settings -> Agents -> Profiles**.
+2. Edit the profile you use for Agent Mode.
+3. Set **Model Routing** to **Direct API**.
+4. Choose a `Provider / Model` value and save the profile.
 
-3. **Access AI features in Warp**
-
-Your API key is **never** sent to Warp's servers—it's used directly with your configured provider.
+Direct API keys are **never** sent to Warp's servers for Direct API-routed profiles. They are used directly with your configured provider.
 
 ## Conversation History
 
@@ -498,7 +514,7 @@ Model selection is gated behind `FeatureFlag::DirectApiModelSelection` in DOGFOO
 
 ### Getting Help
 
-1. **Check logs**: `~/.warp/logs/direct-api.log`
+1. **Check logs**: use the normal app log for your build; on macOS, warp-oss writes `warp-oss.log` under `~/Library/Logs/`
 2. **Join Slack**: https://go.warp.dev/join-preview
 3. **File an issue**: https://github.com/warpdotdev/warp/issues
 4. **Search existing issues**: https://github.com/warpdotdev/warp/issues?q=direct+api
@@ -519,7 +535,7 @@ A: Keys are stored locally in the channel-specific settings file and never sent 
 
 **Q: Can I switch providers mid-conversation?**
 
-A: You can change your API key anytime. New conversations will use the newly configured key. Old conversations remember their original provider.
+A: Yes. Edit the active execution profile in Settings -> Agents -> Profiles, set Model Routing to Direct API, and choose a different `Provider / Model`. The new selection applies to new Agent Mode requests that use that profile; active provider calls already in flight are not changed.
 
 **Q: What happens if I run out of API credits?**
 
@@ -527,7 +543,7 @@ A: Your requests will fail with an authentication error. Check your provider's d
 
 **Q: Do you support model switching?**
 
-A: Future feature. Currently select one model per provider. Reload settings to switch.
+A: Yes. Model selection is supported per execution profile. Use Settings -> Agents -> Profiles, set Model Routing to Direct API, then choose the `Provider / Model` for that profile.
 
 ## Advanced Topics
 
@@ -558,26 +574,11 @@ Then in Warp:
 
 ### Environment Variables
 
-For automation or CI/CD, you can set API keys via environment variables:
-
-```bash
-export WARP_OPENAI_API_KEY="sk-..."
-export WARP_ANTHROPIC_API_KEY="sk-ant-..."
-export WARP_GEMINI_API_KEY="..."
-export WARP_OLLAMA_BASE_URL="http://localhost:11434"
-```
-
-These will be used instead of saved settings values if set.
+Direct API provider credentials are loaded from the channel-specific settings file through `DirectAPISettings`. Environment-variable overrides for Direct API keys or base URLs are not currently supported.
 
 ### Debug Logging
 
-Enable detailed logs for troubleshooting:
-
-1. Settings → Agents → Direct API
-2. Check **Enable Debug Logging**
-3. Logs appear in `~/.warp/logs/direct-api-debug.log`
-
-Re-enable to submit logs when filing issues.
+Direct API-specific debug log files are not currently wired in production builds. Use the normal app log for troubleshooting unless a developer has enabled a custom Direct API logger.
 
 ---
 
