@@ -594,7 +594,7 @@ git commit -m "tmux: format show-buffer command"
 - Modify: `app/src/terminal/model/tmux/mod.rs`
 - Modify: `app/src/terminal/model/ansi/mod.rs`
 
-- [ ] **Step 1: Add control-mode events**
+- [x] **Step 1: Add control-mode events**
 
 In `app/src/terminal/model/tmux/mod.rs`, add variants to `ControlModeEvent`:
 
@@ -609,7 +609,7 @@ In `app/src/terminal/model/tmux/mod.rs`, add variants to `ControlModeEvent`:
     },
 ```
 
-- [ ] **Step 2: Forward paste-buffer messages**
+- [x] **Step 2: Forward paste-buffer messages**
 
 In `app/src/terminal/model/ansi/mod.rs`, update `TmuxPerformer::tmux_control_mode_message`:
 
@@ -622,7 +622,7 @@ In `app/src/terminal/model/ansi/mod.rs`, update `TmuxPerformer::tmux_control_mod
             }
 ```
 
-- [ ] **Step 3: Forward unmatched command output**
+- [x] **Step 3: Forward unmatched command output**
 
 Replace the existing `TmuxMessage::CommandOutput` arm with:
 
@@ -664,11 +664,11 @@ Replace the existing `TmuxMessage::CommandOutput` arm with:
             }
 ```
 
-- [ ] **Step 4: Update exhaustive matches**
+- [x] **Step 4: Update exhaustive matches**
 
 Update any `match ControlModeEvent` call sites to include the two new variants. The main one is `TerminalModel::tmux_control_mode_event` in `app/src/terminal/model/terminal_model.rs`.
 
-- [ ] **Step 5: Run compile check**
+- [x] **Step 5: Run compile check**
 
 Run:
 
@@ -678,7 +678,7 @@ cargo check -p warp --bin warp-oss
 
 Expected: PASS after all exhaustive matches are updated.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add app/src/terminal/model/tmux/mod.rs app/src/terminal/model/ansi/mod.rs app/src/terminal/model/terminal_model.rs

@@ -3216,6 +3216,8 @@ impl ansi::Handler for TerminalModel {
                 self.event_proxy
                     .send_terminal_event(Event::TmuxControlModeReady { primary_pane });
             }
+            tmux::ControlModeEvent::PasteBufferChanged { buffer_name: _ } => {}
+            tmux::ControlModeEvent::CommandOutput { output_lines: _ } => {}
         }
     }
 

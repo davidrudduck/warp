@@ -1713,6 +1713,22 @@ impl<'a, H: Handler + 'a, W: io::Write> TmuxPerformer<'a, H, W> {
             .advance(&mut performer, byte);
     }
 
+    fn handle_internal_tmux_command_output(&mut self, lines: &[Vec<u8>]) -> bool {
+        if matches!(self.state.primary_pane, PrimaryPaneState::Pending { .. }) {
+            for line in lines {
+                if let Some(TmuxCommandResponse::SetPrimaryWindowPane { window_id, pane_id }) =
+                    parse_command(line.clone())
+                {
+                    self.state.pane_for_window.insert(window_id, pane_id);
+                    self.init_primary_pane(window_id, pane_id);
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
     fn finish(self) -> Vec<u8> {
         self.primary_pane_output
     }
@@ -1767,26 +1783,26 @@ where
                 self.parse_error = true;
             }
             TmuxMessage::CommandOutput { output_lines } => {
-                if let Ok(output_lines) = output_lines {
-                    for line in output_lines {
-                        let Some(command) = parse_command(line) else {
-                            continue;
-                        };
-                        match command {
-                            TmuxCommandResponse::SetPrimaryWindowPane { window_id, pane_id } => {
-                                self.state.pane_for_window.insert(window_id, pane_id);
-                                self.init_primary_pane(window_id, pane_id);
-                            }
-                            TmuxCommandResponse::BackgroundWindow { window_id, pane_id } => {
-                                self.state.pane_for_window.insert(window_id, pane_id);
-                            }
-                        }
-                    }
+                let handled_internal_command = match &output_lines {
+                    Ok(lines) => self.handle_internal_tmux_command_output(lines),
+                    Err(_) => false,
+                };
+
+                if !handled_internal_command {
+                    self.handler
+                        .tmux_control_mode_event(ControlModeEvent::CommandOutput {
+                            output_lines,
+                        });
                 }
             }
             TmuxMessage::Unknown { tag: _, rest: _ } => {}
             TmuxMessage::WindowClose { window_id: _ } => {}
-            TmuxMessage::PasteBufferChanged { buffer_name: _ } => {}
+            TmuxMessage::PasteBufferChanged { buffer_name } => {
+                self.handler
+                    .tmux_control_mode_event(ControlModeEvent::PasteBufferChanged {
+                        buffer_name,
+                    });
+            }
         }
     }
 }

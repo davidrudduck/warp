@@ -39,6 +39,12 @@ pub enum ControlModeEvent {
     /// This event is sent when Control Mode informs us of pane output
     /// that is coming from a pane which is not the primary pane.
     BackgroundPaneOutput { pane: u32, byte: u8 },
+    /// A tmux paste buffer changed. The buffer name has already been validated.
+    PasteBufferChanged { buffer_name: PasteBufferName },
+    /// Output from a tmux control-mode command that was not consumed by internal tmux setup parsing.
+    CommandOutput {
+        output_lines: Result<Vec<Vec<u8>>, Vec<Vec<u8>>>,
+    },
     /// This event is sent when Control Mode has been exited.
     Exited,
 }
