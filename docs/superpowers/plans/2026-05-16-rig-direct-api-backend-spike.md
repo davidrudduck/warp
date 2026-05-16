@@ -842,7 +842,7 @@ git commit -m "Add Rig backend config adapter"
 - Modify `crates/ai/src/provider/rig_backend.rs`
 - Modify `crates/ai/src/provider/rig_backend_tests.rs`
 
-- [ ] **Step 1: Add failing deferred-tool tests**
+- [x] **Step 1: Add failing deferred-tool tests**
 
 Add tests:
 
@@ -885,7 +885,7 @@ async fn rig_backend_can_resume_after_external_tool_result() {
 
 The `FakeRigBackend` can be an internal test-only fake over the adapter trait. The important proof is the adapter API shape, not live provider behavior.
 
-- [ ] **Step 2: Run failing tests**
+- [x] **Step 2: Run failing tests**
 
 Run:
 
@@ -895,7 +895,7 @@ cargo test -p ai --features rig_backend rig_backend_emits_tool_call_without_exec
 
 Expected: tests fail until deferred-tool event model exists.
 
-- [ ] **Step 3: Add backend event model**
+- [x] **Step 3: Add backend event model**
 
 Add:
 
@@ -921,7 +921,7 @@ pub enum RigBackendEvent {
 
 Map this to the existing `StreamEvent` later. Keep Rig-specific concerns out of the UI layer.
 
-- [ ] **Step 4: Add spike adapter methods**
+- [x] **Step 4: Add spike adapter methods**
 
 Add:
 
@@ -947,7 +947,7 @@ impl RigDirectBackend {
 
 Implement `stream_turn_with_rig` with the smallest real Rig integration that compiles. If Rig cannot expose a stream before tool execution, stop and mark the spike failed.
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run:
 
@@ -957,7 +957,7 @@ cargo test -p ai --features rig_backend rig_backend -- --nocapture
 
 Expected: fake deferred-tool tests pass; real Rig integration compiles.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add crates/ai/src/provider/rig_backend.rs crates/ai/src/provider/rig_backend_tests.rs

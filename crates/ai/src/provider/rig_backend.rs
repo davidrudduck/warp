@@ -1,3 +1,21 @@
+use super::{
+    ChatMessage, ChatStream, ContentBlock, FinishReason, ProviderError, StreamEvent, TokenUsage,
+    ToolCall, ToolResultContent,
+};
+use futures::StreamExt;
+use rig_core::client::{CompletionClient, Nothing};
+use rig_core::completion::{
+    CompletionError, CompletionModel, CompletionRequest, GetTokenUsage, ToolDefinition,
+};
+use rig_core::message::{
+    AssistantContent as RigAssistantContent, Message as RigMessage, Text as RigText,
+    ToolCall as RigToolCall, ToolResultContent as RigToolResultContent,
+    UserContent as RigUserContent,
+};
+use rig_core::streaming::{StreamedAssistantContent, ToolCallDeltaContent};
+use rig_core::OneOrMany;
+use std::collections::HashMap;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RigProviderKind {
     OpenAI,
@@ -62,6 +80,438 @@ impl RigBackendConfig {
                 Ok(())
             }
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum RigBackendEvent {
+    Start,
+    TextChunk(String),
+    ReasoningChunk(String),
+    ToolCallDelta {
+        index: usize,
+        id: String,
+        name: String,
+        args_fragment: String,
+    },
+    ToolCallReady(ToolCall),
+    End {
+        finish_reason: FinishReason,
+        usage: Option<TokenUsage>,
+    },
+}
+
+pub type RigEventStream =
+    std::pin::Pin<Box<dyn futures::Stream<Item = Result<RigBackendEvent, ProviderError>> + Send>>;
+
+pub struct RigDirectBackend {
+    config: RigBackendConfig,
+}
+
+impl RigDirectBackend {
+    pub fn new(config: RigBackendConfig) -> anyhow::Result<Self> {
+        config.validate()?;
+        Ok(Self { config })
+    }
+
+    pub async fn stream_turn(&self, request: super::ChatRequest) -> anyhow::Result<ChatStream> {
+        let rig_stream = stream_turn_with_rig(self.config.clone(), request).await?;
+        Ok(rig_event_stream_to_chat_stream(rig_stream))
+    }
+}
+
+pub async fn stream_turn_with_rig(
+    config: RigBackendConfig,
+    request: super::ChatRequest,
+) -> anyhow::Result<RigEventStream> {
+    config.validate()?;
+    match config.provider_kind {
+        RigProviderKind::OpenAI => {
+            let client = rig_core::providers::openai::Client::new(required_api_key(&config)?)
+                .map_err(rig_client_error)?;
+            stream_with_model(client.completion_model(config.model_id), request).await
+        }
+        RigProviderKind::Anthropic => {
+            let client = rig_core::providers::anthropic::Client::new(required_api_key(&config)?)
+                .map_err(rig_client_error)?;
+            stream_with_model(client.completion_model(config.model_id), request).await
+        }
+        RigProviderKind::GoogleGemini => {
+            let client = rig_core::providers::gemini::Client::new(required_api_key(&config)?)
+                .map_err(rig_client_error)?;
+            stream_with_model(client.completion_model(config.model_id), request).await
+        }
+        RigProviderKind::Ollama => {
+            let client = if let Some(base_url) = config.base_url.as_deref() {
+                rig_core::providers::ollama::Client::builder()
+                    .api_key(config.api_key.clone().unwrap_or_default())
+                    .base_url(base_url)
+                    .build()
+                    .map_err(rig_client_error)?
+            } else {
+                rig_core::providers::ollama::Client::new(Nothing).map_err(rig_client_error)?
+            };
+            stream_with_model(client.completion_model(config.model_id), request).await
+        }
+        RigProviderKind::OpenRouter => {
+            let client = rig_core::providers::openrouter::Client::new(required_api_key(&config)?)
+                .map_err(rig_client_error)?;
+            stream_with_model(client.completion_model(config.model_id), request).await
+        }
+        RigProviderKind::CustomOpenAICompatible => {
+            let base_url = config.base_url.clone().ok_or_else(|| {
+                ProviderError::UnsupportedModel(
+                    "Rig Direct API backend requires a base URL".to_string(),
+                )
+            })?;
+            let client = rig_core::providers::openai::CompletionsClient::builder()
+                .api_key(config.api_key.clone().unwrap_or_default())
+                .base_url(base_url)
+                .build()
+                .map_err(rig_client_error)?;
+            stream_with_model(client.completion_model(config.model_id), request).await
+        }
+    }
+}
+
+async fn stream_with_model<M>(
+    model: M,
+    request: super::ChatRequest,
+) -> anyhow::Result<RigEventStream>
+where
+    M: CompletionModel + 'static,
+    M::StreamingResponse: 'static,
+{
+    let completion_request = rig_completion_request_from_chat_request(request)?;
+    let stream = model
+        .stream(completion_request)
+        .await
+        .map_err(rig_completion_error)?;
+    let start = futures::stream::once(async { Ok(RigBackendEvent::Start) });
+    let mut mapper = RigStreamMapper::default();
+    let mapped = stream.filter_map(move |item| {
+        let event = match item {
+            Ok(item) => mapper.map_stream_item(item).transpose(),
+            Err(err) => Some(Err(rig_completion_error(err))),
+        };
+        async move { event }
+    });
+    Ok(Box::pin(start.chain(mapped)))
+}
+
+fn rig_completion_request_from_chat_request(
+    request: super::ChatRequest,
+) -> Result<CompletionRequest, ProviderError> {
+    let messages = request
+        .messages
+        .into_iter()
+        .map(rig_message_from_chat_message)
+        .collect::<Result<Vec<_>, _>>()?;
+    let chat_history = OneOrMany::many(messages).map_err(|_| {
+        ProviderError::StreamParse("Rig request requires at least one message".to_string())
+    })?;
+
+    Ok(CompletionRequest {
+        model: None,
+        preamble: request.options.system,
+        chat_history,
+        documents: Vec::new(),
+        tools: request
+            .tools
+            .into_iter()
+            .map(|tool| ToolDefinition {
+                name: tool.name,
+                description: tool.description,
+                parameters: tool.input_schema,
+            })
+            .collect(),
+        temperature: request.options.temperature.map(f64::from),
+        max_tokens: request.options.max_tokens.map(u64::from),
+        tool_choice: None,
+        additional_params: None,
+        output_schema: None,
+    })
+}
+
+fn rig_message_from_chat_message(message: ChatMessage) -> Result<RigMessage, ProviderError> {
+    match message {
+        ChatMessage::System(text) => Ok(RigMessage::system(text)),
+        ChatMessage::User(blocks) => {
+            let content = blocks
+                .into_iter()
+                .map(rig_user_content_from_content_block)
+                .collect::<Result<Vec<_>, _>>()?;
+            let content = OneOrMany::many(content).map_err(|_| {
+                ProviderError::StreamParse("Rig user message requires content".to_string())
+            })?;
+            Ok(RigMessage::User { content })
+        }
+        ChatMessage::Assistant { text, tool_calls } => {
+            let mut content = Vec::new();
+            if let Some(text) = text.filter(|text| !text.is_empty()) {
+                content.push(RigAssistantContent::text(text));
+            }
+            content.extend(tool_calls.into_iter().map(rig_assistant_tool_call));
+            let content = OneOrMany::many(content).map_err(|_| {
+                ProviderError::StreamParse(
+                    "Rig assistant message requires text or tool calls".to_string(),
+                )
+            })?;
+            Ok(RigMessage::Assistant { id: None, content })
+        }
+    }
+}
+
+fn rig_user_content_from_content_block(
+    block: ContentBlock,
+) -> Result<RigUserContent, ProviderError> {
+    match block {
+        ContentBlock::Text(text) => Ok(RigUserContent::text(text)),
+        ContentBlock::ToolResult {
+            tool_use_id,
+            content,
+            is_error,
+        } => {
+            let mut text = tool_result_content_text(content);
+            if is_error {
+                text = format!("Error: {text}");
+            }
+            Ok(RigUserContent::tool_result(
+                tool_use_id,
+                OneOrMany::one(RigToolResultContent::Text(RigText { text })),
+            ))
+        }
+        ContentBlock::ToolUse { id, name, input } => Ok(RigUserContent::Text(RigText {
+            text: serde_json::to_string(&serde_json::json!({
+                "tool_call": {
+                    "id": id,
+                    "name": name,
+                    "input": input,
+                }
+            }))
+            .map_err(|err| ProviderError::StreamParse(err.to_string()))?,
+        })),
+        ContentBlock::Image { .. } => Err(ProviderError::UnsupportedModel(
+            "Rig Direct API backend does not yet support image content".to_string(),
+        )),
+    }
+}
+
+fn rig_assistant_tool_call(tool_call: ToolCall) -> RigAssistantContent {
+    RigAssistantContent::tool_call(tool_call.id, tool_call.name, tool_call.input)
+}
+
+fn tool_result_content_text(content: ToolResultContent) -> String {
+    match content {
+        ToolResultContent::Text(text) => text,
+        ToolResultContent::Blocks(blocks) => blocks
+            .into_iter()
+            .map(|block| match block {
+                ContentBlock::Text(text) => text,
+                ContentBlock::ToolResult {
+                    tool_use_id,
+                    content,
+                    is_error,
+                } => {
+                    let text = tool_result_content_text(content);
+                    if is_error {
+                        format!("{tool_use_id}: error: {text}")
+                    } else {
+                        format!("{tool_use_id}: {text}")
+                    }
+                }
+                ContentBlock::ToolUse { id, name, input } => {
+                    format!("{id}: {name}({input})")
+                }
+                ContentBlock::Image { .. } => "<image omitted>".to_string(),
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+    }
+}
+
+#[derive(Default)]
+struct RigStreamMapper {
+    tool_call_indices: HashMap<String, usize>,
+    chunked_tool_calls: std::collections::HashSet<String>,
+    chunked_tool_calls_with_args: std::collections::HashSet<String>,
+    saw_tool_call: bool,
+}
+
+impl RigStreamMapper {
+    fn map_stream_item<R>(
+        &mut self,
+        item: StreamedAssistantContent<R>,
+    ) -> Result<Option<RigBackendEvent>, ProviderError>
+    where
+        R: Clone + Unpin + GetTokenUsage,
+    {
+        match item {
+            StreamedAssistantContent::Text(text) => Ok(Some(RigBackendEvent::TextChunk(text.text))),
+            StreamedAssistantContent::ToolCall {
+                tool_call,
+                internal_call_id,
+            } => {
+                self.saw_tool_call = true;
+                let index = self.tool_index_for_internal_call_id(&internal_call_id);
+                if self.chunked_tool_calls.contains(&internal_call_id) {
+                    if !self
+                        .chunked_tool_calls_with_args
+                        .contains(&internal_call_id)
+                    {
+                        return Ok(Some(RigBackendEvent::ToolCallDelta {
+                            index,
+                            id: String::new(),
+                            name: String::new(),
+                            args_fragment: serde_json::to_string(&tool_call.function.arguments)
+                                .map_err(|err| ProviderError::StreamParse(err.to_string()))?,
+                        }));
+                    }
+                    return Ok(None);
+                }
+                Ok(Some(RigBackendEvent::ToolCallReady(tool_call_from_rig(
+                    tool_call,
+                ))))
+            }
+            StreamedAssistantContent::ToolCallDelta {
+                id,
+                internal_call_id,
+                content,
+            } => {
+                self.saw_tool_call = true;
+                let index = self.tool_index_for_internal_call_id(&internal_call_id);
+                self.chunked_tool_calls.insert(internal_call_id.clone());
+                let (name, args_fragment) = match content {
+                    ToolCallDeltaContent::Name(name) => (name, String::new()),
+                    ToolCallDeltaContent::Delta(args_fragment) => {
+                        self.chunked_tool_calls_with_args
+                            .insert(internal_call_id.clone());
+                        (String::new(), args_fragment)
+                    }
+                };
+                Ok(Some(RigBackendEvent::ToolCallDelta {
+                    index,
+                    id,
+                    name,
+                    args_fragment,
+                }))
+            }
+            StreamedAssistantContent::Reasoning(reasoning) => Ok(Some(
+                RigBackendEvent::ReasoningChunk(reasoning.display_text()),
+            )),
+            StreamedAssistantContent::ReasoningDelta { id: _, reasoning } => {
+                Ok(Some(RigBackendEvent::ReasoningChunk(reasoning)))
+            }
+            StreamedAssistantContent::Final(response) => Ok(Some(RigBackendEvent::End {
+                finish_reason: if self.saw_tool_call {
+                    FinishReason::ToolUse
+                } else {
+                    FinishReason::Stop
+                },
+                usage: response.token_usage().map(token_usage_from_rig),
+            })),
+        }
+    }
+
+    fn tool_index_for_internal_call_id(&mut self, internal_call_id: &str) -> usize {
+        let next_index = self.tool_call_indices.len();
+        *self
+            .tool_call_indices
+            .entry(internal_call_id.to_string())
+            .or_insert(next_index)
+    }
+}
+
+fn tool_call_from_rig(tool_call: RigToolCall) -> ToolCall {
+    ToolCall {
+        id: tool_call.id,
+        name: tool_call.function.name,
+        input: tool_call.function.arguments,
+    }
+}
+
+fn token_usage_from_rig(usage: rig_core::completion::Usage) -> TokenUsage {
+    TokenUsage {
+        input_tokens: capped_u32(usage.input_tokens),
+        output_tokens: capped_u32(usage.output_tokens),
+        cache_read_tokens: Some(capped_u32(usage.cached_input_tokens)),
+    }
+}
+
+fn capped_u32(value: u64) -> u32 {
+    value.min(u64::from(u32::MAX)) as u32
+}
+
+fn rig_event_stream_to_chat_stream(stream: RigEventStream) -> ChatStream {
+    Box::pin(stream.filter_map(|event| async {
+        match event {
+            Ok(event) => stream_event_from_rig_backend_event(event).map(Ok),
+            Err(err) => Some(Err(err)),
+        }
+    }))
+}
+
+fn stream_event_from_rig_backend_event(event: RigBackendEvent) -> Option<StreamEvent> {
+    match event {
+        RigBackendEvent::Start => Some(StreamEvent::Start),
+        RigBackendEvent::TextChunk(text) => Some(StreamEvent::TextChunk(text)),
+        RigBackendEvent::ReasoningChunk(_) => None,
+        RigBackendEvent::ToolCallDelta {
+            index,
+            id,
+            name,
+            args_fragment,
+        } => Some(StreamEvent::ToolCallChunk {
+            index,
+            id,
+            name,
+            args_fragment,
+        }),
+        RigBackendEvent::ToolCallReady(call) => Some(StreamEvent::ToolCallReady(call)),
+        RigBackendEvent::End {
+            finish_reason,
+            usage,
+        } => Some(StreamEvent::End {
+            finish_reason,
+            usage,
+        }),
+    }
+}
+
+fn required_api_key(config: &RigBackendConfig) -> Result<String, ProviderError> {
+    config
+        .api_key
+        .clone()
+        .filter(|key| !key.trim().is_empty())
+        .ok_or_else(|| {
+            ProviderError::Auth("Rig Direct API backend requires an API key".to_string())
+        })
+}
+
+fn rig_completion_error(err: CompletionError) -> ProviderError {
+    match err {
+        CompletionError::HttpError(err) => ProviderError::Remote {
+            provider: "rig".to_string(),
+            code: None,
+            message: err.to_string(),
+        },
+        CompletionError::JsonError(err) => ProviderError::StreamParse(err.to_string()),
+        CompletionError::UrlError(err) => ProviderError::StreamParse(err.to_string()),
+        CompletionError::RequestError(err) => ProviderError::StreamParse(err.to_string()),
+        CompletionError::ResponseError(message) => ProviderError::StreamParse(message),
+        CompletionError::ProviderError(message) => ProviderError::Remote {
+            provider: "rig".to_string(),
+            code: None,
+            message,
+        },
+    }
+}
+
+fn rig_client_error(err: rig_core::http_client::Error) -> ProviderError {
+    ProviderError::Remote {
+        provider: "rig".to_string(),
+        code: None,
+        message: err.to_string(),
     }
 }
 
