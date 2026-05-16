@@ -118,4 +118,14 @@ define_settings_group!(DirectAPISettings, settings: [
         max_table_depth: 1,
         description: "Whether each Direct API provider is available for agent model routing",
     },
+
+    rig_backend_enabled: DirectAPIRigBackendEnabled {
+        type: bool,
+        default: false,
+        supported_platforms: SupportedPlatforms::ALL,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agents.direct_api.experimental.rig_backend_enabled",
+        description: "Enable the Rig Agent backend for Direct API agent profiles",
+    },
 ]);

@@ -593,5 +593,9 @@ where
 mod toml_path_tests;
 
 #[cfg(test)]
+#[path = "direct_api_tests.rs"]
+mod direct_api_tests;
+
+#[cfg(test)]
 #[path = "mod_tests.rs"]
 mod mod_tests;

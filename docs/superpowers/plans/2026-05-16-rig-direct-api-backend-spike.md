@@ -229,7 +229,7 @@ git commit -m "Add experimental Rig backend feature"
 - Modify `crates/settings/src/direct_api.rs`
 - Modify settings tests if a direct settings test module exists; otherwise add `crates/settings/src/direct_api_tests.rs`
 
-- [ ] **Step 1: Add failing TOML-backed test**
+- [x] **Step 1: Add failing TOML-backed test**
 
 Create or extend settings tests:
 
@@ -255,7 +255,7 @@ fn direct_api_rig_backend_gate_writes_to_expected_toml_path() {
 
 Use the actual helper names from existing settings tests if they differ.
 
-- [ ] **Step 2: Run failing tests**
+- [x] **Step 2: Run failing tests**
 
 Run:
 
@@ -265,7 +265,7 @@ cargo test -p settings direct_api_rig_backend_gate -- --nocapture
 
 Expected: compile failure because the setting does not exist.
 
-- [ ] **Step 3: Add setting**
+- [x] **Step 3: Add setting**
 
 In `crates/settings/src/direct_api.rs`, add:
 
@@ -281,7 +281,7 @@ In `crates/settings/src/direct_api.rs`, add:
     },
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run:
 
@@ -291,7 +291,7 @@ cargo test -p settings direct_api_rig_backend_gate -- --nocapture
 
 Expected: tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/settings/src/direct_api.rs crates/settings/src/*direct_api*tests.rs
