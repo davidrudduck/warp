@@ -614,7 +614,7 @@ git commit -m "Add Direct API agent backend selector"
 - Modify `app/src/ai/agent/api.rs`
 - Modify `app/src/ai/agent/api/impl_tests.rs`
 
-- [ ] **Step 1: Add routing tests**
+- [x] **Step 1: Add routing tests**
 
 Add:
 
@@ -643,7 +643,7 @@ fn request_params_use_rig_backend_when_profile_and_gate_enable_it() {
 }
 ```
 
-- [ ] **Step 2: Run failing tests**
+- [x] **Step 2: Run failing tests**
 
 Run:
 
@@ -653,7 +653,7 @@ cargo test -p warp request_params_use_rig_backend -- --nocapture
 
 Expected: compile failure because `RequestParams` does not carry backend state.
 
-- [ ] **Step 3: Add field**
+- [x] **Step 3: Add field**
 
 In `RequestParams`, add:
 
@@ -674,7 +674,7 @@ let direct_api_agent_backend = if requested_model_routing.is_direct_api() && rig
 
 If `cfg!(not(feature = "direct_api_rig_backend"))`, force `Native`.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run:
 
@@ -685,7 +685,7 @@ cargo test -p warp direct_api --lib -- --nocapture
 
 Expected: tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app/src/ai/agent/api.rs app/src/ai/agent/api/impl_tests.rs

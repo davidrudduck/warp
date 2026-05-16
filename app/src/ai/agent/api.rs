@@ -24,6 +24,7 @@ use std::sync::Arc;
 use warp_core::channel::ChannelState;
 use warp_core::execution_mode::AppExecutionMode;
 use warp_core::features::FeatureFlag;
+use warp_core::settings::DirectAPISettings;
 
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
@@ -35,7 +36,9 @@ use crate::{
 use super::{AIAgentInput, MCPContext, MCPServer, RequestMetadata, Suggestions};
 use crate::ai::blocklist::{BlocklistAIPermissions, RequestInput};
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
-use crate::ai::execution_profiles::{DirectApiProfileModelSelection, ModelRouting};
+use crate::ai::execution_profiles::{
+    DirectApiAgentBackend, DirectApiProfileModelSelection, ModelRouting,
+};
 use crate::ai::mcp::templatable_manager::TemplatableMCPServerInfo;
 use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::settings::AISettings;
@@ -234,6 +237,7 @@ pub struct RequestParams {
     pub session_context: SessionContext,
     pub model: LLMId,
     pub model_routing: ModelRouting,
+    pub direct_api_agent_backend: DirectApiAgentBackend,
     pub direct_api_route_config: Option<DirectApiRouteConfig>,
     pub direct_api_route_error: Option<String>,
     #[allow(unused)]
@@ -390,6 +394,8 @@ impl RequestParams {
             None
         };
         let model_routing = requested_model_routing;
+        let direct_api_agent_backend =
+            resolve_direct_api_agent_backend(model_routing, &profile_data, app);
 
         let user_workspaces = UserWorkspaces::as_ref(app);
         let api_keys = if model_routing.is_direct_api() {
@@ -471,6 +477,7 @@ impl RequestParams {
             session_context,
             model: request_input.model_id.clone(),
             model_routing,
+            direct_api_agent_backend,
             direct_api_route_config,
             direct_api_route_error,
             coding_model: request_input.coding_model_id.clone(),
@@ -497,6 +504,22 @@ impl RequestParams {
     }
 }
 
+fn resolve_direct_api_agent_backend(
+    model_routing: ModelRouting,
+    profile_data: &crate::ai::execution_profiles::AIExecutionProfile,
+    app: &AppContext,
+) -> DirectApiAgentBackend {
+    if !model_routing.is_direct_api() || !*DirectAPISettings::as_ref(app).rig_backend_enabled {
+        return DirectApiAgentBackend::Native;
+    }
+
+    if !cfg!(feature = "direct_api_rig_backend") {
+        return DirectApiAgentBackend::Native;
+    }
+
+    profile_data.direct_api_agent_backend.effective()
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -505,7 +528,7 @@ mod tests {
     use ai::model_registry::ProviderId;
     use chrono::Local;
     use warp_core::features::FeatureFlag;
-    use warp_core::settings::DirectAPISettings;
+    use warp_core::settings::{DirectAPISettings, Setting};
     use warpui::{App, EntityId, SingletonEntity};
 
     use super::*;
@@ -513,7 +536,9 @@ mod tests {
     use crate::ai::agent::task::TaskId;
     use crate::ai::blocklist::{BlocklistAIPermissions, RequestInput, SessionContext};
     use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
-    use crate::ai::execution_profiles::{DirectApiProfileModelSelection, ModelRouting};
+    use crate::ai::execution_profiles::{
+        DirectApiAgentBackend, DirectApiProfileModelSelection, ModelRouting,
+    };
     use crate::ai::llms::{LLMId, LLMPreferences};
     use crate::ai::mcp::TemplatableMCPServerManager;
     use crate::auth::{AuthManager, AuthStateProvider};
@@ -636,6 +661,125 @@ mod tests {
             assert_eq!(route.provider_id, ProviderId::OpenAI);
             assert_eq!(route.model_id, "gpt-4o-mini");
             assert_eq!(route.api_key.as_deref(), Some("sk-direct"));
+        });
+    }
+
+    #[test]
+    fn request_params_use_native_backend_when_rig_gate_disabled() {
+        App::test((), |mut app| async move {
+            let terminal_view_id = install_request_params_singletons(&mut app);
+
+            AIExecutionProfilesModel::handle(&app).update(&mut app, |model, ctx| {
+                let profile_id = *model.active_profile(Some(terminal_view_id), ctx).id();
+                model.set_model_routing(profile_id, ModelRouting::DirectApi, ctx);
+                model.set_direct_api_agent_backend(
+                    profile_id,
+                    DirectApiAgentBackend::RigAgent,
+                    ctx,
+                );
+            });
+
+            let params = app.update(|ctx| {
+                let request_input = request_input();
+                RequestParams::new(
+                    Some(terminal_view_id),
+                    SessionContext::new_for_test(),
+                    &request_input,
+                    conversation_data(),
+                    None,
+                    ctx,
+                )
+            });
+
+            assert_eq!(params.model_routing, ModelRouting::DirectApi);
+            assert_eq!(
+                params.direct_api_agent_backend,
+                DirectApiAgentBackend::Native
+            );
+        });
+    }
+
+    #[cfg(not(feature = "direct_api_rig_backend"))]
+    #[test]
+    fn request_params_use_native_backend_when_rig_feature_disabled() {
+        App::test((), |mut app| async move {
+            let terminal_view_id = install_request_params_singletons(&mut app);
+
+            DirectAPISettings::handle(&app).update(&mut app, |settings, ctx| {
+                settings
+                    .rig_backend_enabled
+                    .set_value(true, ctx)
+                    .expect("test can enable Rig backend setting");
+            });
+            AIExecutionProfilesModel::handle(&app).update(&mut app, |model, ctx| {
+                let profile_id = *model.active_profile(Some(terminal_view_id), ctx).id();
+                model.set_model_routing(profile_id, ModelRouting::DirectApi, ctx);
+                model.set_direct_api_agent_backend(
+                    profile_id,
+                    DirectApiAgentBackend::RigAgent,
+                    ctx,
+                );
+            });
+
+            let params = app.update(|ctx| {
+                let request_input = request_input();
+                RequestParams::new(
+                    Some(terminal_view_id),
+                    SessionContext::new_for_test(),
+                    &request_input,
+                    conversation_data(),
+                    None,
+                    ctx,
+                )
+            });
+
+            assert_eq!(params.model_routing, ModelRouting::DirectApi);
+            assert_eq!(
+                params.direct_api_agent_backend,
+                DirectApiAgentBackend::Native
+            );
+        });
+    }
+
+    #[cfg(feature = "direct_api_rig_backend")]
+    #[test]
+    fn request_params_use_rig_backend_when_profile_gate_and_feature_enable_it() {
+        App::test((), |mut app| async move {
+            let terminal_view_id = install_request_params_singletons(&mut app);
+
+            DirectAPISettings::handle(&app).update(&mut app, |settings, ctx| {
+                settings
+                    .rig_backend_enabled
+                    .set_value(true, ctx)
+                    .expect("test can enable Rig backend setting");
+            });
+            AIExecutionProfilesModel::handle(&app).update(&mut app, |model, ctx| {
+                let profile_id = *model.active_profile(Some(terminal_view_id), ctx).id();
+                model.set_model_routing(profile_id, ModelRouting::DirectApi, ctx);
+                model.set_direct_api_agent_backend(
+                    profile_id,
+                    DirectApiAgentBackend::RigAgent,
+                    ctx,
+                );
+            });
+
+            let params = app.update(|ctx| {
+                let request_input = request_input();
+                RequestParams::new(
+                    Some(terminal_view_id),
+                    SessionContext::new_for_test(),
+                    &request_input,
+                    conversation_data(),
+                    None,
+                    ctx,
+                )
+            });
+
+            assert_eq!(params.model_routing, ModelRouting::DirectApi);
+            assert_eq!(
+                params.direct_api_agent_backend,
+                DirectApiAgentBackend::RigAgent
+            );
         });
     }
 

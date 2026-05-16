@@ -9,7 +9,7 @@ use crate::ai::agent::{
     TaskId, UserQueryMode,
 };
 use crate::ai::blocklist::SessionContext;
-use crate::ai::execution_profiles::ModelRouting;
+use crate::ai::execution_profiles::{DirectApiAgentBackend, ModelRouting};
 use crate::ai::llms::LLMId;
 use warp_core::features::FeatureFlag;
 use warp_multi_agent_api as api;
@@ -30,6 +30,7 @@ fn request_params_with_ask_user_question_enabled(ask_user_question_enabled: bool
         session_context: SessionContext::new_for_test(),
         model: model.clone(),
         model_routing: ModelRouting::WarpProvider,
+        direct_api_agent_backend: DirectApiAgentBackend::Native,
         direct_api_route_config: None,
         direct_api_route_error: None,
         coding_model: model.clone(),
