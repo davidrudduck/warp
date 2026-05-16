@@ -1,6 +1,8 @@
 pub mod error;
 pub mod genai_adapter;
 pub mod mock;
+#[cfg(feature = "rig_backend")]
+pub mod rig_backend;
 pub mod types;
 
 pub use error::ProviderError;

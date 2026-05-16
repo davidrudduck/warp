@@ -699,7 +699,7 @@ git commit -m "Resolve Direct API backend into request params"
 - Create `crates/ai/src/provider/rig_backend_tests.rs`
 - Modify `crates/ai/src/provider/mod.rs`
 
-- [ ] **Step 1: Add adapter tests**
+- [x] **Step 1: Add adapter tests**
 
 Create `crates/ai/src/provider/rig_backend_tests.rs`:
 
@@ -734,7 +734,7 @@ fn rig_backend_config_rejects_missing_key_for_openrouter() {
 }
 ```
 
-- [ ] **Step 2: Run failing tests**
+- [x] **Step 2: Run failing tests**
 
 Run:
 
@@ -744,7 +744,7 @@ cargo test -p ai --features rig_backend rig_backend -- --nocapture
 
 Expected: compile failure because `rig_backend` does not exist.
 
-- [ ] **Step 3: Add minimal config module**
+- [x] **Step 3: Add minimal config module**
 
 Create `crates/ai/src/provider/rig_backend.rs`:
 
@@ -819,7 +819,7 @@ In `mod.rs`, add:
 pub mod rig_backend;
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run:
 
@@ -829,7 +829,7 @@ cargo test -p ai --features rig_backend rig_backend -- --nocapture
 
 Expected: tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/ai/src/provider/mod.rs crates/ai/src/provider/rig_backend.rs crates/ai/src/provider/rig_backend_tests.rs
