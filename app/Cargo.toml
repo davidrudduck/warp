@@ -460,6 +460,7 @@ codebase_index_persistence = ["full_source_code_embedding"]
 direct_api_rig_backend = ["ai/rig_backend"]
 default = [
     "agent_mode",
+    "direct_api_rig_backend",
     "viewing_shared_sessions",
     "render_continuous_block_selections_with_single_border",
     "settings_import",
