@@ -1209,7 +1209,7 @@ git commit -m "Redact Rig backend diagnostics"
 - Modify `docs/features/direct-api-profile-routing.md`
 - Modify `docs/QUICK-START.md`
 
-- [ ] **Step 1: Document the setting**
+- [x] **Step 1: Document the setting**
 
 Add:
 
@@ -1272,7 +1272,7 @@ Manual checks:
 - Approve the read.
 - Confirm the follow-up provider turn includes the tool result and produces final text.
 
-- [ ] **Step 6: Run final validation**
+- [x] **Step 6: Run final validation**
 
 Run:
 
@@ -1289,7 +1289,9 @@ cargo check -p warp --bin warp-oss --features direct_api_rig_backend
 
 Expected: all pass.
 
-- [ ] **Step 7: Commit docs**
+Validation note: all automated commands passed. `cargo run -p warp --bin warp-oss --features direct_api_rig_backend` also built and launched the app, but manual UI/runtime inspection for Steps 2-5 was blocked because CuaDriver reported `Accessibility permission not granted`.
+
+- [x] **Step 7: Commit docs**
 
 ```bash
 git add docs/features/direct-api-profile-routing.md docs/QUICK-START.md

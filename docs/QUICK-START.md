@@ -62,6 +62,17 @@ Or use Warp's built-in Agent Mode:
 @agent help me install Node.js
 ```
 
+## Experimental Rig Backend
+
+Direct API profiles can optionally expose a Rig Agent backend when Warp is built with Rig support. The setting is off by default:
+
+```toml
+[agents.direct_api.experimental]
+rig_backend_enabled = false
+```
+
+When enabled, Direct API profiles show `Agent engine: Native / Rig Agent`. Use `Native` unless testing Rig provider streaming.
+
 ## Troubleshooting
 
 **"Failed to connect" error**
@@ -80,10 +91,11 @@ Or use Warp's built-in Agent Mode:
 ## What's Next?
 
 - Read the [Direct API User Guide](./features/direct-api-user-guide.md) for detailed setup
+- Read the [Direct API Profile Routing Guide](./features/direct-api-profile-routing.md) for per-profile routing and Rig Agent backend notes
 - See [Direct API Developer Guide](./features/direct-api-developer-guide.md) for architecture details
 - For general Warp docs, visit [docs.warp.dev](https://docs.warp.dev/)
 
 ---
 
 **Estimated time**: 5 minutes  
-**Last updated**: 2026-05-11
+**Last updated**: 2026-05-16
