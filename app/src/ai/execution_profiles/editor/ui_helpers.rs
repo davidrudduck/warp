@@ -1,5 +1,7 @@
 use crate::ai::blocklist::BlocklistAIPermissions;
-use crate::ai::execution_profiles::{AIExecutionProfile, ActionPermission, ModelRouting};
+use crate::ai::execution_profiles::{
+    AIExecutionProfile, ActionPermission, DirectApiAgentBackend, ModelRouting,
+};
 use crate::editor::EditorView;
 use crate::settings::AISettings;
 use crate::ui_components::icons::Icon;
@@ -11,6 +13,7 @@ use pathfinder_geometry::vector::vec2f;
 use thousands::Separable;
 use uuid::Uuid;
 use warp_core::features::FeatureFlag;
+use warp_core::settings::DirectAPISettings;
 use warpui::elements::Dismiss;
 use warpui::elements::Hoverable;
 use warpui::elements::MouseStateHandle;
@@ -20,7 +23,10 @@ use warpui::elements::{
     Stack, Text,
 };
 use warpui::fonts::{Properties, Weight};
-use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
+use warpui::ui_components::{
+    button::ButtonVariant,
+    components::{Coords, UiComponent, UiComponentStyles},
+};
 use warpui::AppContext;
 use warpui::{Element, SingletonEntity, ViewHandle};
 
@@ -29,6 +35,70 @@ use super::ExecutionProfileEditorViewAction;
 
 const CONTEXT_WINDOW_SLIDER_WIDTH: f32 = 220.;
 const CONTEXT_WINDOW_INPUT_BOX_WIDTH: f32 = 120.;
+const DIRECT_API_AGENT_BACKEND_BUTTON_WIDTH: f32 = 90.;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct DirectApiAgentBackendOptionState {
+    pub backend: DirectApiAgentBackend,
+    pub label: &'static str,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct DirectApiAgentBackendSelectorState {
+    pub selected_backend: DirectApiAgentBackend,
+    pub options: Vec<DirectApiAgentBackendOptionState>,
+    pub disabled_state_label: Option<&'static str>,
+}
+
+impl DirectApiAgentBackendSelectorState {
+    pub(super) fn option_labels(&self) -> Vec<String> {
+        self.options
+            .iter()
+            .map(|option| option.label.to_string())
+            .collect()
+    }
+}
+
+pub(super) fn direct_api_agent_backend_selector_state(
+    profile: &AIExecutionProfile,
+    gate_enabled: bool,
+    rig_feature_enabled: bool,
+) -> Option<DirectApiAgentBackendSelectorState> {
+    if profile.model_routing.effective() != ModelRouting::DirectApi || !gate_enabled {
+        return None;
+    }
+
+    let stored_backend = profile.direct_api_agent_backend.effective();
+    let selected_backend = if rig_feature_enabled {
+        stored_backend
+    } else {
+        DirectApiAgentBackend::Native
+    };
+    let disabled_state_label =
+        if stored_backend == DirectApiAgentBackend::RigAgent && !rig_feature_enabled {
+            Some("Rig Agent backend is unavailable in this build. Native will be used.")
+        } else {
+            None
+        };
+
+    Some(DirectApiAgentBackendSelectorState {
+        selected_backend,
+        options: vec![
+            DirectApiAgentBackendOptionState {
+                backend: DirectApiAgentBackend::Native,
+                label: "Native",
+                enabled: true,
+            },
+            DirectApiAgentBackendOptionState {
+                backend: DirectApiAgentBackend::RigAgent,
+                label: "Rig Agent",
+                enabled: rig_feature_enabled,
+            },
+        ],
+        disabled_state_label,
+    })
+}
 
 pub(super) fn context_window_snap_values(min: u32, max: u32) -> Vec<f32> {
     if min >= max {
@@ -342,11 +412,113 @@ pub fn render_models_section(
                 "The provider and model used by this profile when routing agent requests through Direct API.",
                 &view.direct_api_model_dropdown,
             ));
+
+            if let Some(selector_state) = direct_api_agent_backend_selector_state(
+                &profile,
+                *DirectAPISettings::as_ref(app).rig_backend_enabled,
+                cfg!(feature = "direct_api_rig_backend"),
+            ) {
+                column.add_child(render_direct_api_agent_backend_selector(
+                    appearance,
+                    view,
+                    selector_state,
+                ));
+            }
         }
     }
 
     Container::new(column.finish())
         .with_margin_bottom(12.)
+        .finish()
+}
+
+fn render_direct_api_agent_backend_selector(
+    appearance: &Appearance,
+    view: &ExecutionProfileEditorView,
+    selector_state: DirectApiAgentBackendSelectorState,
+) -> Box<dyn Element> {
+    let mut options = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
+
+    for option in selector_state.options {
+        options.add_child(render_direct_api_agent_backend_button(
+            appearance,
+            view,
+            option,
+            option.backend == selector_state.selected_backend,
+        ));
+    }
+
+    let mut column = Flex::column()
+        .with_child(create_section_header(
+            "Agent engine",
+            "Choose the Direct API execution path for this profile.",
+            appearance,
+        ))
+        .with_child(options.finish());
+
+    if let Some(label) = selector_state.disabled_state_label {
+        column.add_child(
+            Container::new(render_info_section(label, None, appearance))
+                .with_margin_top(8.)
+                .finish(),
+        );
+    }
+
+    Container::new(column.finish())
+        .with_margin_bottom(12.)
+        .finish()
+}
+
+fn render_direct_api_agent_backend_button(
+    appearance: &Appearance,
+    view: &ExecutionProfileEditorView,
+    option: DirectApiAgentBackendOptionState,
+    selected: bool,
+) -> Box<dyn Element> {
+    let mouse_state = match option.backend {
+        DirectApiAgentBackend::Native | DirectApiAgentBackend::Unknown => {
+            view.native_backend_button_mouse_state.clone()
+        }
+        DirectApiAgentBackend::RigAgent => view.rig_backend_button_mouse_state.clone(),
+    };
+
+    let mut button = appearance
+        .ui_builder()
+        .button(ButtonVariant::Secondary, mouse_state)
+        .with_centered_text_label(option.label.to_string())
+        .with_style(UiComponentStyles {
+            width: Some(DIRECT_API_AGENT_BACKEND_BUTTON_WIDTH),
+            padding: Some(Coords {
+                top: 5.,
+                bottom: 5.,
+                left: 8.,
+                right: 8.,
+            }),
+            margin: Some(Coords {
+                left: 0.,
+                right: 6.,
+                top: 0.,
+                bottom: 0.,
+            }),
+            ..Default::default()
+        });
+
+    if selected {
+        button = button.active();
+    }
+
+    if !option.enabled {
+        return button.disabled().build().finish();
+    }
+
+    let backend = option.backend;
+    button
+        .build()
+        .on_click(move |ctx, _, _| {
+            ctx.dispatch_typed_action(ExecutionProfileEditorViewAction::SetDirectApiAgentBackend {
+                backend,
+            });
+        })
         .finish()
 }
 

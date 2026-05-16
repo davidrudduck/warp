@@ -5,8 +5,8 @@ use crate::ai::execution_profiles::direct_api_model_choices::{
 use crate::ai::execution_profiles::model_menu_items::available_model_menu_items;
 use crate::ai::execution_profiles::{
     profiles::{AIExecutionProfilesModel, AIExecutionProfilesModelEvent, ClientProfileId},
-    AIExecutionProfile, ActionPermission, DirectApiProfileModelSelection, ModelRouting,
-    WriteToPtyPermission,
+    AIExecutionProfile, ActionPermission, DirectApiAgentBackend, DirectApiProfileModelSelection,
+    ModelRouting, WriteToPtyPermission,
 };
 use crate::ai::llms::{
     DisableReason, LLMContextWindow, LLMId, LLMInfo, LLMPreferences, LLMPreferencesEvent,
@@ -34,6 +34,7 @@ use ai::model_registry::ModelListCache;
 use itertools::Itertools;
 use regex::Regex;
 use thousands::Separable;
+use warp_core::settings::DirectAPISettings;
 use warp_core::ui::theme::color::internal_colors;
 use warpui::fonts::Properties;
 use warpui::platform::Cursor;
@@ -159,6 +160,9 @@ pub enum ExecutionProfileEditorViewAction {
     SetDirectApiModel {
         selection: DirectApiProfileModelSelection,
     },
+    SetDirectApiAgentBackend {
+        backend: DirectApiAgentBackend,
+    },
     RefreshProfileState,
     /// Fired continuously while the user drags the context window slider.
     ContextWindowSliderDragged {
@@ -248,6 +252,8 @@ pub struct ExecutionProfileEditorView {
     model_routing_dropdown: ViewHandle<Dropdown<ExecutionProfileEditorViewAction>>,
     base_model_dropdown: ViewHandle<FilterableDropdown<ExecutionProfileEditorViewAction>>,
     direct_api_model_dropdown: ViewHandle<FilterableDropdown<ExecutionProfileEditorViewAction>>,
+    native_backend_button_mouse_state: MouseStateHandle,
+    rig_backend_button_mouse_state: MouseStateHandle,
     context_window_slider_state: SliderStateHandle,
     context_window_editor: ViewHandle<EditorView>,
     last_synced_context_window_editor_value: Option<u32>,
@@ -654,6 +660,8 @@ impl ExecutionProfileEditorView {
             model_routing_dropdown,
             base_model_dropdown,
             direct_api_model_dropdown,
+            native_backend_button_mouse_state: Default::default(),
+            rig_backend_button_mouse_state: Default::default(),
             context_window_slider_state,
             context_window_editor,
             last_synced_context_window_editor_value,
@@ -1694,6 +1702,30 @@ impl TypedActionView for ExecutionProfileEditorView {
                         Some(selection.clone()),
                         ctx,
                     );
+                });
+                ctx.dispatch_typed_action_deferred(
+                    ExecutionProfileEditorViewAction::RefreshProfileState,
+                );
+                ctx.notify();
+            }
+            ExecutionProfileEditorViewAction::SetDirectApiAgentBackend { backend } => {
+                let backend = match backend.effective() {
+                    DirectApiAgentBackend::Native | DirectApiAgentBackend::Unknown => {
+                        DirectApiAgentBackend::Native
+                    }
+                    DirectApiAgentBackend::RigAgent => {
+                        if *DirectAPISettings::as_ref(ctx).rig_backend_enabled
+                            && cfg!(feature = "direct_api_rig_backend")
+                        {
+                            DirectApiAgentBackend::RigAgent
+                        } else {
+                            DirectApiAgentBackend::Native
+                        }
+                    }
+                };
+
+                AIExecutionProfilesModel::handle(ctx).update(ctx, |profiles_model, ctx| {
+                    profiles_model.set_direct_api_agent_backend(self.profile_id, backend, ctx);
                 });
                 ctx.dispatch_typed_action_deferred(
                     ExecutionProfileEditorViewAction::RefreshProfileState,

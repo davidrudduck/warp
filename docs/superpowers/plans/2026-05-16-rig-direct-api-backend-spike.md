@@ -526,7 +526,7 @@ git commit -m "Gate Rig Direct API backend in settings"
 - Modify `app/src/ai/execution_profiles/editor/ui_helpers.rs`
 - Modify profile editor tests if present
 
-- [ ] **Step 1: Add behavior tests**
+- [x] **Step 1: Add behavior tests**
 
 Add tests:
 
@@ -549,7 +549,7 @@ fn profile_editor_shows_rig_backend_selector_for_direct_api_when_gate_enabled() 
 
 If no pure render-state helpers exist, add a small helper in tests rather than screenshot testing.
 
-- [ ] **Step 2: Run failing tests**
+- [x] **Step 2: Run failing tests**
 
 Run:
 
@@ -559,7 +559,7 @@ cargo test -p warp execution_profile_editor -- --nocapture
 
 Expected: failure until selector state exists.
 
-- [ ] **Step 3: Add editor action**
+- [x] **Step 3: Add editor action**
 
 In the editor action enum, add:
 
@@ -575,7 +575,7 @@ Handle it by calling:
 profiles_model.set_direct_api_agent_backend(self.profile_id, *backend, ctx);
 ```
 
-- [ ] **Step 4: Render selector**
+- [x] **Step 4: Render selector**
 
 In `ui_helpers.rs`, render after the Direct API model picker:
 
@@ -590,7 +590,7 @@ Rules:
 - Disable `Rig Agent` if cargo feature is absent.
 - If a profile stores `RigExperimental` but the gate or cargo feature is disabled, effective runtime backend is `Native` and the UI shows a small disabled-state label when visible.
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run:
 
@@ -601,7 +601,7 @@ cargo test -p warp execution_profile_ -- --nocapture
 
 Expected: tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add app/src/ai/execution_profiles/editor/mod.rs app/src/ai/execution_profiles/editor/ui_helpers.rs app/src/ai/execution_profiles/*tests.rs

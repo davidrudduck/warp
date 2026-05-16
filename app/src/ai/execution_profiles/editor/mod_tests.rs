@@ -1,9 +1,72 @@
-use super::ui_helpers::context_window_snap_values;
+use super::ui_helpers::{context_window_snap_values, direct_api_agent_backend_selector_state};
+use crate::ai::execution_profiles::{AIExecutionProfile, DirectApiAgentBackend, ModelRouting};
 
 /// Helper: round-trip f32 → u32 for readable assertions and absorb the
 /// negligible f64→f32 drift the snap helper picks up on large ranges.
 fn rounded(values: &[f32]) -> Vec<u32> {
     values.iter().map(|v| v.round() as u32).collect()
+}
+
+fn direct_api_profile_with_backend(backend: DirectApiAgentBackend) -> AIExecutionProfile {
+    AIExecutionProfile {
+        model_routing: ModelRouting::DirectApi,
+        direct_api_agent_backend: backend,
+        ..AIExecutionProfile::default()
+    }
+}
+
+#[test]
+fn execution_profile_editor_hides_rig_backend_selector_when_gate_disabled() {
+    let profile = direct_api_profile_with_backend(DirectApiAgentBackend::Native);
+    let state = direct_api_agent_backend_selector_state(&profile, false, true);
+
+    assert!(state.is_none());
+}
+
+#[test]
+fn execution_profile_editor_shows_rig_backend_selector_for_direct_api_when_gate_enabled() {
+    let profile = direct_api_profile_with_backend(DirectApiAgentBackend::Native);
+    let state = direct_api_agent_backend_selector_state(&profile, true, true)
+        .expect("Direct API profile with enabled gate should show backend selector");
+
+    assert_eq!(state.selected_backend, DirectApiAgentBackend::Native);
+    assert_eq!(
+        state.option_labels(),
+        vec!["Native".to_string(), "Rig Agent".to_string()]
+    );
+    assert!(state.options.iter().all(|option| option.enabled));
+}
+
+#[test]
+fn execution_profile_editor_hides_rig_backend_selector_for_warp_provider() {
+    let profile = AIExecutionProfile {
+        model_routing: ModelRouting::WarpProvider,
+        ..AIExecutionProfile::default()
+    };
+    let state = direct_api_agent_backend_selector_state(&profile, true, true);
+
+    assert!(state.is_none());
+}
+
+#[test]
+fn execution_profile_editor_disables_rig_backend_selector_option_without_feature() {
+    let profile = direct_api_profile_with_backend(DirectApiAgentBackend::RigAgent);
+    let state = direct_api_agent_backend_selector_state(&profile, true, false)
+        .expect("Direct API profile with enabled gate should show backend selector");
+
+    assert_eq!(state.selected_backend, DirectApiAgentBackend::Native);
+    assert_eq!(
+        state.disabled_state_label,
+        Some("Rig Agent backend is unavailable in this build. Native will be used.")
+    );
+    assert_eq!(
+        state
+            .options
+            .iter()
+            .map(|option| (option.label, option.enabled))
+            .collect::<Vec<_>>(),
+        vec![("Native", true), ("Rig Agent", false)]
+    );
 }
 
 #[test]
