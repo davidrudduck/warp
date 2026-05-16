@@ -235,6 +235,34 @@ fn rig_backend_toggle_is_noop_without_feature() {
     });
 }
 
+#[cfg(not(feature = "direct_api_rig_backend"))]
+#[test]
+fn rig_backend_effective_value_is_off_without_feature_even_when_persisted() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        DirectAPISettings::register(&mut app);
+        app.add_singleton_model(|_| AuthStateProvider::new_logged_out_for_test());
+        app.add_singleton_model(|_| Appearance::mock());
+        app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
+
+        DirectAPISettings::handle(&app).update(&mut app, |settings, ctx| {
+            settings.rig_backend_enabled.set_value(true, ctx).unwrap();
+        });
+
+        let (_window_id, view) =
+            app.add_window(WindowStyle::NotStealFocus, DirectApiSettingsPageView::new);
+
+        view.read(&app, |view, ctx| {
+            assert!(!view.rig_backend_enabled(ctx));
+        });
+
+        app.read(|ctx| {
+            let settings = DirectAPISettings::as_ref(ctx);
+            assert!(*settings.rig_backend_enabled);
+        });
+    });
+}
+
 // ============================================================================
 // US-001: Provider Matrix Test
 // ============================================================================

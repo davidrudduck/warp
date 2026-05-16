@@ -473,7 +473,7 @@ impl DirectApiSettingsPageView {
     }
 
     fn rig_backend_enabled(&self, ctx: &AppContext) -> bool {
-        *DirectAPISettings::as_ref(ctx).rig_backend_enabled
+        rig_backend_feature_available() && *DirectAPISettings::as_ref(ctx).rig_backend_enabled
     }
 
     fn set_rig_backend_enabled(&self, enabled: bool, ctx: &mut ViewContext<Self>) {
