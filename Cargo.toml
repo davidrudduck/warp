@@ -227,6 +227,11 @@ reqwest = { version = "0.12.28", default-features = false, features = [
 ] }
 reqwest-eventsource = "0.6.0"
 resvg = "0.47.0"
+rig-core = { version = "=0.37.0", default-features = false, features = [
+  "derive",
+  "reqwest",
+  "rustls",
+] }
 rust-embed = { version = "8.7.0", features = ["include-exclude"] }
 rustc-hash = "2.1.1"
 rustls = "0.23.39"

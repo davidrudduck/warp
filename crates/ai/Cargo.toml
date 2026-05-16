@@ -10,6 +10,7 @@ jemalloc = []
 local_fs = []
 test-util = []
 crash_reporting = ["dep:sentry"]
+rig_backend = ["dep:rig-core"]
 
 [dependencies]
 async-channel.workspace = true
@@ -36,6 +37,7 @@ ignore = "0.4.23"
 line-span = "0.1.5"
 log.workspace = true
 reqwest.workspace = true
+rig-core = { workspace = true, optional = true }
 sentry = { workspace = true, optional = true }
 shellexpand.workspace = true
 strum.workspace = true
