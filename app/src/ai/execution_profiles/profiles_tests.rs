@@ -3,8 +3,8 @@ use warpui::{App, SingletonEntity};
 
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 use crate::ai::execution_profiles::{
-    AIExecutionProfile, ActionPermission, CloudAIExecutionProfileModel,
-    DirectApiAgentBackend, DirectApiProfileModelSelection, ModelRouting,
+    AIExecutionProfile, ActionPermission, CloudAIExecutionProfileModel, DirectApiAgentBackend,
+    DirectApiProfileModelSelection, ModelRouting,
 };
 use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::auth::AuthStateProvider;

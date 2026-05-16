@@ -1,7 +1,7 @@
 use super::{
     settings_page::{
-        Category, MatchData, PageType, SettingsPageEvent, SettingsPageMeta, SettingsPageViewHandle,
-        SettingsWidget,
+        render_body_item, Category, LocalOnlyIconState, MatchData, PageType, SettingsPageEvent,
+        SettingsPageMeta, SettingsPageViewHandle, SettingsWidget, ToggleState,
     },
     SettingsSection,
 };
@@ -25,13 +25,18 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::Duration;
 use warp_core::features::FeatureFlag;
+use warp_core::report_if_error;
 use warp_core::send_telemetry_from_ctx;
+use warp_core::settings::{DirectAPISettings, Setting};
 use warp_core::ui::theme::color::internal_colors;
 use warpui::{
     elements::{
         ConstrainedBox, Container, CornerRadius, Element, Fill, Flex, ParentElement, Radius,
     },
-    ui_components::components::{Coords, UiComponent, UiComponentStyles},
+    ui_components::{
+        components::{Coords, UiComponent, UiComponentStyles},
+        switch::SwitchStateHandle,
+    },
     AppContext, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle,
 };
@@ -121,6 +126,7 @@ pub enum DirectApiPageAction {
     ToggleProviderEnabled(String),
     ToggleApiKeyVisibility(String),
     SelectModel(String),
+    ToggleRigBackendEnabled,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -456,10 +462,24 @@ impl DirectApiSettingsPageView {
     fn build_page(_ctx: &mut ViewContext<Self>) -> PageType<Self> {
         let categories = vec![
             Category::new("", vec![Box::new(TitleWidget::default())]),
+            Category::new(
+                "Agent Engine",
+                vec![Box::new(RigAgentBackendWidget::default())],
+            ),
             Category::new("Providers", vec![Box::new(ProviderRowsWidget::default())]),
         ];
 
         PageType::new_categorized(categories, None)
+    }
+
+    fn rig_backend_enabled(&self, ctx: &AppContext) -> bool {
+        *DirectAPISettings::as_ref(ctx).rig_backend_enabled
+    }
+
+    fn set_rig_backend_enabled(&self, enabled: bool, ctx: &mut ViewContext<Self>) {
+        DirectAPISettings::handle(ctx).update(ctx, |settings, ctx| {
+            report_if_error!(settings.rig_backend_enabled.set_value(enabled, ctx));
+        });
     }
 
     fn provider_row(&self, provider: ProviderType) -> Option<&ProviderRowState> {
@@ -1115,6 +1135,10 @@ impl TypedActionView for DirectApiSettingsPageView {
                     }
                 }
             }
+            DirectApiPageAction::ToggleRigBackendEnabled => {
+                self.set_rig_backend_enabled(!self.rig_backend_enabled(ctx), ctx);
+                ctx.notify();
+            }
         }
     }
 }
@@ -1337,6 +1361,46 @@ impl SettingsWidget for ProviderRowsWidget {
         }
 
         column.finish()
+    }
+}
+
+#[derive(Default)]
+struct RigAgentBackendWidget {
+    switch_state: SwitchStateHandle,
+}
+
+impl SettingsWidget for RigAgentBackendWidget {
+    type View = DirectApiSettingsPageView;
+
+    fn search_terms(&self) -> &str {
+        "rig agent backend direct api provider streaming engine"
+    }
+
+    fn render(
+        &self,
+        view: &DirectApiSettingsPageView,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        render_body_item::<DirectApiPageAction>(
+            "Rig Agent backend".into(),
+            None,
+            LocalOnlyIconState::Hidden,
+            ToggleState::Enabled,
+            appearance,
+            appearance
+                .ui_builder()
+                .switch(self.switch_state.clone())
+                .check(view.rig_backend_enabled(app))
+                .build()
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(DirectApiPageAction::ToggleRigBackendEnabled);
+                })
+                .finish(),
+            Some(
+                "Uses Rig for provider streaming. Warp still handles tools and permissions.".into(),
+            ),
+        )
     }
 }
 

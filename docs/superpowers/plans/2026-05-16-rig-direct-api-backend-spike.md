@@ -424,7 +424,7 @@ git commit -m "Add Direct API profile backend selection"
 - Modify `app/src/settings_view/direct_api_page.rs`
 - Modify `app/src/settings_view/direct_api_page_tests.rs`
 
-- [ ] **Step 1: Add view tests**
+- [x] **Step 1: Add view tests**
 
 Add tests:
 
@@ -453,7 +453,7 @@ fn rig_backend_toggle_persists_setting() {
 
 Use the existing `App::test`/settings test helpers already used in `direct_api_page_tests.rs`.
 
-- [ ] **Step 2: Run failing tests**
+- [x] **Step 2: Run failing tests**
 
 Run:
 
@@ -463,7 +463,7 @@ cargo test -p warp direct_api_page::tests::rig_backend -- --nocapture
 
 Expected: compile failure because helper methods do not exist.
 
-- [ ] **Step 3: Add action and helpers**
+- [x] **Step 3: Add action and helpers**
 
 In `DirectApiPageAction`, add:
 
@@ -486,7 +486,7 @@ fn set_rig_backend_enabled(&self, enabled: bool, ctx: &mut ViewContext<Self>) {
 }
 ```
 
-- [ ] **Step 4: Render toggle**
+- [x] **Step 4: Render toggle**
 
 Add a dense settings row in the Direct API page:
 
@@ -502,7 +502,7 @@ Uses Rig for provider streaming. Warp still handles tools and permissions.
 
 Use existing toggle/settings-row patterns in `settings_page.rs`. Do not introduce new button themes or custom colors.
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run:
 
@@ -512,7 +512,7 @@ cargo test -p warp direct_api_page -- --nocapture
 
 Expected: tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add app/src/settings_view/direct_api_page.rs app/src/settings_view/direct_api_page_tests.rs

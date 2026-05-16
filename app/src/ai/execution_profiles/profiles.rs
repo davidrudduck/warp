@@ -27,8 +27,8 @@ use crate::{
 };
 
 use super::{
-    AIExecutionProfile, ActionPermission, CloudAIExecutionProfileModel,
-    DirectApiAgentBackend, DirectApiProfileModelSelection, ModelRouting, WriteToPtyPermission,
+    AIExecutionProfile, ActionPermission, CloudAIExecutionProfileModel, DirectApiAgentBackend,
+    DirectApiProfileModelSelection, ModelRouting, WriteToPtyPermission,
 };
 
 /// ExecutionProfileId is the identifier that users of the AIExecutionProfilesModel use

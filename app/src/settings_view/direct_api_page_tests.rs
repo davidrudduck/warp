@@ -1,4 +1,4 @@
-use super::{visibility_tooltip, DirectApiSettingsPageView, ProviderType};
+use super::{visibility_tooltip, DirectApiPageAction, DirectApiSettingsPageView, ProviderType};
 use crate::appearance::Appearance;
 use crate::auth::AuthStateProvider;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
@@ -6,7 +6,7 @@ use crate::test_util::settings::initialize_settings_for_tests;
 use ai::url_validation::validate_direct_api_base_url;
 use warp_core::settings::{DirectAPISettings, Setting};
 use warpui::platform::WindowStyle;
-use warpui::{App, SingletonEntity as _};
+use warpui::{App, SingletonEntity as _, TypedActionView};
 
 fn is_safe_for_http(url: &str) -> bool {
     validate_direct_api_base_url(url).is_ok()
@@ -165,6 +165,48 @@ fn validate_api_key_optional_for_ollama_and_custom() {
 fn visibility_tooltip_reflects_show_state() {
     assert_eq!(visibility_tooltip(false), "Show API key");
     assert_eq!(visibility_tooltip(true), "Hide API key");
+}
+
+#[test]
+fn rig_backend_toggle_defaults_off() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        DirectAPISettings::register(&mut app);
+        app.add_singleton_model(|_| AuthStateProvider::new_logged_out_for_test());
+        app.add_singleton_model(|_| Appearance::mock());
+        app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
+
+        let (_window_id, view) =
+            app.add_window(WindowStyle::NotStealFocus, DirectApiSettingsPageView::new);
+
+        view.read(&app, |view, ctx| {
+            assert!(!view.rig_backend_enabled(ctx));
+        });
+    });
+}
+
+#[test]
+fn rig_backend_toggle_persists_setting() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        DirectAPISettings::register(&mut app);
+        app.add_singleton_model(|_| AuthStateProvider::new_logged_out_for_test());
+        app.add_singleton_model(|_| Appearance::mock());
+        app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
+
+        let (_window_id, view) =
+            app.add_window(WindowStyle::NotStealFocus, DirectApiSettingsPageView::new);
+
+        view.update(&mut app, |view, ctx| {
+            view.handle_action(&DirectApiPageAction::ToggleRigBackendEnabled, ctx);
+            assert!(view.rig_backend_enabled(ctx));
+        });
+
+        app.read(|ctx| {
+            let settings = DirectAPISettings::as_ref(ctx);
+            assert!(*settings.rig_backend_enabled);
+        });
+    });
 }
 
 // ============================================================================
