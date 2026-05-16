@@ -305,7 +305,7 @@ git commit -m "Add Direct API Rig backend gate setting"
 - Modify `app/src/ai/execution_profiles/profiles.rs`
 - Modify `app/src/ai/execution_profiles/profiles_tests.rs`
 
-- [ ] **Step 1: Add failing profile tests**
+- [x] **Step 1: Add failing profile tests**
 
 Add:
 
@@ -331,7 +331,7 @@ fn execution_profile_roundtrips_rig_backend() {
 }
 ```
 
-- [ ] **Step 2: Run failing tests**
+- [x] **Step 2: Run failing tests**
 
 Run:
 
@@ -341,7 +341,7 @@ cargo test -p warp execution_profile_ -- --nocapture
 
 Expected: compile failure because `DirectApiAgentBackend` does not exist.
 
-- [ ] **Step 3: Add enum and field**
+- [x] **Step 3: Add enum and field**
 
 In `app/src/ai/execution_profiles/mod.rs`, add:
 
@@ -377,7 +377,7 @@ Set default:
 direct_api_agent_backend: DirectApiAgentBackend::Native,
 ```
 
-- [ ] **Step 4: Add setter**
+- [x] **Step 4: Add setter**
 
 In `app/src/ai/execution_profiles/profiles.rs`, add:
 
@@ -401,7 +401,7 @@ pub fn set_direct_api_agent_backend(
 
 If `update_profile` has a different local signature, adapt to the existing setter pattern in the same file.
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run:
 
@@ -411,7 +411,7 @@ cargo test -p warp execution_profile_ -- --nocapture
 
 Expected: tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add app/src/ai/execution_profiles/mod.rs app/src/ai/execution_profiles/profiles.rs app/src/ai/execution_profiles/profiles_tests.rs

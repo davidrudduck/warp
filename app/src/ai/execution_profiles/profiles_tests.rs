@@ -4,7 +4,7 @@ use warpui::{App, SingletonEntity};
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 use crate::ai::execution_profiles::{
     AIExecutionProfile, ActionPermission, CloudAIExecutionProfileModel,
-    DirectApiProfileModelSelection, ModelRouting,
+    DirectApiAgentBackend, DirectApiProfileModelSelection, ModelRouting,
 };
 use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::auth::AuthStateProvider;
@@ -56,6 +56,20 @@ fn execution_profile_defaults_to_warp_provider_routing() {
 
     assert_eq!(profile.model_routing, ModelRouting::WarpProvider);
     assert_eq!(profile.direct_api_model, None);
+    assert_eq!(
+        profile.direct_api_agent_backend,
+        DirectApiAgentBackend::Native
+    );
+}
+
+#[test]
+fn execution_profile_defaults_direct_api_backend_to_native() {
+    let profile = AIExecutionProfile::default();
+
+    assert_eq!(
+        profile.direct_api_agent_backend,
+        DirectApiAgentBackend::Native
+    );
 }
 
 #[test]
@@ -117,6 +131,24 @@ fn execution_profile_roundtrips_direct_api_selection() {
 }
 
 #[test]
+fn execution_profile_roundtrips_rig_backend() {
+    let profile = AIExecutionProfile {
+        model_routing: ModelRouting::DirectApi,
+        direct_api_agent_backend: DirectApiAgentBackend::RigAgent,
+        ..AIExecutionProfile::default()
+    };
+
+    let serialized = serde_json::to_string(&profile).expect("profile should serialize");
+    let decoded: AIExecutionProfile =
+        serde_json::from_str(&serialized).expect("profile should deserialize");
+
+    assert_eq!(
+        decoded.direct_api_agent_backend,
+        DirectApiAgentBackend::RigAgent
+    );
+}
+
+#[test]
 fn profile_setters_preserve_other_route_selection() {
     App::test((), |mut app| async move {
         install_singletons(&mut app, AuthStateProvider::new_logged_out_for_test());
@@ -147,6 +179,33 @@ fn profile_setters_preserve_other_route_selection() {
                     .as_ref()
                     .map(|selection| selection.label()),
                 Some("Anthropic / claude-3-5-sonnet-20241022".to_string())
+            );
+        });
+    })
+}
+
+#[test]
+fn profile_setter_updates_direct_api_agent_backend() {
+    App::test((), |mut app| async move {
+        install_singletons(&mut app, AuthStateProvider::new_logged_out_for_test());
+        let profile_model = app.add_singleton_model(|ctx| {
+            AIExecutionProfilesModel::new(&LaunchMode::new_for_unit_test(), ctx)
+        });
+        let default_profile_id = profile_model.read(&app, |model, _ctx| model.default_profile_id());
+
+        profile_model.update(&mut app, |model, ctx| {
+            model.set_direct_api_agent_backend(
+                default_profile_id,
+                DirectApiAgentBackend::RigAgent,
+                ctx,
+            );
+        });
+
+        profile_model.read(&app, |model, ctx| {
+            let profile = model.default_profile(ctx);
+            assert_eq!(
+                profile.data().direct_api_agent_backend,
+                DirectApiAgentBackend::RigAgent
             );
         });
     })

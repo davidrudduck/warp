@@ -58,6 +58,26 @@ impl ModelRouting {
     }
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DirectApiAgentBackend {
+    #[default]
+    Native,
+    RigAgent,
+
+    // This is intended to catch deserialization errors whenever we add new variants to this enum.
+    #[serde(other)]
+    Unknown,
+}
+
+impl DirectApiAgentBackend {
+    pub fn effective(self) -> Self {
+        match self {
+            Self::Native | Self::Unknown => Self::Native,
+            Self::RigAgent => Self::RigAgent,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DirectApiProfileModelSelection {
     pub provider_id: ProviderId,
@@ -299,6 +319,7 @@ pub struct AIExecutionProfile {
         deserialize_with = "deserialize_direct_api_profile_model_selection"
     )]
     pub direct_api_model: Option<DirectApiProfileModelSelection>,
+    pub direct_api_agent_backend: DirectApiAgentBackend,
     pub coding_model: Option<LLMId>,
     pub cli_agent_model: Option<LLMId>,
     pub computer_use_model: Option<LLMId>,
@@ -332,6 +353,7 @@ impl Default for AIExecutionProfile {
             base_model: None,
             model_routing: ModelRouting::WarpProvider,
             direct_api_model: None,
+            direct_api_agent_backend: DirectApiAgentBackend::Native,
             coding_model: None,
             cli_agent_model: None,
             computer_use_model: None,
@@ -386,6 +408,7 @@ impl AIExecutionProfile {
             base_model: None,
             model_routing: ModelRouting::WarpProvider,
             direct_api_model: None,
+            direct_api_agent_backend: DirectApiAgentBackend::Native,
             coding_model: None,
             cli_agent_model: None,
             computer_use_model: None,
@@ -443,6 +466,7 @@ impl AIExecutionProfile {
             base_model: None,
             model_routing: ModelRouting::WarpProvider,
             direct_api_model: None,
+            direct_api_agent_backend: DirectApiAgentBackend::Native,
             coding_model: None,
             cli_agent_model: None,
             computer_use_model: None,

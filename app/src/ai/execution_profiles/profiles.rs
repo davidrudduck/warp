@@ -28,7 +28,7 @@ use crate::{
 
 use super::{
     AIExecutionProfile, ActionPermission, CloudAIExecutionProfileModel,
-    DirectApiProfileModelSelection, ModelRouting, WriteToPtyPermission,
+    DirectApiAgentBackend, DirectApiProfileModelSelection, ModelRouting, WriteToPtyPermission,
 };
 
 /// ExecutionProfileId is the identifier that users of the AIExecutionProfilesModel use
@@ -552,6 +552,25 @@ impl AIExecutionProfilesModel {
             |profile| {
                 if profile.direct_api_model != selection {
                     profile.direct_api_model = selection.clone();
+                    return true;
+                }
+                false
+            },
+            ctx,
+        );
+    }
+
+    pub fn set_direct_api_agent_backend(
+        &mut self,
+        profile_id: ClientProfileId,
+        backend: DirectApiAgentBackend,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.edit_profile_internal(
+            profile_id,
+            |profile| {
+                if profile.direct_api_agent_backend != backend {
+                    profile.direct_api_agent_backend = backend;
                     return true;
                 }
                 false

@@ -205,6 +205,7 @@ impl BlocklistAIPermissions {
             base_model: profile_data.base_model.clone(),
             model_routing: profile_data.model_routing,
             direct_api_model: profile_data.direct_api_model.clone(),
+            direct_api_agent_backend: profile_data.direct_api_agent_backend,
             coding_model: profile_data.coding_model.clone(),
             cli_agent_model: profile_data.cli_agent_model.clone(),
             computer_use_model: profile_data.computer_use_model.clone(),
