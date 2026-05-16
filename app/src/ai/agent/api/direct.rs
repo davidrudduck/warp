@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use ai::provider::StreamEvent;
+use ai::provider::{StreamEvent, ToolCall};
 use ai::url_validation::validate_direct_api_base_url;
 use anyhow::anyhow;
 use futures::{FutureExt, StreamExt};
@@ -142,6 +142,7 @@ async fn run_direct_text_stream(
     let message_id = Uuid::new_v4().to_string();
     let should_create_task = params.tasks.iter().all(|task| task.id != task_id);
     let mut stream = super::direct_tools::run_provider_stream(params).await?;
+    let mut pending_tool_calls: Vec<(String, String, String)> = Vec::new();
 
     if should_create_task {
         send_client_action(&tx, create_task_action(task_id.clone())).await?;
@@ -184,8 +185,49 @@ async fn run_direct_text_stream(
                 )
                 .await?;
             }
-            StreamEvent::ToolCallChunk { .. } => {}
-            StreamEvent::End { .. } => {}
+            StreamEvent::ToolCallChunk {
+                index,
+                id,
+                name,
+                args_fragment,
+            } => {
+                if index >= pending_tool_calls.len() {
+                    pending_tool_calls
+                        .resize(index + 1, (String::new(), String::new(), String::new()));
+                }
+                let entry = &mut pending_tool_calls[index];
+                if !id.is_empty() {
+                    entry.0 = id;
+                }
+                if !name.is_empty() {
+                    entry.1 = name;
+                }
+                entry.2.push_str(&args_fragment);
+            }
+            StreamEvent::End { .. } => {
+                for (id, name, args_str) in pending_tool_calls.drain(..) {
+                    if id.is_empty() && name.is_empty() {
+                        continue;
+                    }
+                    let input = serde_json::from_str(&args_str).unwrap_or(serde_json::Value::Null);
+                    let proto_tool_call =
+                        super::direct_tools::provider_tool_call_to_proto(ToolCall {
+                            id,
+                            name,
+                            input,
+                        })?;
+                    send_client_action(
+                        &tx,
+                        add_tool_call_action(
+                            task_id.clone(),
+                            request_id.clone(),
+                            Uuid::new_v4().to_string(),
+                            proto_tool_call,
+                        ),
+                    )
+                    .await?;
+                }
+            }
         }
     }
 

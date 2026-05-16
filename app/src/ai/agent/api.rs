@@ -4,6 +4,7 @@ mod convert_to;
 mod direct;
 mod direct_tools;
 mod r#impl;
+mod rig_direct;
 
 pub use ai::agent::convert::ConvertToAPITypeError;
 use ai::api_keys::{ApiKeyManager, ApiKeys};

@@ -154,8 +154,12 @@ pub async fn stream_turn_with_rig(
             stream_with_model(client.completion_model(config.model_id), request).await
         }
         RigProviderKind::OpenRouter => {
-            let client = rig_core::providers::openrouter::Client::new(required_api_key(&config)?)
-                .map_err(rig_client_error)?;
+            let mut builder = rig_core::providers::openrouter::Client::builder()
+                .api_key(required_api_key(&config)?);
+            if let Some(base_url) = config.base_url.as_deref() {
+                builder = builder.base_url(base_url);
+            }
+            let client = builder.build().map_err(rig_client_error)?;
             stream_with_model(client.completion_model(config.model_id), request).await
         }
         RigProviderKind::CustomOpenAICompatible => {

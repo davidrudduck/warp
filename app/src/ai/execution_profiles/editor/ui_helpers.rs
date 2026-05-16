@@ -52,6 +52,7 @@ pub(super) struct DirectApiAgentBackendSelectorState {
 }
 
 impl DirectApiAgentBackendSelectorState {
+    #[cfg(test)]
     pub(super) fn option_labels(&self) -> Vec<String> {
         self.options
             .iter()

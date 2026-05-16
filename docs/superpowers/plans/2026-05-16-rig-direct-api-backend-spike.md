@@ -973,7 +973,7 @@ git commit -m "Spike deferred tool handling for Rig backend"
 - Modify `app/src/ai/agent/api/direct.rs`
 - Modify `app/src/ai/agent/api/impl_tests.rs`
 
-- [ ] **Step 1: Add app routing tests**
+- [x] **Step 1: Add app routing tests**
 
 Add:
 
@@ -997,7 +997,7 @@ fn direct_api_native_backend_remains_default() {
 }
 ```
 
-- [ ] **Step 2: Run failing tests**
+- [x] **Step 2: Run failing tests**
 
 Run:
 
@@ -1007,7 +1007,7 @@ cargo test -p warp --features direct_api_rig_backend direct_api_rig_backend_uses
 
 Expected: compile failure until selector exists.
 
-- [ ] **Step 3: Add selector**
+- [x] **Step 3: Add selector**
 
 In `direct_tools.rs`, add:
 
@@ -1035,7 +1035,7 @@ pub fn select_direct_api_stream_backend(params: &RequestParams) -> DirectApiStre
 }
 ```
 
-- [ ] **Step 4: Dispatch backend**
+- [x] **Step 4: Dispatch backend**
 
 Change `run_provider_stream`:
 
@@ -1048,7 +1048,7 @@ match select_direct_api_stream_backend(&params) {
 
 Keep the existing body in `run_native_provider_stream`.
 
-- [ ] **Step 5: Implement `rig_direct.rs`**
+- [x] **Step 5: Implement `rig_direct.rs`**
 
 Add:
 
@@ -1072,7 +1072,7 @@ pub async fn run_rig_provider_stream(_params: RequestParams) -> anyhow::Result<C
 }
 ```
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run:
 
@@ -1083,7 +1083,7 @@ cargo test -p warp direct_api --lib -- --nocapture
 
 Expected: Rig feature tests pass and native Direct API tests remain green.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add app/src/ai/agent/api/direct_tools.rs app/src/ai/agent/api/rig_direct.rs app/src/ai/agent/api/mod.rs app/src/ai/agent/api/direct.rs app/src/ai/agent/api/impl_tests.rs

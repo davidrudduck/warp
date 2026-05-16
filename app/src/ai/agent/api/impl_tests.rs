@@ -57,6 +57,58 @@ fn request_params_with_ask_user_question_enabled(ask_user_question_enabled: bool
     }
 }
 
+fn direct_api_request_params_for_openrouter() -> RequestParams {
+    let mut params = request_params_with_ask_user_question_enabled(false);
+    params.model_routing = ModelRouting::DirectApi;
+    params.direct_api_route_config = Some(DirectApiRouteConfig {
+        provider_id: ai::model_registry::ProviderId::OpenRouter,
+        model_id: "openai/gpt-4o-mini".to_string(),
+        api_key: Some("sk-or-test".to_string()),
+        base_url: Some("https://openrouter.ai/api/v1".to_string()),
+    });
+    params
+}
+
+#[cfg(feature = "direct_api_rig_backend")]
+#[test]
+fn direct_api_rig_backend_uses_rig_stream_when_enabled() {
+    let mut params = direct_api_request_params_for_openrouter();
+    params.direct_api_agent_backend = DirectApiAgentBackend::RigAgent;
+
+    let backend = super::super::direct_tools::select_direct_api_stream_backend(&params);
+
+    assert_eq!(
+        backend,
+        super::super::direct_tools::DirectApiStreamBackend::RigAgent
+    );
+}
+
+#[test]
+fn direct_api_native_backend_remains_default() {
+    let params = direct_api_request_params_for_openrouter();
+
+    let backend = super::super::direct_tools::select_direct_api_stream_backend(&params);
+
+    assert_eq!(
+        backend,
+        super::super::direct_tools::DirectApiStreamBackend::NativeGenai
+    );
+}
+
+#[cfg(not(feature = "direct_api_rig_backend"))]
+#[test]
+fn direct_api_rig_backend_falls_back_to_native_without_feature() {
+    let mut params = direct_api_request_params_for_openrouter();
+    params.direct_api_agent_backend = DirectApiAgentBackend::RigAgent;
+
+    let backend = super::super::direct_tools::select_direct_api_stream_backend(&params);
+
+    assert_eq!(
+        backend,
+        super::super::direct_tools::DirectApiStreamBackend::NativeGenai
+    );
+}
+
 #[test]
 fn direct_api_routing_requires_route_config() {
     let mut params = request_params_with_ask_user_question_enabled(false);

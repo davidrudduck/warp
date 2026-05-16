@@ -13,8 +13,18 @@ use crate::ai::agent::{
     AIAgentActionResult, AIAgentActionResultType, AIAgentContext, AIAgentInput, GrepResult,
     ReadFilesResult,
 };
+use crate::ai::execution_profiles::DirectApiAgentBackend;
 
 pub async fn run_provider_stream(params: RequestParams) -> anyhow::Result<ChatStream> {
+    match select_direct_api_stream_backend(&params) {
+        DirectApiStreamBackend::NativeGenai => run_native_provider_stream(params).await,
+        DirectApiStreamBackend::RigAgent => {
+            super::rig_direct::run_rig_provider_stream(params).await
+        }
+    }
+}
+
+async fn run_native_provider_stream(params: RequestParams) -> anyhow::Result<ChatStream> {
     let config = params
         .direct_api_route_config
         .as_ref()
@@ -24,6 +34,31 @@ pub async fn run_provider_stream(params: RequestParams) -> anyhow::Result<ChatSt
         .chat_stream(request)
         .await
         .map_err(Into::into)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DirectApiStreamBackend {
+    NativeGenai,
+    #[cfg_attr(not(feature = "direct_api_rig_backend"), allow(dead_code))]
+    RigAgent,
+}
+
+pub fn select_direct_api_stream_backend(params: &RequestParams) -> DirectApiStreamBackend {
+    match params.direct_api_agent_backend.effective() {
+        DirectApiAgentBackend::Native | DirectApiAgentBackend::Unknown => {
+            DirectApiStreamBackend::NativeGenai
+        }
+        DirectApiAgentBackend::RigAgent => {
+            #[cfg(feature = "direct_api_rig_backend")]
+            {
+                DirectApiStreamBackend::RigAgent
+            }
+            #[cfg(not(feature = "direct_api_rig_backend"))]
+            {
+                DirectApiStreamBackend::NativeGenai
+            }
+        }
+    }
 }
 
 fn provider_for_config(config: &DirectApiRouteConfig) -> GenaiAdapter {
