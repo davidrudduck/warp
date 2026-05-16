@@ -252,7 +252,7 @@ use crate::workspaces::user_profiles::UserProfiles;
 use anyhow::Context;
 use anyhow::{anyhow, Result};
 use appearance::{Appearance, AppearanceManager};
-use channel::{Channel, ChannelState};
+use channel::ChannelState;
 use interval_timer::IntervalTimer;
 use itertools::Itertools;
 use referral_theme_status::ReferralThemeStatus;
@@ -1067,19 +1067,15 @@ pub(crate) fn initialize_app(
     let data_domain = ChannelState::data_domain();
 
     // Register an implementation of the secure storage service.
-    if should_use_noop_secure_storage(ChannelState::channel()) {
-        warpui_extras::secure_storage::register_noop(&data_domain, ctx);
-    } else {
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "integration_tests")] {
-                warpui_extras::secure_storage::register_noop(&data_domain, ctx);
-            } else if #[cfg(any(target_os = "linux", target_os = "freebsd"))] {
-                warpui_extras::secure_storage::register_with_fallback(&data_domain, warp_core::paths::state_dir(), ctx)
-            } else if #[cfg(target_os = "windows")] {
-                warpui_extras::secure_storage::register_with_dir(&data_domain, warp_core::paths::state_dir(), ctx)
-            } else {
-                warpui_extras::secure_storage::register(&data_domain, ctx);
-            }
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "integration_tests")] {
+            warpui_extras::secure_storage::register_noop(&data_domain, ctx);
+        } else if #[cfg(any(target_os = "linux", target_os = "freebsd"))] {
+            warpui_extras::secure_storage::register_with_fallback(&data_domain, warp_core::paths::state_dir(), ctx)
+        } else if #[cfg(target_os = "windows")] {
+            warpui_extras::secure_storage::register_with_dir(&data_domain, warp_core::paths::state_dir(), ctx)
+        } else {
+            warpui_extras::secure_storage::register(&data_domain, ctx);
         }
     }
 
@@ -1887,24 +1883,6 @@ pub(crate) fn initialize_app(
     });
 
     app_state
-}
-
-fn should_use_noop_secure_storage(channel: Channel) -> bool {
-    matches!(channel, Channel::Oss)
-}
-
-#[cfg(test)]
-mod oss_secure_storage_tests {
-    use super::should_use_noop_secure_storage;
-    use crate::channel::Channel;
-
-    #[test]
-    fn oss_channel_uses_noop_secure_storage() {
-        assert!(should_use_noop_secure_storage(Channel::Oss));
-        assert!(!should_use_noop_secure_storage(Channel::Stable));
-        assert!(!should_use_noop_secure_storage(Channel::Preview));
-        assert!(!should_use_noop_secure_storage(Channel::Dev));
-    }
 }
 
 pub(crate) fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppCallbacks {
