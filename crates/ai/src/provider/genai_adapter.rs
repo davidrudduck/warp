@@ -392,9 +392,8 @@ fn convert_genai_stream_event(event: ChatStreamEvent) -> Vec<Result<StreamEvent,
             }));
             events
         }
-        ChatStreamEvent::ReasoningChunk(_) => {
-            // Ignore reasoning chunks for now (DeepSeek, Claude thinking)
-            Vec::new()
+        ChatStreamEvent::ReasoningChunk(chunk) => {
+            vec![Ok(StreamEvent::ReasoningChunk(chunk.content))]
         }
         ChatStreamEvent::ThoughtSignatureChunk(_) => {
             // Ignore thought signatures for now

@@ -1096,7 +1096,7 @@ git commit -m "Route Direct API through experimental Rig backend"
 - Modify `crates/ai/src/provider/rig_backend_tests.rs`
 - Modify `app/src/ai/agent/api/impl_tests.rs`
 
-- [ ] **Step 1: Add parity cases**
+- [x] **Step 1: Add parity cases**
 
 Cover these cases:
 
@@ -1125,7 +1125,7 @@ fn rig_stream_cancellation_stops_events() {}
 
 Each test should assert exact event order and tool-call IDs.
 
-- [ ] **Step 2: Run tests**
+- [x] **Step 2: Run tests**
 
 Run:
 
@@ -1136,7 +1136,7 @@ cargo test -p warp --features direct_api_rig_backend rig_stream -- --nocapture
 
 Expected: all parity tests pass.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add crates/ai/src/provider/rig_backend_tests.rs app/src/ai/agent/api/impl_tests.rs

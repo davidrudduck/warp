@@ -97,6 +97,7 @@ impl TokenUsage {
 pub enum StreamEvent {
     Start,
     TextChunk(String),
+    ReasoningChunk(String),
     ToolCallChunk {
         index: usize,
         id: String,

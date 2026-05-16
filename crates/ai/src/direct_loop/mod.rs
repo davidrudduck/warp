@@ -73,6 +73,9 @@ pub async fn collect_and_emit_stream(
                 Some(Ok(StreamEvent::TextChunk(text))) => {
                     let _ = sender.send(AgentEvent::TextChunk(text)).await;
                 }
+                Some(Ok(StreamEvent::ReasoningChunk(reasoning))) => {
+                    let _ = sender.send(AgentEvent::ReasoningChunk(reasoning)).await;
+                }
                 Some(Ok(StreamEvent::ToolCallChunk {
                     index,
                     id,

@@ -1,12 +1,15 @@
 use super::{
     rig_completion_request_from_chat_request, stream_event_from_rig_backend_event,
-    RigBackendConfig, RigBackendEvent, RigProviderKind, RigStreamMapper,
+    RigBackendConfig, RigBackendEvent, RigEventStream, RigProviderKind, RigStreamMapper,
 };
 use crate::provider::{
     agent_event_channel, mock::MockLlmProvider, AgentEvent, ChatMessage, ChatOptions, ChatRequest,
-    ContentBlock, FinishReason, SharedProvider, ToolCall, ToolResultContent,
+    ChatResponse, ChatStream, ContentBlock, FinishReason, LlmProvider, ModelCapabilities,
+    ProviderError, ProviderKind, SharedProvider, StreamEvent, TokenUsage, ToolCall,
+    ToolResultContent,
 };
-use futures::FutureExt;
+use async_trait::async_trait;
+use futures::{FutureExt, StreamExt};
 use rig_core::message::{
     AssistantContent as RigAssistantContent, Message as RigMessage, ToolCall as RigToolCall,
     ToolFunction as RigToolFunction, ToolResultContent as RigToolResultContent,
@@ -191,6 +194,355 @@ fn rig_stream_mapper_ends_with_tool_use_after_tool_call() {
     ));
 }
 
+#[test]
+fn rig_stream_preserves_text_order() {
+    let events = rig_events_from_stream_items(vec![
+        StreamedAssistantContent::text("one"),
+        StreamedAssistantContent::text(" two"),
+        StreamedAssistantContent::Final(()),
+    ]);
+
+    assert_eq!(
+        events,
+        vec![
+            RigBackendEvent::TextChunk("one".to_string()),
+            RigBackendEvent::TextChunk(" two".to_string()),
+            RigBackendEvent::End {
+                finish_reason: FinishReason::Stop,
+                usage: None,
+            },
+        ]
+    );
+}
+
+#[test]
+fn rig_stream_preserves_reasoning_chunks() {
+    let events = rig_events_from_stream_items(vec![
+        StreamedAssistantContent::Reasoning(rig_core::message::Reasoning::new("think")),
+        StreamedAssistantContent::ReasoningDelta {
+            id: Some("reasoning-1".to_string()),
+            reasoning: "ing".to_string(),
+        },
+        StreamedAssistantContent::text("done"),
+        StreamedAssistantContent::Final(()),
+    ]);
+
+    assert_eq!(
+        events,
+        vec![
+            RigBackendEvent::ReasoningChunk("think".to_string()),
+            RigBackendEvent::ReasoningChunk("ing".to_string()),
+            RigBackendEvent::TextChunk("done".to_string()),
+            RigBackendEvent::End {
+                finish_reason: FinishReason::Stop,
+                usage: None,
+            },
+        ]
+    );
+
+    let mut chat_stream = super::rig_event_stream_to_chat_stream(Box::pin(futures::stream::iter(
+        events.into_iter().map(Ok),
+    )));
+    let chat_events = futures::executor::block_on(async {
+        let mut chat_events = Vec::new();
+        while let Some(event) = chat_stream.next().await {
+            chat_events.push(event.unwrap());
+        }
+        chat_events
+    });
+
+    assert_eq!(chat_events.len(), 4);
+    assert!(matches!(
+        &chat_events[0],
+        StreamEvent::ReasoningChunk(text) if text == "think"
+    ));
+    assert!(matches!(
+        &chat_events[1],
+        StreamEvent::ReasoningChunk(text) if text == "ing"
+    ));
+    assert!(matches!(
+        &chat_events[2],
+        StreamEvent::TextChunk(text) if text == "done"
+    ));
+    assert!(matches!(
+        &chat_events[3],
+        StreamEvent::End {
+            finish_reason: FinishReason::Stop,
+            usage: None,
+        }
+    ));
+}
+
+#[test]
+fn rig_stream_assembles_tool_arguments_from_deltas() {
+    let events = rig_events_from_stream_items(vec![
+        StreamedAssistantContent::ToolCallDelta {
+            id: "call_read".to_string(),
+            internal_call_id: "internal_read".to_string(),
+            content: ToolCallDeltaContent::Name("ReadFiles".to_string()),
+        },
+        StreamedAssistantContent::ToolCallDelta {
+            id: "call_read".to_string(),
+            internal_call_id: "internal_read".to_string(),
+            content: ToolCallDeltaContent::Delta(r#"{"files":["#.to_string()),
+        },
+        StreamedAssistantContent::ToolCallDelta {
+            id: "call_read".to_string(),
+            internal_call_id: "internal_read".to_string(),
+            content: ToolCallDeltaContent::Delta(r#""Cargo.toml"]}"#.to_string()),
+        },
+        StreamedAssistantContent::Final(()),
+    ]);
+
+    assert_eq!(
+        events,
+        vec![
+            RigBackendEvent::ToolCallDelta {
+                index: 0,
+                id: "call_read".to_string(),
+                name: "ReadFiles".to_string(),
+                args_fragment: String::new(),
+            },
+            RigBackendEvent::ToolCallDelta {
+                index: 0,
+                id: "call_read".to_string(),
+                name: String::new(),
+                args_fragment: r#"{"files":["#.to_string(),
+            },
+            RigBackendEvent::ToolCallDelta {
+                index: 0,
+                id: "call_read".to_string(),
+                name: String::new(),
+                args_fragment: r#""Cargo.toml"]}"#.to_string(),
+            },
+            RigBackendEvent::End {
+                finish_reason: FinishReason::ToolUse,
+                usage: None,
+            },
+        ]
+    );
+}
+
+#[test]
+fn rig_stream_preserves_tool_call_ids() {
+    let events = rig_events_from_stream_items(vec![
+        StreamedAssistantContent::ToolCall {
+            tool_call: RigToolCall::new(
+                "call_read".to_string(),
+                RigToolFunction::new("ReadFiles".to_string(), json!({"files":["Cargo.toml"]})),
+            ),
+            internal_call_id: "internal_read".to_string(),
+        },
+        StreamedAssistantContent::ToolCall {
+            tool_call: RigToolCall::new(
+                "call_grep".to_string(),
+                RigToolFunction::new("Grep".to_string(), json!({"queries":["TODO"]})),
+            ),
+            internal_call_id: "internal_grep".to_string(),
+        },
+        StreamedAssistantContent::Final(()),
+    ]);
+
+    assert_eq!(
+        events,
+        vec![
+            RigBackendEvent::ToolCallReady(ToolCall {
+                id: "call_read".to_string(),
+                name: "ReadFiles".to_string(),
+                input: json!({"files":["Cargo.toml"]}),
+            }),
+            RigBackendEvent::ToolCallReady(ToolCall {
+                id: "call_grep".to_string(),
+                name: "Grep".to_string(),
+                input: json!({"queries":["TODO"]}),
+            }),
+            RigBackendEvent::End {
+                finish_reason: FinishReason::ToolUse,
+                usage: None,
+            },
+        ]
+    );
+}
+
+#[test]
+fn rig_stream_maps_usage_on_end() {
+    let events = rig_events_from_stream_items(vec![StreamedAssistantContent::Final(
+        UsageResponse::new(11, 7, 3),
+    )]);
+
+    assert_eq!(
+        events,
+        vec![RigBackendEvent::End {
+            finish_reason: FinishReason::Stop,
+            usage: Some(TokenUsage {
+                input_tokens: 11,
+                output_tokens: 7,
+                cache_read_tokens: Some(3),
+            }),
+        }]
+    );
+}
+
+#[test]
+fn rig_stream_empty_success_is_error() {
+    let provider = RigStreamProvider::queued(Vec::new());
+    let (tx, _rx) = agent_event_channel(16);
+    let (_cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
+    let mut cancel_signal = cancel_rx.fuse();
+
+    let err = futures::executor::block_on(crate::direct_loop::collect_and_emit_stream(
+        &provider,
+        ChatRequest {
+            messages: vec![ChatMessage::User(vec![ContentBlock::Text("hello".into())])],
+            tools: Vec::new(),
+            options: ChatOptions::default(),
+        },
+        &tx,
+        &mut cancel_signal,
+    ))
+    .unwrap_err();
+
+    assert!(
+        matches!(err, ProviderError::StreamParse(message) if message.contains("without End event"))
+    );
+}
+
+#[tokio::test]
+async fn rig_stream_cancellation_stops_events() {
+    let (provider, rig_tx) = RigStreamProvider::controlled();
+    let (tx, mut rx) = agent_event_channel(16);
+    let (cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
+    let mut cancel_signal = cancel_rx.fuse();
+
+    let handle = tokio::spawn(async move {
+        crate::direct_loop::collect_and_emit_stream(
+            &provider,
+            ChatRequest {
+                messages: vec![ChatMessage::User(vec![ContentBlock::Text("cancel".into())])],
+                tools: Vec::new(),
+                options: ChatOptions::default(),
+            },
+            &tx,
+            &mut cancel_signal,
+        )
+        .await
+    });
+    rig_tx.send(Ok(RigBackendEvent::Start)).await.unwrap();
+    rig_tx
+        .send(Ok(RigBackendEvent::TextChunk("before cancel".to_string())))
+        .await
+        .unwrap();
+
+    let first_event = rx.recv().await.unwrap();
+    assert!(matches!(
+        first_event,
+        AgentEvent::TextChunk(text) if text == "before cancel"
+    ));
+    cancel_tx.send(()).unwrap();
+
+    let result = handle.await.unwrap();
+    assert!(matches!(result, Err(ProviderError::Cancelled)));
+    assert!(rx.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn rig_stream_end_after_cancellation_does_not_emit_stale_events() {
+    let (provider, rig_tx) = RigStreamProvider::controlled();
+    let (tx, mut rx) = agent_event_channel(16);
+    let (cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
+    let mut cancel_signal = cancel_rx.fuse();
+
+    let handle = tokio::spawn(async move {
+        crate::direct_loop::collect_and_emit_stream(
+            &provider,
+            ChatRequest {
+                messages: vec![ChatMessage::User(vec![ContentBlock::Text("cancel".into())])],
+                tools: Vec::new(),
+                options: ChatOptions::default(),
+            },
+            &tx,
+            &mut cancel_signal,
+        )
+        .await
+    });
+    rig_tx.send(Ok(RigBackendEvent::Start)).await.unwrap();
+    rig_tx
+        .send(Ok(RigBackendEvent::TextChunk("before cancel".to_string())))
+        .await
+        .unwrap();
+    assert!(matches!(
+        rx.recv().await.unwrap(),
+        AgentEvent::TextChunk(text) if text == "before cancel"
+    ));
+    cancel_tx.send(()).unwrap();
+    rig_tx
+        .send(Ok(RigBackendEvent::End {
+            finish_reason: FinishReason::Stop,
+            usage: None,
+        }))
+        .await
+        .unwrap();
+
+    let result = handle.await.unwrap();
+    assert!(matches!(result, Err(ProviderError::Cancelled)));
+    assert!(rx.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn rig_stream_reasoning_does_not_block_direct_loop_completion() {
+    let provider = RigStreamProvider::queued(vec![
+        Ok(RigBackendEvent::Start),
+        Ok(RigBackendEvent::ReasoningChunk(
+            "private reasoning".to_string(),
+        )),
+        Ok(RigBackendEvent::TextChunk("visible".to_string())),
+        Ok(RigBackendEvent::End {
+            finish_reason: FinishReason::Stop,
+            usage: None,
+        }),
+    ]);
+    let (tx, mut rx) = agent_event_channel(16);
+    let (_cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
+    let mut cancel_signal = cancel_rx.fuse();
+
+    let (finish_reason, usage, tool_calls) = crate::direct_loop::collect_and_emit_stream(
+        &provider,
+        ChatRequest {
+            messages: vec![ChatMessage::User(vec![ContentBlock::Text("reason".into())])],
+            tools: Vec::new(),
+            options: ChatOptions::default(),
+        },
+        &tx,
+        &mut cancel_signal,
+    )
+    .await
+    .unwrap();
+    drop(tx);
+
+    assert_eq!(finish_reason, FinishReason::Stop);
+    assert!(usage.is_none());
+    assert!(tool_calls.is_empty());
+
+    let mut received = vec![];
+    while let Some(event) = rx.recv().await {
+        received.push(event);
+    }
+    assert!(received.iter().any(|event| matches!(
+        event,
+        AgentEvent::ReasoningChunk(reasoning) if reasoning == "private reasoning"
+    )));
+    assert!(received
+        .iter()
+        .any(|event| matches!(event, AgentEvent::TextChunk(text) if text == "visible")));
+    assert!(received.iter().any(|event| matches!(
+        event,
+        AgentEvent::Done {
+            finish_reason: FinishReason::Stop,
+            usage: None,
+        }
+    )));
+}
+
 #[tokio::test]
 async fn rig_delta_ready_final_reaches_direct_loop_as_one_tool_call() {
     let mut mapper = RigStreamMapper::default();
@@ -367,6 +719,112 @@ fn rig_request_conversion_preserves_external_tool_result_turn() {
         panic!("expected text tool result");
     };
     assert_eq!(text.text, "Cargo.toml contents");
+}
+
+fn rig_events_from_stream_items<R>(items: Vec<StreamedAssistantContent<R>>) -> Vec<RigBackendEvent>
+where
+    R: Clone + std::marker::Unpin + rig_core::completion::GetTokenUsage,
+{
+    let mut mapper = RigStreamMapper::default();
+    items
+        .into_iter()
+        .filter_map(|item| mapper.map_stream_item(item).unwrap())
+        .collect()
+}
+
+#[derive(Clone, Debug)]
+struct UsageResponse {
+    usage: rig_core::completion::Usage,
+}
+
+impl UsageResponse {
+    fn new(input_tokens: u64, output_tokens: u64, cached_input_tokens: u64) -> Self {
+        Self {
+            usage: rig_core::completion::Usage {
+                input_tokens,
+                output_tokens,
+                total_tokens: input_tokens + output_tokens,
+                cached_input_tokens,
+                cache_creation_input_tokens: 0,
+                reasoning_tokens: 0,
+            },
+        }
+    }
+}
+
+impl rig_core::completion::GetTokenUsage for UsageResponse {
+    fn token_usage(&self) -> Option<rig_core::completion::Usage> {
+        Some(self.usage)
+    }
+}
+
+struct RigStreamProvider {
+    receiver:
+        std::sync::Mutex<Option<async_channel::Receiver<Result<RigBackendEvent, ProviderError>>>>,
+    capabilities: ModelCapabilities,
+}
+
+impl RigStreamProvider {
+    fn queued(events: Vec<Result<RigBackendEvent, ProviderError>>) -> SharedProvider {
+        let (sender, receiver) = async_channel::unbounded();
+        for event in events {
+            sender.try_send(event).unwrap();
+        }
+        drop(sender);
+        Arc::new(Self {
+            receiver: std::sync::Mutex::new(Some(receiver)),
+            capabilities: ModelCapabilities::default(),
+        })
+    }
+
+    fn controlled() -> (
+        SharedProvider,
+        async_channel::Sender<Result<RigBackendEvent, ProviderError>>,
+    ) {
+        let (sender, receiver) = async_channel::unbounded();
+        (
+            Arc::new(Self {
+                receiver: std::sync::Mutex::new(Some(receiver)),
+                capabilities: ModelCapabilities::default(),
+            }),
+            sender,
+        )
+    }
+}
+
+#[async_trait]
+impl LlmProvider for RigStreamProvider {
+    async fn chat(&self, _req: ChatRequest) -> Result<ChatResponse, ProviderError> {
+        Err(ProviderError::UnsupportedModel(
+            "RigStreamProvider only supports streaming tests".to_string(),
+        ))
+    }
+
+    async fn chat_stream(&self, _req: ChatRequest) -> Result<ChatStream, ProviderError> {
+        let receiver = self
+            .receiver
+            .lock()
+            .unwrap()
+            .take()
+            .ok_or_else(|| ProviderError::StreamParse("stream already consumed".to_string()))?;
+        let rig_stream: RigEventStream =
+            Box::pin(futures::stream::unfold(receiver, |receiver| async move {
+                receiver.recv().await.ok().map(|event| (event, receiver))
+            }));
+        Ok(super::rig_event_stream_to_chat_stream(rig_stream))
+    }
+
+    fn capabilities(&self) -> &ModelCapabilities {
+        &self.capabilities
+    }
+
+    fn provider_kind(&self) -> ProviderKind {
+        ProviderKind::OpenAI
+    }
+
+    fn with_base_url(self, _url: &str) -> Self {
+        self
+    }
 }
 
 #[derive(Default)]

@@ -24,6 +24,8 @@ pub type ChatStream = Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderErro
 pub enum AgentEvent {
     /// A text chunk arrived from the model.
     TextChunk(String),
+    /// A reasoning chunk arrived from the model.
+    ReasoningChunk(String),
     /// A tool call is fully assembled and ready to execute.
     ToolCallReady(ToolCall),
     /// The stream ended normally.

@@ -459,7 +459,7 @@ fn stream_event_from_rig_backend_event(event: RigBackendEvent) -> Option<StreamE
     match event {
         RigBackendEvent::Start => Some(StreamEvent::Start),
         RigBackendEvent::TextChunk(text) => Some(StreamEvent::TextChunk(text)),
-        RigBackendEvent::ReasoningChunk(_) => None,
+        RigBackendEvent::ReasoningChunk(reasoning) => Some(StreamEvent::ReasoningChunk(reasoning)),
         RigBackendEvent::ToolCallDelta {
             index,
             id,

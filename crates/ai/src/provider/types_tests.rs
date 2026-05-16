@@ -123,6 +123,7 @@ fn stream_event_text_chunk() {
     match ev {
         StreamEvent::TextChunk(s) => assert_eq!(s, "hello"),
         StreamEvent::Start => panic!("expected TextChunk"),
+        StreamEvent::ReasoningChunk(_) => panic!("expected TextChunk"),
         StreamEvent::ToolCallChunk { .. } => panic!("expected TextChunk"),
         StreamEvent::ToolCallReady(_) => panic!("expected TextChunk"),
         StreamEvent::End { .. } => panic!("expected TextChunk"),
@@ -141,6 +142,7 @@ fn stream_event_tool_call_ready() {
         StreamEvent::ToolCallReady(tc) => assert_eq!(tc.name, "Grep"),
         StreamEvent::Start => panic!("expected ToolCallReady"),
         StreamEvent::TextChunk(_) => panic!("expected ToolCallReady"),
+        StreamEvent::ReasoningChunk(_) => panic!("expected ToolCallReady"),
         StreamEvent::ToolCallChunk { .. } => panic!("expected ToolCallReady"),
         StreamEvent::End { .. } => panic!("expected ToolCallReady"),
     }
@@ -164,6 +166,7 @@ fn stream_event_end_with_usage() {
         StreamEvent::End { usage: None, .. } => panic!("expected usage"),
         StreamEvent::Start => panic!("expected End"),
         StreamEvent::TextChunk(_) => panic!("expected End"),
+        StreamEvent::ReasoningChunk(_) => panic!("expected End"),
         StreamEvent::ToolCallChunk { .. } => panic!("expected End"),
         StreamEvent::ToolCallReady(_) => panic!("expected End"),
     }
