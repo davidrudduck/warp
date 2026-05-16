@@ -35,6 +35,15 @@ pub fn normalize_openai_compatible_base_url(url: &str) -> Result<String, BaseUrl
     Ok(trimmed.strip_suffix("/v1").unwrap_or(trimmed).to_string())
 }
 
+pub fn openai_compatible_base_url_with_v1(url: &str) -> String {
+    let trimmed = url.trim().trim_end_matches('/');
+    if trimmed.ends_with("/v1") {
+        trimmed.to_string()
+    } else {
+        format!("{trimmed}/v1")
+    }
+}
+
 fn host_is_local_or_private(url: &reqwest::Url) -> bool {
     let Some(host) = url.host_str() else {
         return false;
@@ -145,6 +154,18 @@ mod tests {
         assert_eq!(
             normalize_openai_compatible_base_url("https://example.test/").unwrap(),
             "https://example.test"
+        );
+    }
+
+    #[test]
+    fn formats_openai_compatible_api_base_url_with_v1_once() {
+        assert_eq!(
+            openai_compatible_base_url_with_v1("https://example.test"),
+            "https://example.test/v1"
+        );
+        assert_eq!(
+            openai_compatible_base_url_with_v1(" https://example.test/v1/ "),
+            "https://example.test/v1"
         );
     }
 

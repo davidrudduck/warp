@@ -88,13 +88,14 @@ pub async fn generate_direct_api_output(
         .as_ref()
         .map(|token| token.as_str().to_string())
         .unwrap_or_else(|| Uuid::new_v4().to_string());
+    let run_id = direct_api_stream_run_id(&params);
 
     tx.send(Ok(api::ResponseEvent {
         r#type: Some(api::response_event::Type::Init(
             api::response_event::StreamInit {
                 conversation_id: conversation_id.clone(),
                 request_id: request_id.clone(),
-                run_id: conversation_id,
+                run_id,
             },
         )),
     }))
@@ -127,6 +128,13 @@ pub async fn generate_direct_api_output(
     });
 
     Ok(Box::pin(rx))
+}
+
+pub(super) fn direct_api_stream_run_id(params: &RequestParams) -> String {
+    params
+        .ambient_agent_task_id
+        .map(|task_id| task_id.to_string())
+        .unwrap_or_default()
 }
 
 async fn run_direct_text_stream(

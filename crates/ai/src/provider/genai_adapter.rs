@@ -161,7 +161,9 @@ fn adapter_kind_for_provider(provider: &str) -> AdapterKind {
 
 fn endpoint_base_url_for_provider(provider: &str, url: &str) -> String {
     let mut base_url = match provider {
-        "custom" | "openai-compatible" => ai_url_with_v1(url),
+        "custom" | "openai-compatible" => {
+            crate::url_validation::openai_compatible_base_url_with_v1(url)
+        }
         "openrouter" | "openai" | "anthropic" | "gemini" | "ollama" => {
             url.trim().trim_end_matches('/').to_string()
         }
@@ -169,15 +171,6 @@ fn endpoint_base_url_for_provider(provider: &str, url: &str) -> String {
     };
     base_url.push('/');
     base_url
-}
-
-fn ai_url_with_v1(url: &str) -> String {
-    let trimmed = url.trim().trim_end_matches('/');
-    if trimmed.ends_with("/v1") {
-        trimmed.to_string()
-    } else {
-        format!("{trimmed}/v1")
-    }
 }
 
 fn convert_to_genai_request(req: ChatRequest) -> GenaiChatRequest {

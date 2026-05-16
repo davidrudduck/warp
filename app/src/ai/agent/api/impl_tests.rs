@@ -8,6 +8,7 @@ use crate::ai::agent::{
     AIAgentActionResult, AIAgentActionResultType, AIAgentContext, AIAgentInput, ReadFilesResult,
     TaskId, UserQueryMode,
 };
+use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::blocklist::SessionContext;
 use crate::ai::execution_profiles::{DirectApiAgentBackend, ModelRouting};
 use crate::ai::llms::LLMId;
@@ -92,6 +93,26 @@ fn direct_api_native_backend_remains_default() {
     assert_eq!(
         backend,
         super::super::direct_tools::DirectApiStreamBackend::NativeGenai
+    );
+}
+
+#[test]
+fn direct_api_stream_run_id_is_empty_for_local_requests() {
+    let params = direct_api_request_params_for_openrouter();
+
+    assert_eq!(super::super::direct::direct_api_stream_run_id(&params), "");
+}
+
+#[test]
+fn direct_api_stream_run_id_uses_ambient_task_id_only_when_present() {
+    let ambient_task_id: AmbientAgentTaskId =
+        "00000000-0000-0000-0000-000000000001".parse().unwrap();
+    let mut params = direct_api_request_params_for_openrouter();
+    params.ambient_agent_task_id = Some(ambient_task_id);
+
+    assert_eq!(
+        super::super::direct::direct_api_stream_run_id(&params),
+        ambient_task_id.to_string()
     );
 }
 
