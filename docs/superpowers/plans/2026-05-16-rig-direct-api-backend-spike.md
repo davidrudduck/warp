@@ -1150,7 +1150,7 @@ git commit -m "Add Rig Direct API stream parity tests"
 - Modify `crates/ai/src/logging/logger_tests.rs`
 - Modify `crates/ai/src/provider/rig_backend.rs`
 
-- [ ] **Step 1: Add redaction tests**
+- [x] **Step 1: Add redaction tests**
 
 Add:
 
@@ -1172,7 +1172,7 @@ fn rig_backend_diagnostics_redact_api_keys_and_tool_args() {
 }
 ```
 
-- [ ] **Step 2: Add safe diagnostics**
+- [x] **Step 2: Add safe diagnostics**
 
 Log only:
 
@@ -1186,7 +1186,7 @@ Log only:
 
 Do not log prompts, file contents, shell output, tool args, API keys, headers, or full custom URLs.
 
-- [ ] **Step 3: Run tests**
+- [x] **Step 3: Run tests**
 
 Run:
 
@@ -1196,7 +1196,7 @@ cargo test -p ai --features rig_backend logging rig_backend -- --nocapture
 
 Expected: tests pass.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add crates/ai/src/logging/mod.rs crates/ai/src/logging/logger_tests.rs crates/ai/src/provider/rig_backend.rs

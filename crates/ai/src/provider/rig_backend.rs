@@ -2,6 +2,7 @@ use super::{
     ChatMessage, ChatStream, ContentBlock, FinishReason, ProviderError, StreamEvent, TokenUsage,
     ToolCall, ToolResultContent,
 };
+use crate::logging::{redact_rig_diagnostic_event, RigDiagnosticEvent};
 use futures::StreamExt;
 use rig_core::client::{CompletionClient, Nothing};
 use rig_core::completion::{
@@ -14,7 +15,7 @@ use rig_core::message::{
 };
 use rig_core::streaming::{StreamedAssistantContent, ToolCallDeltaContent};
 use rig_core::OneOrMany;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RigProviderKind {
@@ -124,22 +125,55 @@ pub async fn stream_turn_with_rig(
     config: RigBackendConfig,
     request: super::ChatRequest,
 ) -> anyhow::Result<RigEventStream> {
-    config.validate()?;
+    let mut diagnostics = rig_diagnostic_event_from_config(&config);
+    if let Err(err) = config.validate() {
+        diagnostics.error_category = Some("validation".to_string());
+        log::debug!("{}", redact_rig_diagnostic_event(&diagnostics));
+        return Err(err);
+    }
+    log::debug!("{}", redact_rig_diagnostic_event(&diagnostics));
     match config.provider_kind {
         RigProviderKind::OpenAI => {
-            let client = rig_core::providers::openai::Client::new(required_api_key(&config)?)
-                .map_err(rig_client_error)?;
-            stream_with_model(client.completion_model(config.model_id), request).await
+            let api_key = required_api_key(&config).map_err(|err| {
+                log_rig_diagnostic_provider_error(&mut diagnostics, &err);
+                err
+            })?;
+            let client = rig_core::providers::openai::Client::new(api_key)
+                .map_err(|err| rig_client_error_with_diagnostics(err, &mut diagnostics))?;
+            stream_with_model(
+                client.completion_model(config.model_id.clone()),
+                request,
+                diagnostics,
+            )
+            .await
         }
         RigProviderKind::Anthropic => {
-            let client = rig_core::providers::anthropic::Client::new(required_api_key(&config)?)
-                .map_err(rig_client_error)?;
-            stream_with_model(client.completion_model(config.model_id), request).await
+            let api_key = required_api_key(&config).map_err(|err| {
+                log_rig_diagnostic_provider_error(&mut diagnostics, &err);
+                err
+            })?;
+            let client = rig_core::providers::anthropic::Client::new(api_key)
+                .map_err(|err| rig_client_error_with_diagnostics(err, &mut diagnostics))?;
+            stream_with_model(
+                client.completion_model(config.model_id.clone()),
+                request,
+                diagnostics,
+            )
+            .await
         }
         RigProviderKind::GoogleGemini => {
-            let client = rig_core::providers::gemini::Client::new(required_api_key(&config)?)
-                .map_err(rig_client_error)?;
-            stream_with_model(client.completion_model(config.model_id), request).await
+            let api_key = required_api_key(&config).map_err(|err| {
+                log_rig_diagnostic_provider_error(&mut diagnostics, &err);
+                err
+            })?;
+            let client = rig_core::providers::gemini::Client::new(api_key)
+                .map_err(|err| rig_client_error_with_diagnostics(err, &mut diagnostics))?;
+            stream_with_model(
+                client.completion_model(config.model_id.clone()),
+                request,
+                diagnostics,
+            )
+            .await
         }
         RigProviderKind::Ollama => {
             let client = if let Some(base_url) = config.base_url.as_deref() {
@@ -147,60 +181,222 @@ pub async fn stream_turn_with_rig(
                     .api_key(config.api_key.clone().unwrap_or_default())
                     .base_url(base_url)
                     .build()
-                    .map_err(rig_client_error)?
+                    .map_err(|err| rig_client_error_with_diagnostics(err, &mut diagnostics))?
             } else {
-                rig_core::providers::ollama::Client::new(Nothing).map_err(rig_client_error)?
+                rig_core::providers::ollama::Client::new(Nothing)
+                    .map_err(|err| rig_client_error_with_diagnostics(err, &mut diagnostics))?
             };
-            stream_with_model(client.completion_model(config.model_id), request).await
+            stream_with_model(
+                client.completion_model(config.model_id.clone()),
+                request,
+                diagnostics,
+            )
+            .await
         }
         RigProviderKind::OpenRouter => {
-            let mut builder = rig_core::providers::openrouter::Client::builder()
-                .api_key(required_api_key(&config)?);
+            let api_key = required_api_key(&config).map_err(|err| {
+                log_rig_diagnostic_provider_error(&mut diagnostics, &err);
+                err
+            })?;
+            let mut builder = rig_core::providers::openrouter::Client::builder().api_key(api_key);
             if let Some(base_url) = config.base_url.as_deref() {
                 builder = builder.base_url(base_url);
             }
-            let client = builder.build().map_err(rig_client_error)?;
-            stream_with_model(client.completion_model(config.model_id), request).await
+            let client = builder
+                .build()
+                .map_err(|err| rig_client_error_with_diagnostics(err, &mut diagnostics))?;
+            stream_with_model(
+                client.completion_model(config.model_id.clone()),
+                request,
+                diagnostics,
+            )
+            .await
         }
         RigProviderKind::CustomOpenAICompatible => {
-            let base_url = config.base_url.clone().ok_or_else(|| {
-                ProviderError::UnsupportedModel(
-                    "Rig Direct API backend requires a base URL".to_string(),
-                )
-            })?;
+            let base_url = match config.base_url.clone() {
+                Some(base_url) => base_url,
+                None => {
+                    let err = ProviderError::UnsupportedModel(
+                        "Rig Direct API backend requires a base URL".to_string(),
+                    );
+                    log_rig_diagnostic_provider_error(&mut diagnostics, &err);
+                    return Err(err.into());
+                }
+            };
             let client = rig_core::providers::openai::CompletionsClient::builder()
                 .api_key(config.api_key.clone().unwrap_or_default())
                 .base_url(base_url)
                 .build()
-                .map_err(rig_client_error)?;
-            stream_with_model(client.completion_model(config.model_id), request).await
+                .map_err(|err| rig_client_error_with_diagnostics(err, &mut diagnostics))?;
+            stream_with_model(
+                client.completion_model(config.model_id.clone()),
+                request,
+                diagnostics,
+            )
+            .await
         }
     }
+}
+
+fn rig_client_error_with_diagnostics(
+    err: rig_core::http_client::Error,
+    diagnostics: &mut RigDiagnosticEvent,
+) -> ProviderError {
+    let err = rig_client_error(err);
+    log_rig_diagnostic_provider_error(diagnostics, &err);
+    err
+}
+
+fn log_rig_diagnostic_provider_error(diagnostics: &mut RigDiagnosticEvent, error: &ProviderError) {
+    log::debug!("{}", categorized_rig_diagnostic(diagnostics, error));
+}
+
+fn categorized_rig_diagnostic(
+    diagnostics: &mut RigDiagnosticEvent,
+    error: &ProviderError,
+) -> String {
+    diagnostics.error_category = Some(provider_error_category(error).to_string());
+    redact_rig_diagnostic_event(diagnostics)
 }
 
 async fn stream_with_model<M>(
     model: M,
     request: super::ChatRequest,
+    mut diagnostics: RigDiagnosticEvent,
 ) -> anyhow::Result<RigEventStream>
 where
     M: CompletionModel + 'static,
     M::StreamingResponse: 'static,
 {
-    let completion_request = rig_completion_request_from_chat_request(request)?;
-    let stream = model
-        .stream(completion_request)
-        .await
-        .map_err(rig_completion_error)?;
+    let completion_request = match rig_completion_request_from_chat_request(request) {
+        Ok(request) => request,
+        Err(err) => {
+            diagnostics.error_category = Some(provider_error_category(&err).to_string());
+            log::debug!("{}", redact_rig_diagnostic_event(&diagnostics));
+            return Err(err.into());
+        }
+    };
+    let stream = match model.stream(completion_request).await {
+        Ok(stream) => stream,
+        Err(err) => {
+            let err = rig_completion_error(err);
+            diagnostics.error_category = Some(provider_error_category(&err).to_string());
+            log::debug!("{}", redact_rig_diagnostic_event(&diagnostics));
+            return Err(err.into());
+        }
+    };
     let start = futures::stream::once(async { Ok(RigBackendEvent::Start) });
     let mut mapper = RigStreamMapper::default();
+    let mut tool_call_ids = HashSet::new();
     let mapped = stream.filter_map(move |item| {
         let event = match item {
             Ok(item) => mapper.map_stream_item(item).transpose(),
             Err(err) => Some(Err(rig_completion_error(err))),
         };
+        if let Some(result) = event.as_ref() {
+            match result {
+                Ok(event) => {
+                    diagnostics.event_count += 1;
+                    match event {
+                        RigBackendEvent::ToolCallDelta { id, .. } => {
+                            if !id.is_empty() {
+                                tool_call_ids.insert(id.clone());
+                                diagnostics.tool_call_count = tool_call_ids.len();
+                            }
+                        }
+                        RigBackendEvent::ToolCallReady(tool_call) => {
+                            tool_call_ids.insert(tool_call.id.clone());
+                            diagnostics.tool_call_count = tool_call_ids.len();
+                        }
+                        RigBackendEvent::End { finish_reason, .. } => {
+                            diagnostics.finish_reason = Some(format!("{finish_reason:?}"));
+                            log::debug!("{}", redact_rig_diagnostic_event(&diagnostics));
+                        }
+                        RigBackendEvent::Start
+                        | RigBackendEvent::TextChunk(_)
+                        | RigBackendEvent::ReasoningChunk(_) => {}
+                    }
+                }
+                Err(err) => {
+                    diagnostics.error_category = Some(provider_error_category(err).to_string());
+                    log::debug!("{}", redact_rig_diagnostic_event(&diagnostics));
+                }
+            }
+        }
         async move { event }
     });
     Ok(Box::pin(start.chain(mapped)))
+}
+
+fn rig_diagnostic_event_from_config(config: &RigBackendConfig) -> RigDiagnosticEvent {
+    RigDiagnosticEvent {
+        provider: rig_provider_label(config.provider_kind).to_string(),
+        model_id: config.model_id.clone(),
+        model_id_is_public: is_public_rig_model_id(config.provider_kind, &config.model_id),
+        ..Default::default()
+    }
+}
+
+fn is_public_rig_model_id(provider: RigProviderKind, model_id: &str) -> bool {
+    match provider {
+        RigProviderKind::OpenAI => matches!(
+            model_id,
+            "gpt-4o"
+                | "gpt-4o-mini"
+                | "gpt-4.1"
+                | "gpt-4.1-mini"
+                | "gpt-4.1-nano"
+                | "gpt-5"
+                | "gpt-5-mini"
+                | "gpt-5-nano"
+        ),
+        RigProviderKind::Anthropic => matches!(
+            model_id,
+            "claude-3-5-sonnet-20241022"
+                | "claude-3-5-haiku-20241022"
+                | "claude-3-7-sonnet-20250219"
+                | "claude-sonnet-4-20250514"
+                | "claude-opus-4-20250514"
+        ),
+        RigProviderKind::GoogleGemini => matches!(
+            model_id,
+            "gemini-2.0-flash" | "gemini-2.5-flash" | "gemini-2.5-pro"
+        ),
+        RigProviderKind::OpenRouter => matches!(
+            model_id,
+            "moonshotai/kimi-k2.6"
+                | "openai/gpt-4o-mini"
+                | "anthropic/claude-3.5-sonnet"
+                | "google/gemini-2.5-flash"
+        ),
+        RigProviderKind::Ollama | RigProviderKind::CustomOpenAICompatible => false,
+    }
+}
+
+fn rig_provider_label(provider: RigProviderKind) -> &'static str {
+    match provider {
+        RigProviderKind::OpenAI => "OpenAI",
+        RigProviderKind::Anthropic => "Anthropic",
+        RigProviderKind::GoogleGemini => "GoogleGemini",
+        RigProviderKind::Ollama => "Ollama",
+        RigProviderKind::OpenRouter => "OpenRouter",
+        RigProviderKind::CustomOpenAICompatible => "CustomOpenAICompatible",
+    }
+}
+
+fn provider_error_category(error: &ProviderError) -> &'static str {
+    match error {
+        ProviderError::Auth(_) => "auth",
+        ProviderError::Http { .. } => "http",
+        ProviderError::Remote { .. } => "remote",
+        ProviderError::RateLimited { .. } => "rate_limited",
+        ProviderError::ServiceUnavailable => "service_unavailable",
+        ProviderError::ContextLengthExceeded => "context_length",
+        ProviderError::Transport(_) => "transport",
+        ProviderError::StreamParse(_) => "stream_parse",
+        ProviderError::Cancelled => "cancelled",
+        ProviderError::UnsupportedModel(_) => "unsupported_model",
+    }
 }
 
 fn rig_completion_request_from_chat_request(

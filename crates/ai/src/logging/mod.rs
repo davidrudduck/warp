@@ -1,6 +1,7 @@
 use chrono::Utc;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use sha2::{Digest, Sha256};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
@@ -40,6 +41,65 @@ fn redact_secrets(message: &str) -> String {
         .to_string();
 
     redacted
+}
+
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct RigDiagnosticEvent {
+    pub(crate) provider: String,
+    pub(crate) model_id: String,
+    pub(crate) model_id_is_public: bool,
+    pub(crate) event_count: usize,
+    pub(crate) tool_call_count: usize,
+    pub(crate) finish_reason: Option<String>,
+    pub(crate) error_category: Option<String>,
+}
+
+pub fn redact_rig_diagnostic_event(event: &RigDiagnosticEvent) -> String {
+    let model_field = if event.model_id_is_public && is_safe_log_value(&event.model_id) {
+        format!("model_id={}", event.model_id)
+    } else {
+        format!("model_id_hash={}", hash_custom_model_id(&event.model_id))
+    };
+    let finish_reason = event
+        .finish_reason
+        .as_deref()
+        .filter(|value| is_safe_log_value(value))
+        .unwrap_or("none");
+    let error_category = event
+        .error_category
+        .as_deref()
+        .filter(|value| is_safe_log_value(value))
+        .unwrap_or("none");
+
+    format!(
+        "backend=rig_agent provider={} {} event_count={} tool_call_count={} finish_reason={} error_category={}",
+        if is_safe_log_value(&event.provider) {
+            event.provider.as_str()
+        } else {
+            "unknown"
+        },
+        model_field,
+        event.event_count,
+        event.tool_call_count,
+        finish_reason,
+        error_category,
+    )
+}
+
+fn is_safe_log_value(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/'))
+}
+
+fn hash_custom_model_id(model_id: &str) -> String {
+    let digest = Sha256::digest(model_id.as_bytes());
+    digest
+        .iter()
+        .take(8)
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 pub struct DirectApiLogger {

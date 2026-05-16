@@ -74,3 +74,108 @@ async fn logger_redacts_multiple_secrets_in_one_line() {
     assert!(!content.contains("abc123"));
     assert!(!content.contains("xyz789"));
 }
+
+#[test]
+fn rig_backend_diagnostics_redact_api_keys_and_tool_args() {
+    let event = RigDiagnosticEvent {
+        provider: "OpenRouter".to_string(),
+        model_id: "sk-or-v1-secret\n{\"command\":\"cat ~/.ssh/id_rsa\"}".to_string(),
+        ..Default::default()
+    };
+
+    let rendered = redact_rig_diagnostic_event(&event);
+
+    assert!(!rendered.contains("sk-or-v1-secret"));
+    assert!(!rendered.contains("id_rsa"));
+    assert!(!rendered.contains("api_key"));
+    assert!(!rendered.contains("tool_args"));
+    assert!(!rendered.contains('\n'));
+    assert!(rendered.contains("model_id_hash="));
+}
+
+#[test]
+fn rig_backend_diagnostics_hash_custom_model_ids() {
+    let event = RigDiagnosticEvent {
+        provider: "CustomOpenAICompatible".to_string(),
+        model_id: "private/internal-model".to_string(),
+        event_count: 3,
+        tool_call_count: 2,
+        finish_reason: Some("ToolUse".to_string()),
+        ..Default::default()
+    };
+
+    let rendered = redact_rig_diagnostic_event(&event);
+
+    assert!(!rendered.contains("private/internal-model"));
+    assert!(rendered.contains("model_id_hash="));
+    assert!(rendered.contains("event_count=3"));
+    assert!(rendered.contains("tool_call_count=2"));
+    assert!(rendered.contains("finish_reason=ToolUse"));
+}
+
+#[test]
+fn rig_backend_diagnostics_preserve_public_model_ids_and_error_category() {
+    let event = RigDiagnosticEvent {
+        provider: "OpenRouter".to_string(),
+        model_id: "moonshotai/kimi-k2.6".to_string(),
+        model_id_is_public: true,
+        error_category: Some("remote".to_string()),
+        ..Default::default()
+    };
+
+    let rendered = redact_rig_diagnostic_event(&event);
+
+    assert!(rendered.contains("backend=rig_agent"));
+    assert!(rendered.contains("provider=OpenRouter"));
+    assert!(rendered.contains("model_id=moonshotai/kimi-k2.6"));
+    assert!(rendered.contains("error_category=remote"));
+}
+
+#[test]
+fn rig_backend_diagnostics_are_strict_allowlist() {
+    let event = RigDiagnosticEvent {
+        provider: "OpenRouter".to_string(),
+        model_id: "moonshotai/kimi-k2.6".to_string(),
+        model_id_is_public: true,
+        event_count: 5,
+        tool_call_count: 1,
+        finish_reason: Some("Stop".to_string()),
+        error_category: Some("none".to_string()),
+    };
+
+    let rendered = redact_rig_diagnostic_event(&event);
+    let fields = rendered
+        .split_whitespace()
+        .map(|field| field.split_once('=').unwrap().0)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        fields,
+        vec![
+            "backend",
+            "provider",
+            "model_id",
+            "event_count",
+            "tool_call_count",
+            "finish_reason",
+            "error_category",
+        ]
+    );
+}
+
+#[test]
+fn rig_backend_diagnostics_hash_public_flagged_unsafe_model_ids() {
+    let event = RigDiagnosticEvent {
+        provider: "OpenRouter".to_string(),
+        model_id: "moonshotai/kimi-k2.6\napi_key=secret".to_string(),
+        model_id_is_public: true,
+        ..Default::default()
+    };
+
+    let rendered = redact_rig_diagnostic_event(&event);
+
+    assert!(!rendered.contains("api_key"));
+    assert!(!rendered.contains("secret"));
+    assert!(!rendered.contains('\n'));
+    assert!(rendered.contains("model_id_hash="));
+}

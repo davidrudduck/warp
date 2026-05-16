@@ -76,6 +76,30 @@ fn rig_backend_config_rejects_custom_endpoint_without_base_url() {
     assert!(err.to_string().contains("requires a base URL"));
 }
 
+#[test]
+fn rig_backend_failure_diagnostic_adds_safe_error_category() {
+    let config = RigBackendConfig::new(
+        RigProviderKind::CustomOpenAICompatible,
+        "private-model\napi_key=secret",
+        Some("sk-secret".to_string()),
+        Some("http://localhost:11434/v1".to_string()),
+    );
+    let mut diagnostic = super::rig_diagnostic_event_from_config(&config);
+
+    let rendered = super::categorized_rig_diagnostic(
+        &mut diagnostic,
+        &ProviderError::UnsupportedModel("raw error details".to_string()),
+    );
+
+    assert!(rendered.contains("error_category=unsupported_model"));
+    assert!(rendered.contains("provider=CustomOpenAICompatible"));
+    assert!(rendered.contains("model_id_hash="));
+    assert!(!rendered.contains("private-model"));
+    assert!(!rendered.contains("api_key"));
+    assert!(!rendered.contains("sk-secret"));
+    assert!(!rendered.contains("raw error details"));
+}
+
 #[tokio::test]
 async fn rig_backend_emits_tool_call_without_executing_tool() {
     let mut backend = FakeRigBackend::new().with_streamed_tool_call(
