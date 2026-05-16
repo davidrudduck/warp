@@ -148,7 +148,7 @@ Do not put a marketing explanation in the app.
 - Modify `app/src/ai/execution_profiles/editor/ui_helpers.rs`
   - Render backend selector only when the gate is enabled and profile route is Direct API.
 - Modify `app/src/settings_view/direct_api_page.rs`
-  - Add experimental Rig backend toggle.
+  - Add gated Rig Agent backend toggle.
 - Modify `app/src/settings_view/direct_api_page_tests.rs`
   - Test toggle persistence and gated rendering.
 - Modify `app/src/ai/agent/api.rs`
@@ -162,7 +162,7 @@ Do not put a marketing explanation in the app.
 - Modify `app/src/ai/agent/api/impl_tests.rs`
   - Add routing and parity tests.
 - Modify `docs/features/direct-api-profile-routing.md`
-  - Document experimental backend gate and fallback.
+  - Document Rig Agent backend gate and fallback.
 
 ## Task 1: Add Cargo Feature Gate
 
@@ -220,7 +220,7 @@ Expected: all commands compile. If Rig introduces dependency conflicts, stop and
 
 ```bash
 git add Cargo.toml crates/ai/Cargo.toml app/Cargo.toml
-git commit -m "Add experimental Rig backend feature"
+git commit -m "Add gated Rig Agent backend feature"
 ```
 
 ## Task 2: Add Runtime Settings Gate
@@ -320,14 +320,14 @@ fn execution_profile_defaults_direct_api_backend_to_native() {
 fn execution_profile_roundtrips_rig_backend() {
     let profile = AIExecutionProfile {
         model_routing: ModelRouting::DirectApi,
-        direct_api_agent_backend: DirectApiAgentBackend::RigExperimental,
+        direct_api_agent_backend: DirectApiAgentBackend::RigAgent,
         ..AIExecutionProfile::default()
     };
 
     let serialized = serde_json::to_string(&profile).unwrap();
     let decoded: AIExecutionProfile = serde_json::from_str(&serialized).unwrap();
 
-    assert_eq!(decoded.direct_api_agent_backend, DirectApiAgentBackend::RigExperimental);
+    assert_eq!(decoded.direct_api_agent_backend, DirectApiAgentBackend::RigAgent);
 }
 ```
 
@@ -350,7 +350,7 @@ In `app/src/ai/execution_profiles/mod.rs`, add:
 pub enum DirectApiAgentBackend {
     #[default]
     Native,
-    RigExperimental,
+    RigAgent,
     #[serde(other)]
     Unknown,
 }
@@ -359,7 +359,7 @@ impl DirectApiAgentBackend {
     pub fn effective(self) -> Self {
         match self {
             Self::Native | Self::Unknown => Self::Native,
-            Self::RigExperimental => Self::RigExperimental,
+            Self::RigAgent => Self::RigAgent,
         }
     }
 }
@@ -588,7 +588,7 @@ Rules:
 - Hide entirely for `WarpProvider`.
 - Hide when settings gate is false.
 - Disable `Rig Agent` if cargo feature is absent.
-- If a profile stores `RigExperimental` but the gate or cargo feature is disabled, effective runtime backend is `Native` and the UI shows a small disabled-state label when visible.
+- If a profile stores `RigAgent` but the gate or cargo feature is disabled, effective runtime backend is `Native` and the UI shows a small disabled-state label when visible.
 
 - [x] **Step 5: Run tests**
 
@@ -622,7 +622,7 @@ Add:
 #[test]
 fn request_params_use_native_backend_when_rig_gate_disabled() {
     let params = request_params_for_direct_api_profile(
-        DirectApiAgentBackend::RigExperimental,
+        DirectApiAgentBackend::RigAgent,
         false,
     );
 
@@ -632,13 +632,13 @@ fn request_params_use_native_backend_when_rig_gate_disabled() {
 #[test]
 fn request_params_use_rig_backend_when_profile_and_gate_enable_it() {
     let params = request_params_for_direct_api_profile(
-        DirectApiAgentBackend::RigExperimental,
+        DirectApiAgentBackend::RigAgent,
         true,
     );
 
     assert_eq!(
         params.direct_api_agent_backend,
-        DirectApiAgentBackend::RigExperimental
+        DirectApiAgentBackend::RigAgent
     );
 }
 ```
@@ -981,11 +981,11 @@ Add:
 #[test]
 fn direct_api_rig_backend_uses_rig_stream_when_enabled() {
     let mut params = direct_api_request_params_for_openrouter();
-    params.direct_api_agent_backend = DirectApiAgentBackend::RigExperimental;
+    params.direct_api_agent_backend = DirectApiAgentBackend::RigAgent;
 
     let backend = select_direct_api_stream_backend(&params);
 
-    assert_eq!(backend, DirectApiStreamBackend::RigExperimental);
+    assert_eq!(backend, DirectApiStreamBackend::RigAgent);
 }
 
 #[test]
@@ -1015,16 +1015,16 @@ In `direct_tools.rs`, add:
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DirectApiStreamBackend {
     NativeGenai,
-    RigExperimental,
+    RigAgent,
 }
 
 pub fn select_direct_api_stream_backend(params: &RequestParams) -> DirectApiStreamBackend {
     match params.direct_api_agent_backend.effective() {
         DirectApiAgentBackend::Native | DirectApiAgentBackend::Unknown => DirectApiStreamBackend::NativeGenai,
-        DirectApiAgentBackend::RigExperimental => {
+        DirectApiAgentBackend::RigAgent => {
             #[cfg(feature = "direct_api_rig_backend")]
             {
-                DirectApiStreamBackend::RigExperimental
+                DirectApiStreamBackend::RigAgent
             }
             #[cfg(not(feature = "direct_api_rig_backend"))]
             {
@@ -1042,7 +1042,7 @@ Change `run_provider_stream`:
 ```rust
 match select_direct_api_stream_backend(&params) {
     DirectApiStreamBackend::NativeGenai => run_native_provider_stream(params).await,
-    DirectApiStreamBackend::RigExperimental => super::rig_direct::run_rig_provider_stream(params).await,
+    DirectApiStreamBackend::RigAgent => super::rig_direct::run_rig_provider_stream(params).await,
 }
 ```
 
@@ -1087,7 +1087,7 @@ Expected: Rig feature tests pass and native Direct API tests remain green.
 
 ```bash
 git add app/src/ai/agent/api/direct_tools.rs app/src/ai/agent/api/rig_direct.rs app/src/ai/agent/api/mod.rs app/src/ai/agent/api/direct.rs app/src/ai/agent/api/impl_tests.rs
-git commit -m "Route Direct API through experimental Rig backend"
+git commit -m "Route Direct API through gated Rig Agent backend"
 ```
 
 ## Task 10: Add Rig Stream Parity Tests
@@ -1214,9 +1214,9 @@ git commit -m "Redact Rig backend diagnostics"
 Add:
 
 ```markdown
-### Experimental Rig backend
+### Rig Agent backend
 
-The Direct API settings page can expose an experimental Rig backend. It is off by default:
+The Direct API settings page can expose a gated Rig Agent backend. It is off by default:
 
 ```toml
 [agents.direct_api.experimental]
@@ -1295,7 +1295,7 @@ Validation note: all automated commands passed. `cargo run -p warp --bin warp-os
 
 ```bash
 git add docs/features/direct-api-profile-routing.md docs/QUICK-START.md
-git commit -m "Document experimental Rig Direct API backend"
+git commit -m "Document Rig Agent Direct API backend"
 ```
 
 ## Adversarial Review

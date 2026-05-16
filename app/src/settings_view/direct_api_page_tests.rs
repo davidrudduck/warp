@@ -185,6 +185,7 @@ fn rig_backend_toggle_defaults_off() {
     });
 }
 
+#[cfg(feature = "direct_api_rig_backend")]
 #[test]
 fn rig_backend_toggle_persists_setting() {
     App::test((), |mut app| async move {
@@ -205,6 +206,31 @@ fn rig_backend_toggle_persists_setting() {
         app.read(|ctx| {
             let settings = DirectAPISettings::as_ref(ctx);
             assert!(*settings.rig_backend_enabled);
+        });
+    });
+}
+
+#[cfg(not(feature = "direct_api_rig_backend"))]
+#[test]
+fn rig_backend_toggle_is_noop_without_feature() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        DirectAPISettings::register(&mut app);
+        app.add_singleton_model(|_| AuthStateProvider::new_logged_out_for_test());
+        app.add_singleton_model(|_| Appearance::mock());
+        app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
+
+        let (_window_id, view) =
+            app.add_window(WindowStyle::NotStealFocus, DirectApiSettingsPageView::new);
+
+        view.update(&mut app, |view, ctx| {
+            view.handle_action(&DirectApiPageAction::ToggleRigBackendEnabled, ctx);
+            assert!(!view.rig_backend_enabled(ctx));
+        });
+
+        app.read(|ctx| {
+            let settings = DirectAPISettings::as_ref(ctx);
+            assert!(!*settings.rig_backend_enabled);
         });
     });
 }

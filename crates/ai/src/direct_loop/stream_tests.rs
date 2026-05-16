@@ -165,6 +165,47 @@ async fn collect_tool_call_chunks_assembled() {
 }
 
 #[tokio::test]
+async fn collect_tool_call_chunks_reject_invalid_json() {
+    let events = vec![
+        StreamEvent::Start,
+        StreamEvent::ToolCallChunk {
+            index: 0,
+            id: "c2".into(),
+            name: "Grep".into(),
+            args_fragment: r#"{"pattern":"foo""#.into(),
+        },
+        StreamEvent::End {
+            finish_reason: FinishReason::ToolUse,
+            usage: None,
+        },
+    ];
+    let provider: SharedProvider = Arc::new(MockLlmProvider::new().with_stream(events));
+    let (tx, mut rx) = agent_event_channel(16);
+    let (_cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
+    let mut cancel_signal = cancel_rx.fuse();
+
+    let result = collect_and_emit_stream(&provider, make_request(), &tx, &mut cancel_signal).await;
+    drop(tx);
+
+    assert!(matches!(
+        result,
+        Err(ProviderError::StreamParse(message)) if message.contains("Invalid streamed tool-call JSON")
+    ));
+
+    let mut received = vec![];
+    while let Some(ev) = rx.recv().await {
+        received.push(ev);
+    }
+    assert!(received.iter().any(|ev| matches!(
+        ev,
+        AgentEvent::Error(message) if message.contains("Invalid streamed tool-call JSON")
+    )));
+    assert!(!received
+        .iter()
+        .any(|ev| matches!(ev, AgentEvent::ToolCallReady(_))));
+}
+
+#[tokio::test]
 async fn collect_stream_error_propagated() {
     let provider: SharedProvider = Arc::new(
         MockLlmProvider::new().with_stream(vec![StreamEvent::Start]), // No End event — stream terminates early.

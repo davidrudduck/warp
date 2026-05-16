@@ -477,6 +477,9 @@ impl DirectApiSettingsPageView {
     }
 
     fn set_rig_backend_enabled(&self, enabled: bool, ctx: &mut ViewContext<Self>) {
+        if !rig_backend_feature_available() {
+            return;
+        }
         DirectAPISettings::handle(ctx).update(ctx, |settings, ctx| {
             report_if_error!(settings.rig_backend_enabled.set_value(enabled, ctx));
         });
@@ -1136,8 +1139,10 @@ impl TypedActionView for DirectApiSettingsPageView {
                 }
             }
             DirectApiPageAction::ToggleRigBackendEnabled => {
-                self.set_rig_backend_enabled(!self.rig_backend_enabled(ctx), ctx);
-                ctx.notify();
+                if rig_backend_feature_available() {
+                    self.set_rig_backend_enabled(!self.rig_backend_enabled(ctx), ctx);
+                    ctx.notify();
+                }
             }
         }
     }
@@ -1382,26 +1387,41 @@ impl SettingsWidget for RigAgentBackendWidget {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
-        render_body_item::<DirectApiPageAction>(
-            "Rig Agent backend".into(),
-            None,
-            LocalOnlyIconState::Hidden,
-            ToggleState::Enabled,
-            appearance,
-            appearance
-                .ui_builder()
-                .switch(self.switch_state.clone())
-                .check(view.rig_backend_enabled(app))
+        let feature_available = rig_backend_feature_available();
+        let switch = appearance
+            .ui_builder()
+            .switch(self.switch_state.clone())
+            .check(view.rig_backend_enabled(app));
+        let switch = if feature_available {
+            switch
                 .build()
                 .on_click(move |ctx, _, _| {
                     ctx.dispatch_typed_action(DirectApiPageAction::ToggleRigBackendEnabled);
                 })
-                .finish(),
-            Some(
-                "Uses Rig for provider streaming. Warp still handles tools and permissions.".into(),
-            ),
+                .finish()
+        } else {
+            switch.disable().build().finish()
+        };
+        let description = if feature_available {
+            "Uses Rig for provider streaming. Warp still handles tools and permissions."
+        } else {
+            "Unavailable in this build. Rebuild with direct_api_rig_backend to use Rig Agent."
+        };
+
+        render_body_item::<DirectApiPageAction>(
+            "Rig Agent backend".into(),
+            None,
+            LocalOnlyIconState::Hidden,
+            ToggleState::from(feature_available),
+            appearance,
+            switch,
+            Some(description.into()),
         )
     }
+}
+
+fn rig_backend_feature_available() -> bool {
+    cfg!(feature = "direct_api_rig_backend")
 }
 
 #[cfg(test)]

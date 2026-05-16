@@ -62,7 +62,7 @@ Or use Warp's built-in Agent Mode:
 @agent help me install Node.js
 ```
 
-## Experimental Rig Backend
+## Rig Agent Backend
 
 Direct API profiles can optionally expose a Rig Agent backend when Warp is built with Rig support. The setting is off by default:
 

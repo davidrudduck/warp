@@ -15,9 +15,9 @@ Direct API keys and base URLs stay in the channel-specific settings file. For th
 
 Warp Provider remains the default route for new and existing profiles. Direct API routing is opt-in per profile.
 
-## Experimental Rig Backend
+## Rig Agent Backend
 
-The Direct API settings page can expose an experimental Rig backend. It is off by default:
+The Direct API settings page can expose a gated Rig Agent backend. It is off by default:
 
 ```toml
 [agents.direct_api.experimental]

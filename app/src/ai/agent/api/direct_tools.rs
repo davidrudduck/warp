@@ -89,7 +89,9 @@ pub(super) fn build_chat_request(params: &RequestParams) -> ChatRequest {
 
     ChatRequest {
         messages,
-        tools: direct_tool_definitions(),
+        tools: direct_tool_definitions_for_supported_tools(
+            params.supported_tools_override.as_deref(),
+        ),
         options: ChatOptions::default(),
     }
 }
@@ -229,6 +231,33 @@ pub(super) fn direct_tool_definitions() -> Vec<Tool> {
             }),
         },
     ]
+}
+
+fn direct_tool_definitions_for_supported_tools(
+    supported_tools: Option<&[api::ToolType]>,
+) -> Vec<Tool> {
+    let tools = direct_tool_definitions();
+    let Some(supported_tools) = supported_tools else {
+        return tools;
+    };
+
+    tools
+        .into_iter()
+        .filter(|tool| direct_tool_is_supported(tool.name.as_str(), supported_tools))
+        .collect()
+}
+
+fn direct_tool_is_supported(tool_name: &str, supported_tools: &[api::ToolType]) -> bool {
+    if tool_name == "ReadFiles" {
+        return supported_tools.contains(&api::ToolType::ReadFiles);
+    }
+    if tool_name == "Grep" {
+        return supported_tools.contains(&api::ToolType::Grep);
+    }
+    if tool_name == "RunShellCommand" {
+        return supported_tools.contains(&api::ToolType::RunShellCommand);
+    }
+    false
 }
 
 fn chat_messages_from_task_messages(messages: &[api::Message]) -> Vec<ChatMessage> {

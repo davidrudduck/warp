@@ -324,6 +324,21 @@ fn direct_api_chat_request_uses_user_query_text() {
 }
 
 #[test]
+fn direct_api_chat_request_respects_supported_tools_override() {
+    let mut params = direct_api_request_params_for_openrouter();
+    params.supported_tools_override = Some(vec![api::ToolType::ReadFiles]);
+
+    let request = super::super::direct_tools::build_chat_request(&params);
+
+    let tool_names = request
+        .tools
+        .iter()
+        .map(|tool| tool.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(tool_names, vec!["ReadFiles"]);
+}
+
+#[test]
 fn direct_api_chat_request_preserves_persisted_tool_call_and_result() {
     let mut params = request_params_with_ask_user_question_enabled(false);
     params.tasks = vec![api::Task {

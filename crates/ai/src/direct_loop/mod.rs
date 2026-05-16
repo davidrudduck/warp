@@ -107,7 +107,15 @@ pub async fn collect_and_emit_stream(
                         if id.is_empty() && name.is_empty() {
                             continue;
                         }
-                        let input = serde_json::from_str(&args_str).unwrap_or(serde_json::Value::Null);
+                        let input = match serde_json::from_str(&args_str) {
+                            Ok(input) => input,
+                            Err(err) => {
+                                let message =
+                                    format!("Invalid streamed tool-call JSON for {name}: {err}");
+                                let _ = sender.send(AgentEvent::Error(message.clone())).await;
+                                return Err(ProviderError::StreamParse(message));
+                            }
+                        };
                         let tc = ToolCall { id, name, input };
                         collected_tool_calls.push(tc.clone());
                         let _ = sender
