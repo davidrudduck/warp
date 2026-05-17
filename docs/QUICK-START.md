@@ -5,7 +5,7 @@ Get started with Direct API and configure your first LLM provider.
 ## Prerequisites
 
 - Warp OSS fork (built from source)
-- API key from your chosen provider (OpenAI, Anthropic, Google Gemini, or Ollama)
+- API key from your chosen remote provider (OpenAI, Anthropic, Google Gemini, or OpenRouter). Ollama does not require an API key.
 
 ## Setup Steps
 
@@ -41,8 +41,8 @@ Choose your provider:
 
 ### 3. Configure Your API Key
 
-1. Select your provider from the dropdown
-2. Paste your API key (or leave blank for Ollama)
+1. Find the provider row you want to configure
+2. Paste your API key for remote providers (or leave blank for Ollama)
 3. For Ollama/OpenRouter/custom: Enter base URL if not default
 4. Click **Test Connection** to validate local key and base URL format
 5. Click **Save Settings**

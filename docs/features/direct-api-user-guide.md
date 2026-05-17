@@ -90,7 +90,7 @@ Direct API keys stay in the channel-specific settings file and are not attached 
 **Enter in Warp**
 
 1. Open Warp Settings → Agents → Direct API
-2. Select **OpenAI** from the Provider dropdown
+2. Find the **OpenAI** provider row
 3. Paste your API key into the **API Key** field
 4. Click **Test Connection**
 5. You should see: ✓ API key format valid. Run Refresh models to validate provider access.
@@ -122,7 +122,7 @@ Other options:
 **Enter in Warp**
 
 1. Open Warp Settings → Agents → Direct API
-2. Select **Anthropic** from the Provider dropdown
+2. Find the **Anthropic** provider row
 3. Paste your API key
 4. Click **Test Connection**
 5. You should see: ✓ API key format valid. Run Refresh models to validate provider access.
@@ -153,7 +153,7 @@ Other options:
 **Enter in Warp**
 
 1. Open Warp Settings → Agents → Direct API
-2. Select **Google Gemini** from the Provider dropdown
+2. Find the **Google Gemini** provider row
 3. Paste your API key
 4. Click **Test Connection**
 5. You should see: ✓ API key format valid. Run Refresh models to validate provider access.
@@ -199,7 +199,7 @@ You should see your downloaded models.
 **Enter in Warp**
 
 1. Open Warp Settings → Agents → Direct API
-2. Select **Ollama** from the Provider dropdown
+2. Find the **Ollama** provider row
 3. Leave **API Key** blank (not required)
 4. **Base URL** should be `http://localhost:11434` (default)
 5. Click **Test Connection**
@@ -233,12 +233,12 @@ Available models from `ollama pull` command:
 1. Go to https://openrouter.ai
 2. Sign up or log in
 3. Go to https://openrouter.ai/keys
-4. Copy your API key
+4. Copy your API key (format: `sk-or-v1-...`)
 
 **Enter in Warp**
 
 1. Open Warp Settings → Agents → Direct API
-2. Select **OpenRouter** from the Provider dropdown
+2. Find the **OpenRouter** provider row
 3. Paste your API key
 4. **Base URL** should be `https://openrouter.ai/api/v1` (default)
 5. Click **Test Connection**
@@ -265,7 +265,7 @@ For endpoints compatible with OpenAI's API format (including LM Studio, Vllm, cu
 **Enter in Warp**
 
 1. Open Warp Settings → Agents → Direct API
-2. Select **Custom (OpenAI-compatible)** from the Provider dropdown
+2. Find the **Custom (OpenAI-compatible)** provider row
 3. Enter your **API Key** (or leave blank if endpoint doesn't require auth)
 4. Enter your **Base URL** (e.g., `http://localhost:8000`)
 5. Click **Test Connection**
@@ -387,7 +387,7 @@ Phase 2 adds per-provider model selection, allowing you to choose which specific
 ### Accessing Model Selection
 
 1. Open Warp Settings → Agents → Direct API
-2. Select your provider (e.g., OpenAI, Anthropic)
+2. Find your provider row (e.g., OpenAI, Anthropic)
 3. Enter and save your API key if not already done
 4. Look for the **"Available Models"** dropdown
 
@@ -397,7 +397,7 @@ The first time you use a provider, the model list may be empty or show defaults.
 
 **Step 1: Click "Refresh models"**
 
-This button appears below the provider selector. Clicking it will:
+This button appears in each provider row. Clicking it will:
 - Contact the provider's API to fetch available models
 - Cache the results locally (refreshes every 24 hours)
 - Populate the model dropdown

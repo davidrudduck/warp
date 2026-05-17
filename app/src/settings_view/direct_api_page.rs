@@ -290,7 +290,7 @@ impl ProviderType {
             ProviderType::Anthropic => "sk-ant-...",
             ProviderType::GoogleGemini => "AIza...",
             ProviderType::Ollama => "Optional",
-            ProviderType::OpenRouter => "sk-or-...",
+            ProviderType::OpenRouter => "sk-or-v1-...",
             ProviderType::Custom => "Optional",
         }
     }
@@ -341,6 +341,8 @@ impl ProviderType {
             ProviderType::OpenRouter => {
                 if key.is_empty() {
                     Err("OpenRouter API key cannot be empty".to_string())
+                } else if !key.starts_with("sk-or-v1-") {
+                    Err("OpenRouter API keys should start with 'sk-or-v1-'".to_string())
                 } else {
                     Ok(())
                 }

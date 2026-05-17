@@ -25,14 +25,20 @@ fn api_key_placeholder_for_each_provider() {
     assert_eq!(ProviderType::Anthropic.api_key_placeholder(), "sk-ant-...");
     assert_eq!(ProviderType::GoogleGemini.api_key_placeholder(), "AIza...");
     assert_eq!(ProviderType::Ollama.api_key_placeholder(), "Optional");
-    assert_eq!(ProviderType::OpenRouter.api_key_placeholder(), "sk-or-...");
+    assert_eq!(
+        ProviderType::OpenRouter.api_key_placeholder(),
+        "sk-or-v1-..."
+    );
     assert_eq!(ProviderType::Custom.api_key_placeholder(), "Optional");
 }
 
 #[test]
 fn provider_row_primary_status_labels_are_short() {
     assert_eq!(ProviderType::OpenRouter.as_str(), "OpenRouter");
-    assert_eq!(ProviderType::OpenRouter.api_key_placeholder(), "sk-or-...");
+    assert_eq!(
+        ProviderType::OpenRouter.api_key_placeholder(),
+        "sk-or-v1-..."
+    );
     assert_eq!(
         ProviderType::OpenRouter.default_base_url(),
         "https://openrouter.ai/api/v1"
@@ -169,11 +175,17 @@ fn validate_api_key_google_gemini_requires_non_empty() {
 #[test]
 fn validate_api_key_openrouter_requires_non_empty() {
     assert!(ProviderType::OpenRouter
-        .validate_api_key("sk-or-anything")
+        .validate_api_key("sk-or-v1-anything")
         .is_ok());
     assert_eq!(
         ProviderType::OpenRouter.validate_api_key("").unwrap_err(),
         "OpenRouter API key cannot be empty"
+    );
+    assert_eq!(
+        ProviderType::OpenRouter
+            .validate_api_key("sk-not-openrouter")
+            .unwrap_err(),
+        "OpenRouter API keys should start with 'sk-or-v1-'"
     );
 }
 
@@ -420,14 +432,14 @@ fn validates_all_provider_variants() {
             }
             ProviderType::OpenRouter => {
                 assert!(provider.needs_base_url(), "OpenRouter should need base URL");
-                assert_eq!(provider.api_key_placeholder(), "sk-or-...");
+                assert_eq!(provider.api_key_placeholder(), "sk-or-v1-...");
                 assert_eq!(
                     provider.base_url_placeholder(),
                     "https://openrouter.ai/api/v1"
                 );
                 assert_eq!(provider.default_base_url(), "https://openrouter.ai/api/v1");
                 assert!(
-                    provider.validate_api_key("sk-or-anything").is_ok(),
+                    provider.validate_api_key("sk-or-v1-anything").is_ok(),
                     "OpenRouter should accept valid key"
                 );
                 assert!(
@@ -616,7 +628,7 @@ fn openrouter_save_with_blank_key_preserves_existing_key() {
         DirectAPISettings::handle(&app).update(&mut app, |settings, ctx| {
             settings
                 .api_key_openrouter
-                .set_value(Some("sk-or-existing".to_string()), ctx)
+                .set_value(Some("sk-or-v1-existing".to_string()), ctx)
                 .expect("OpenRouter API key should save");
         });
 
@@ -643,7 +655,7 @@ fn openrouter_save_with_blank_key_preserves_existing_key() {
             let settings = DirectAPISettings::as_ref(ctx);
             assert_eq!(
                 settings.api_key_openrouter.value().as_deref(),
-                Some("sk-or-existing")
+                Some("sk-or-v1-existing")
             );
             assert_eq!(
                 settings.base_url_openrouter.value().as_deref(),
@@ -665,7 +677,7 @@ fn openrouter_test_with_blank_key_uses_existing_key() {
         DirectAPISettings::handle(&app).update(&mut app, |settings, ctx| {
             settings
                 .api_key_openrouter
-                .set_value(Some("sk-or-existing".to_string()), ctx)
+                .set_value(Some("sk-or-v1-existing".to_string()), ctx)
                 .expect("OpenRouter API key should save");
         });
 
@@ -707,7 +719,7 @@ fn openrouter_test_rejects_invalid_base_url_before_preflight_success() {
         DirectAPISettings::handle(&app).update(&mut app, |settings, ctx| {
             settings
                 .api_key_openrouter
-                .set_value(Some("sk-or-existing".to_string()), ctx)
+                .set_value(Some("sk-or-v1-existing".to_string()), ctx)
                 .expect("OpenRouter API key should save");
         });
 

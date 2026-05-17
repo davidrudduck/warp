@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use ai::provider::{ChatStream, StreamEvent, TokenUsage as ProviderTokenUsage, ToolCall};
+use ai::model_registry::ProviderId;
+use ai::provider::{
+    ChatStream, ProviderError, StreamEvent, TokenUsage as ProviderTokenUsage, ToolCall,
+};
 use ai::url_validation::validate_direct_api_base_url;
 use anyhow::anyhow;
 use futures::{FutureExt, StreamExt};
@@ -89,6 +92,10 @@ pub async fn generate_direct_api_output(
         .map(|token| token.as_str().to_string())
         .unwrap_or_else(|| Uuid::new_v4().to_string());
     let run_id = direct_api_stream_run_id(&params);
+    let direct_api_route_details = params
+        .direct_api_route_config
+        .as_ref()
+        .map(|config| (config.provider_id, config.model_id.clone()));
 
     tx.send(Ok(api::ResponseEvent {
         r#type: Some(api::response_event::Type::Init(
@@ -118,9 +125,15 @@ pub async fn generate_direct_api_output(
                         ), token_usage).await;
                     }
                     Err(err) => {
-                        let _ = tx
-                            .send(Err(Arc::new(AIApiError::Other(anyhow!(err)))))
-                            .await;
+                        if let Some(reason) =
+                            direct_api_auth_failure_reason(&err, direct_api_route_details)
+                        {
+                            send_finished(&tx, reason, Vec::new()).await;
+                        } else {
+                            let _ = tx
+                                .send(Err(Arc::new(AIApiError::Other(anyhow!(err)))))
+                                .await;
+                        }
                     }
                 }
             }
@@ -135,6 +148,36 @@ pub(super) fn direct_api_stream_run_id(params: &RequestParams) -> String {
         .ambient_agent_task_id
         .map(|task_id| task_id.to_string())
         .unwrap_or_default()
+}
+
+fn direct_api_auth_failure_reason(
+    err: &anyhow::Error,
+    route_details: Option<(ProviderId, String)>,
+) -> Option<api::response_event::stream_finished::Reason> {
+    let is_auth_error = err.chain().any(|cause| {
+        cause
+            .downcast_ref::<ProviderError>()
+            .is_some_and(|err| matches!(err, ProviderError::Auth(_)))
+    });
+    if !is_auth_error {
+        return None;
+    }
+
+    let (provider_id, model_name) = route_details?;
+    let provider = match provider_id {
+        ProviderId::Anthropic => api::LlmProvider::Anthropic,
+        ProviderId::OpenAI => api::LlmProvider::Openai,
+        ProviderId::GoogleGemini => api::LlmProvider::Google,
+        ProviderId::OpenRouter => api::LlmProvider::Openrouter,
+        ProviderId::Ollama | ProviderId::Custom => api::LlmProvider::Unknown,
+    };
+
+    Some(api::response_event::stream_finished::Reason::InvalidApiKey(
+        api::response_event::stream_finished::InvalidApiKey {
+            provider: provider as i32,
+            model_name,
+        },
+    ))
 }
 
 async fn run_direct_text_stream(
@@ -476,6 +519,46 @@ mod rig_stream_tests {
     use super::*;
     use ai::provider::{FinishReason, StreamEvent};
     use futures::stream;
+
+    #[test]
+    fn direct_api_provider_auth_error_maps_to_invalid_api_key_finished_reason() {
+        let err = anyhow!(ProviderError::Auth(
+            "OpenRouter rejected the saved API key".to_string()
+        ));
+
+        let reason = direct_api_auth_failure_reason(
+            &err,
+            Some((ProviderId::OpenRouter, "moonshotai/kimi-k2.6".to_string())),
+        )
+        .expect("auth provider error should map to invalid api key");
+
+        match reason {
+            api::response_event::stream_finished::Reason::InvalidApiKey(details) => {
+                assert_eq!(details.provider, api::LlmProvider::Openrouter as i32);
+                assert_eq!(details.model_name, "moonshotai/kimi-k2.6");
+            }
+            api::response_event::stream_finished::Reason::QuotaLimit(_)
+            | api::response_event::stream_finished::Reason::Done(_)
+            | api::response_event::stream_finished::Reason::InternalError(_)
+            | api::response_event::stream_finished::Reason::Other(_)
+            | api::response_event::stream_finished::Reason::LlmUnavailable(_)
+            | api::response_event::stream_finished::Reason::MaxTokenLimit(_)
+            | api::response_event::stream_finished::Reason::ContextWindowExceeded(_) => {
+                panic!("expected invalid api key reason")
+            }
+        }
+    }
+
+    #[test]
+    fn direct_api_non_auth_error_does_not_map_to_invalid_api_key_finished_reason() {
+        let err = anyhow!("provider unavailable");
+
+        assert!(direct_api_auth_failure_reason(
+            &err,
+            Some((ProviderId::OpenRouter, "moonshotai/kimi-k2.6".to_string())),
+        )
+        .is_none());
+    }
 
     #[tokio::test]
     async fn rig_stream_direct_api_emits_tool_call_action_from_chunks_on_end() {
