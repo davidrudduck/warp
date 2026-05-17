@@ -20,9 +20,9 @@ Per-provider model selection allows you to choose which specific model to use fo
 ### Accessing Model Selection
 
 1. Open Warp Settings -> Agents -> Direct API.
-2. Select your provider (e.g., OpenAI, Anthropic).
+2. Find the provider row you want to configure.
 3. Enter and save your API key or base URL if not already done.
-4. Update or confirm the provider's available model list.
+4. Click **Refresh models** in that provider row to update or confirm its available model list.
 5. Open Warp Settings -> Agents -> Profiles.
 6. Edit a profile, set **Model Routing** to **Direct API**, then choose the desired `Provider / Model`.
 
@@ -32,7 +32,7 @@ The first time you use a provider, the model list may be empty or show defaults.
 
 **Step 1: Click "Refresh models"**
 
-This button appears below the provider selector. Clicking it will:
+This button appears in each provider row. Clicking it will:
 - Contact the provider's API to fetch available models
 - Cache the results locally (refreshes every 24 hours)
 - Populate the model dropdown
@@ -41,7 +41,7 @@ This button appears below the provider selector. Clicking it will:
 ```text
 Fetching models... (shows loading state)
 ↓
-✓ Found 12 models for OpenAI
+✓ OpenAI access validated. Fetched 12 models.
 ↓
 Models appear in dropdown
 ```
