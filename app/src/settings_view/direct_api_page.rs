@@ -97,14 +97,14 @@ fn provider_preflight_message(provider: ProviderType) -> String {
 
 fn provider_model_list_success_message(provider: ProviderType, count: usize) -> String {
     format!(
-        "OK: {} access validated. Fetched {count} models.",
+        "{} access validated. Fetched {count} models.",
         provider.as_str()
     )
 }
 
 fn provider_model_list_error_message(err: ModelListError) -> String {
     match err {
-        ModelListError::AuthFailed => "Error: Provider rejected the saved API key.".to_string(),
+        ModelListError::AuthFailed => "Provider rejected the saved API key.".to_string(),
         ModelListError::RateLimited { retry_after_secs } => format!(
             "Rate limited (retry after {}s)",
             retry_after_secs.unwrap_or(60)

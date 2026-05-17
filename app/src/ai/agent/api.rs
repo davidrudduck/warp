@@ -126,6 +126,9 @@ impl std::fmt::Debug for DirectApiRouteConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DirectApiRouteConfigError {
     ProviderDisabled(ProviderId),
+    MissingApiKey(ProviderId),
+    MissingBaseUrl(ProviderId),
+    InvalidBaseUrl(ProviderId),
 }
 
 impl std::fmt::Display for DirectApiRouteConfigError {
@@ -135,6 +138,27 @@ impl std::fmt::Display for DirectApiRouteConfigError {
                 write!(
                     f,
                     "Direct API provider {} is disabled",
+                    provider_id.display_name()
+                )
+            }
+            DirectApiRouteConfigError::MissingApiKey(provider_id) => {
+                write!(
+                    f,
+                    "Direct API provider {} requires an API key",
+                    provider_id.display_name()
+                )
+            }
+            DirectApiRouteConfigError::MissingBaseUrl(provider_id) => {
+                write!(
+                    f,
+                    "Direct API provider {} requires a base URL",
+                    provider_id.display_name()
+                )
+            }
+            DirectApiRouteConfigError::InvalidBaseUrl(provider_id) => {
+                write!(
+                    f,
+                    "Direct API provider {} has an invalid base URL",
                     provider_id.display_name()
                 )
             }
@@ -156,19 +180,35 @@ impl DirectApiRouteConfig {
         let api_key = match selection.provider_id {
             ProviderId::OpenAI => match non_empty_string(keys.openai.clone()) {
                 Some(key) => Some(key),
-                None => return Ok(None),
+                None => {
+                    return Err(DirectApiRouteConfigError::MissingApiKey(
+                        selection.provider_id,
+                    ));
+                }
             },
             ProviderId::Anthropic => match non_empty_string(keys.anthropic.clone()) {
                 Some(key) => Some(key),
-                None => return Ok(None),
+                None => {
+                    return Err(DirectApiRouteConfigError::MissingApiKey(
+                        selection.provider_id,
+                    ));
+                }
             },
             ProviderId::GoogleGemini => match non_empty_string(keys.google.clone()) {
                 Some(key) => Some(key),
-                None => return Ok(None),
+                None => {
+                    return Err(DirectApiRouteConfigError::MissingApiKey(
+                        selection.provider_id,
+                    ));
+                }
             },
             ProviderId::OpenRouter => match non_empty_string(keys.open_router.clone()) {
                 Some(key) => Some(key),
-                None => return Ok(None),
+                None => {
+                    return Err(DirectApiRouteConfigError::MissingApiKey(
+                        selection.provider_id,
+                    ));
+                }
             },
             ProviderId::Custom => non_empty_string(keys.custom.clone()),
             ProviderId::Ollama => None,
@@ -179,25 +219,41 @@ impl DirectApiRouteConfig {
                     .unwrap_or_else(|| OPENROUTER_DEFAULT_BASE_URL.to_string());
                 match normalize_direct_api_base_url(&url).ok() {
                     Some(url) => Some(url),
-                    None => return Ok(None),
+                    None => {
+                        return Err(DirectApiRouteConfigError::InvalidBaseUrl(
+                            selection.provider_id,
+                        ));
+                    }
                 }
             }
             ProviderId::Ollama => {
                 let Some(url) = non_empty_string(keys.ollama_base_url.clone()) else {
-                    return Ok(None);
+                    return Err(DirectApiRouteConfigError::MissingBaseUrl(
+                        selection.provider_id,
+                    ));
                 };
                 match normalize_direct_api_base_url(&url).ok() {
                     Some(url) => Some(url),
-                    None => return Ok(None),
+                    None => {
+                        return Err(DirectApiRouteConfigError::InvalidBaseUrl(
+                            selection.provider_id,
+                        ));
+                    }
                 }
             }
             ProviderId::Custom => {
                 let Some(url) = non_empty_string(keys.custom_base_url.clone()) else {
-                    return Ok(None);
+                    return Err(DirectApiRouteConfigError::MissingBaseUrl(
+                        selection.provider_id,
+                    ));
                 };
                 match normalize_direct_api_base_url(&url).ok() {
                     Some(url) => Some(url),
-                    None => return Ok(None),
+                    None => {
+                        return Err(DirectApiRouteConfigError::InvalidBaseUrl(
+                            selection.provider_id,
+                        ));
+                    }
                 }
             }
             ProviderId::OpenAI | ProviderId::Anthropic | ProviderId::GoogleGemini => None,
@@ -846,7 +902,10 @@ mod tests {
 
             assert_eq!(params.model_routing, ModelRouting::DirectApi);
             assert!(params.direct_api_route_config.is_none());
-            assert_eq!(params.direct_api_route_error, None);
+            assert_eq!(
+                params.direct_api_route_error.as_deref(),
+                Some("Direct API provider OpenAI requires an API key")
+            );
             assert_eq!(params.api_keys, None);
         });
     }
@@ -931,6 +990,54 @@ mod tests {
 
             assert_eq!(params.model_routing, ModelRouting::DirectApi);
             assert!(params.direct_api_route_config.is_none());
+            assert_eq!(
+                params.direct_api_route_error.as_deref(),
+                Some("Direct API provider Custom (OpenAI-compatible) requires a base URL")
+            );
+            assert_eq!(params.api_keys, None);
+        });
+    }
+
+    #[test]
+    fn request_params_keep_direct_api_routing_when_direct_api_base_url_is_invalid() {
+        App::test((), |mut app| async move {
+            let terminal_view_id = install_request_params_singletons(&mut app);
+
+            ApiKeyManager::handle(&app).update(&mut app, |manager, ctx| {
+                manager.set_custom_key(Some("custom-key".to_string()), ctx);
+                manager.set_custom_base_url(Some("not a url".to_string()), ctx);
+            });
+            AIExecutionProfilesModel::handle(&app).update(&mut app, |model, ctx| {
+                let profile_id = *model.active_profile(Some(terminal_view_id), ctx).id();
+                model.set_model_routing(profile_id, ModelRouting::DirectApi, ctx);
+                model.set_direct_api_model(
+                    profile_id,
+                    Some(DirectApiProfileModelSelection {
+                        provider_id: ProviderId::Custom,
+                        model_id: "custom-model".to_string(),
+                    }),
+                    ctx,
+                );
+            });
+
+            let params = app.update(|ctx| {
+                let request_input = request_input();
+                RequestParams::new(
+                    Some(terminal_view_id),
+                    SessionContext::new_for_test(),
+                    &request_input,
+                    conversation_data(),
+                    None,
+                    ctx,
+                )
+            });
+
+            assert_eq!(params.model_routing, ModelRouting::DirectApi);
+            assert!(params.direct_api_route_config.is_none());
+            assert_eq!(
+                params.direct_api_route_error.as_deref(),
+                Some("Direct API provider Custom (OpenAI-compatible) has an invalid base URL")
+            );
             assert_eq!(params.api_keys, None);
         });
     }

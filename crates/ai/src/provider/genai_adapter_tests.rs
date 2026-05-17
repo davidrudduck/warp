@@ -180,6 +180,40 @@ fn openrouter_web_stream_401_maps_to_provider_auth_without_body() {
 }
 
 #[test]
+fn openrouter_403_maps_to_provider_auth_without_body() {
+    let error = genai::Error::HttpError {
+        status: reqwest::StatusCode::FORBIDDEN,
+        canonical_reason: "Forbidden".to_string(),
+        body: "{\"error\":{\"message\":\"insufficient credits\"}}".to_string(),
+    };
+
+    let provider_error = provider_error_from_genai_error("openrouter", error.to_string(), &error);
+
+    assert!(matches!(
+        provider_error,
+        ProviderError::Auth(message)
+            if message == "OpenRouter rejected the saved API key"
+    ));
+}
+
+#[test]
+fn provider_403_maps_to_provider_auth_without_body() {
+    let error = genai::Error::HttpError {
+        status: reqwest::StatusCode::FORBIDDEN,
+        canonical_reason: "Forbidden".to_string(),
+        body: "{\"error\":{\"message\":\"forbidden\"}}".to_string(),
+    };
+
+    let provider_error = provider_error_from_genai_error("openai", error.to_string(), &error);
+
+    assert!(matches!(
+        provider_error,
+        ProviderError::Auth(message)
+            if message == "Direct API provider openai rejected the API key"
+    ));
+}
+
+#[test]
 fn stream_end_emits_complete_tool_calls_before_end() {
     let events = convert_genai_stream_event(ChatStreamEvent::End(genai::chat::StreamEnd {
         captured_content: Some(genai::chat::MessageContent::from_tool_calls(vec![

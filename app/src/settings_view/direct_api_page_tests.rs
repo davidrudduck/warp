@@ -212,7 +212,7 @@ fn remote_provider_test_result_is_not_reported_as_validated_until_network_probe_
 fn model_refresh_success_reports_provider_access_validated() {
     assert_eq!(
         provider_model_list_success_message(ProviderType::OpenRouter, 356),
-        "OK: OpenRouter access validated. Fetched 356 models."
+        "OpenRouter access validated. Fetched 356 models."
     );
 }
 
@@ -220,7 +220,7 @@ fn model_refresh_success_reports_provider_access_validated() {
 fn model_refresh_auth_failure_reports_saved_key_rejection() {
     assert_eq!(
         provider_model_list_error_message(ModelListError::AuthFailed),
-        "Error: Provider rejected the saved API key."
+        "Provider rejected the saved API key."
     );
 }
 
@@ -849,9 +849,7 @@ fn model_fetch_callback_reports_openrouter_auth_failure_as_saved_key_rejection()
                 .expect("OpenRouter row should exist");
             assert_eq!(
                 row.test_result.borrow().as_ref(),
-                Some(&Err(
-                    "Error: Provider rejected the saved API key.".to_string()
-                ))
+                Some(&Err("Provider rejected the saved API key.".to_string()))
             );
         });
     });
@@ -907,7 +905,7 @@ fn model_fetch_callback_reports_openrouter_success_as_access_validated() {
             assert_eq!(
                 row.test_result.borrow().as_ref(),
                 Some(&Ok(
-                    "OK: OpenRouter access validated. Fetched 2 models.".to_string()
+                    "OpenRouter access validated. Fetched 2 models.".to_string()
                 ))
             );
         });
