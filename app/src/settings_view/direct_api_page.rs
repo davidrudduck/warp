@@ -79,6 +79,16 @@ fn provider_status_label(enabled: bool) -> &'static str {
     }
 }
 
+fn has_openrouter_api_key(value: &Option<String>) -> bool {
+    value
+        .as_ref()
+        .is_some_and(|value| is_openrouter_api_key(value))
+}
+
+fn is_openrouter_api_key(value: &str) -> bool {
+    value.trim().starts_with("sk-or-v1-")
+}
+
 fn provider_preflight_message(provider: ProviderType) -> String {
     match provider {
         ProviderType::Ollama => "Ollama runs locally. Run Refresh models to validate access.",
@@ -341,7 +351,7 @@ impl ProviderType {
             ProviderType::OpenRouter => {
                 if key.is_empty() {
                     Err("OpenRouter API key cannot be empty".to_string())
-                } else if !key.starts_with("sk-or-v1-") {
+                } else if !is_openrouter_api_key(key) {
                     Err("OpenRouter API keys should start with 'sk-or-v1-'".to_string())
                 } else {
                     Ok(())
@@ -760,6 +770,13 @@ impl DirectApiSettingsPageView {
             ProviderId::OpenRouter => api_keys.open_router.clone(),
             ProviderId::Custom => api_keys.custom.clone(),
         };
+        if provider_id == ProviderId::OpenRouter && !has_openrouter_api_key(&api_key) {
+            *row.test_result.borrow_mut() = Some(Err(
+                "OpenRouter API keys should start with 'sk-or-v1-'".to_string(),
+            ));
+            ctx.notify();
+            return;
+        }
 
         let base_url = if provider_type.needs_base_url() {
             let url = row
@@ -1121,7 +1138,7 @@ fn provider_has_required_config(keys: &::ai::api_keys::ApiKeys, provider_id: Pro
         ProviderId::Anthropic => has_non_empty_value(&keys.anthropic),
         ProviderId::GoogleGemini => has_non_empty_value(&keys.google),
         ProviderId::Ollama => has_non_empty_value(&keys.ollama_base_url),
-        ProviderId::OpenRouter => has_non_empty_value(&keys.open_router),
+        ProviderId::OpenRouter => has_openrouter_api_key(&keys.open_router),
         ProviderId::Custom => has_non_empty_value(&keys.custom_base_url),
     }
 }

@@ -43,6 +43,38 @@ async fn logger_redacts_api_keys() {
 }
 
 #[tokio::test]
+async fn logger_redacts_hyphenated_openai_api_keys_fully() {
+    let temp_dir = tempdir().unwrap();
+    let log_dir = temp_dir.path().join("logs");
+
+    let logger = DirectApiLogger::new(log_dir.clone());
+
+    logger.log("OpenAI key: sk-proj-secret_suffix.part").await;
+
+    let content = fs::read_to_string(log_dir.join("direct-api.log")).unwrap();
+    assert!(!content.contains("sk-proj-secret_suffix.part"));
+    assert!(!content.contains("secret_suffix"));
+    assert!(content.contains("sk-***REDACTED***"));
+}
+
+#[tokio::test]
+async fn logger_redacts_bearer_wrapped_openai_api_keys_fully() {
+    let temp_dir = tempdir().unwrap();
+    let log_dir = temp_dir.path().join("logs");
+
+    let logger = DirectApiLogger::new(log_dir.clone());
+
+    logger
+        .log("Authorization: Bearer sk-proj-secret_suffix.part")
+        .await;
+
+    let content = fs::read_to_string(log_dir.join("direct-api.log")).unwrap();
+    assert!(!content.contains("sk-proj-secret_suffix.part"));
+    assert!(!content.contains("secret_suffix"));
+    assert!(content.contains("Bearer ***REDACTED***"));
+}
+
+#[tokio::test]
 async fn logger_redacts_openrouter_api_keys_fully() {
     let temp_dir = tempdir().unwrap();
     let log_dir = temp_dir.path().join("logs");
