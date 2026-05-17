@@ -154,14 +154,14 @@ Manages Direct API keys through `DirectAPISettings`, which are persisted in the 
 
 ```rust
 pub struct ApiKeyManager {
-    cache: Arc<Mutex<Option<ApiKeys>>>,
+    keys_cache: RefCell<Option<ApiKeys>>,
 }
 
 impl ApiKeyManager {
-    pub fn new() -> Self { ... }
-    pub fn get_keys(&self) -> Result<ApiKeys, Error> { ... }
-    pub fn set_openai_key(&mut self, key: Option<String>) -> Result<(), Error> { ... }
-    pub fn set_anthropic_key(&mut self, key: Option<String>) -> Result<(), Error> { ... }
+    pub fn new(ctx: &mut ModelContext<Self>) -> Self { ... }
+    pub fn keys(&self, ctx: &warpui::AppContext) -> ApiKeys { ... }
+    pub fn set_openai_key(&mut self, key: Option<String>, ctx: &mut ModelContext<Self>) { ... }
+    pub fn set_anthropic_key(&mut self, key: Option<String>, ctx: &mut ModelContext<Self>) { ... }
     // ... other providers
 }
 ```
@@ -170,7 +170,7 @@ impl ApiKeyManager {
 
 1. **Lazy Loading**: Keys not loaded until first use
 2. **Session Cache**: Once loaded, cached in memory for the session
-3. **Thread-Safe**: Uses Arc<Mutex> but only accessed from main thread (WarpUI invariant)
+3. **WarpUI Model**: Uses `RefCell` interior mutability under WarpUI model contexts
 4. **Channel-Local**: Uses the active build channel's settings path, so warp-oss and official Warp do not conflict
 
 ### 1.1. Per-Profile Direct API Routing
@@ -195,8 +195,8 @@ At request time, `RequestParams` carries both `model_routing` and an optional `D
 **Usage**:
 
 ```rust
-let manager = ApiKeyManager::new();
-let keys = manager.get_keys()?;  // First call loads settings
+let manager = ApiKeyManager::handle(ctx);
+let keys = manager.as_ref(ctx).keys(ctx); // First call loads settings
 let openai_key = keys.openai;     // Cached for rest of session
 ```
 
@@ -267,7 +267,7 @@ pub async fn run(
     provider: SharedProvider,
     initial_messages: Vec<ChatMessage>,
     tools: Vec<Tool>,
-    conversation_id: String,
+    conversation_id: AIConversationId,
     tx: AgentEventSender,
     tool_req_tx: mpsc::Sender<ToolDispatchRequest>,
     cancellation_rx: futures::channel::oneshot::Receiver<()>,
@@ -276,18 +276,15 @@ pub async fn run(
     let mut history = initial_messages;
     
     loop {
-        // Trim to context window
-        let trimmed = trim_to_context_window(&history, 100);
-        
-        // Call provider
-        let stream = provider.chat_stream(ChatRequest {
-            messages: trimmed,
+        let request = ChatRequest {
+            messages: trim_to_context_window(&history, 100),
             tools: tools.clone(),
             options: Default::default(),
-        }).await?;
+        };
         
-        // Collect response
-        let (finish_reason, usage, tool_calls) = collect_and_emit_stream(&stream, &tx).await?;
+        // Call provider and collect response events
+        let (_finish_reason, _usage, tool_calls) =
+            collect_and_emit_stream(&provider, request, &tx, &mut cancel).await?;
         
         // Save assistant message
         let msg = ChatMessage::Assistant { text, tool_calls: tool_calls.clone() };
@@ -926,12 +923,17 @@ pub struct ApiKeys {
 }
 
 impl ApiKeyManager {
-    pub fn set_your_provider_key(&mut self, key: Option<String>) -> Result<(), Error> {
-        let mut keys = self.get_keys()?;
-        keys.your_provider_key = key;
-        self.write_keys_to_settings(&keys)?;
-        *self.cache.lock().unwrap() = Some(keys);
-        Ok(())
+    pub fn set_your_provider_key(
+        &mut self,
+        key: Option<String>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.ensure_keys_loaded(ctx);
+        if let Some(ref mut keys) = self.keys_cache.borrow_mut().as_mut() {
+            keys.your_provider_key = key;
+        }
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_settings(ctx);
     }
 }
 ```
