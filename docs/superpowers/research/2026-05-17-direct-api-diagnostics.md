@@ -118,6 +118,42 @@ Interpretation:
 - The current worktree does not have the expected app bundle available for code-signature inspection.
 - Keychain prompt diagnosis remains partially open until the exact prompting bundle is available and `codesign --display --requirements :-` can be run against it.
 
+Follow-up evidence from Task 7:
+
+```text
+/Applications/Warp.app:
+  Identifier=dev.warp.Warp-Stable
+  Authority=Developer ID Application: Denver Technologies, Inc (2BBY89MBSN)
+  source=Notarized Developer ID
+
+target/debug/warp-oss:
+  Identifier=warp_oss-1d0e15a081b18caf
+  Signature=adhoc
+  TeamIdentifier=not set
+  spctl: rejected
+```
+
+Installed local signing identities:
+
+```text
+Developer ID Application: EXPANSIONX PARTNERS PTY LTD (C97YF26G4F)
+Apple Development: David Rudduck (74NF6A9W99)
+```
+
+`./script/run --dont-open` was attempted to produce `target/debug/bundle/osx/WarpOss.app`. The Rust build completed, but `cargo bundle` panicked before creating the app bundle:
+
+```text
+called `Result::unwrap()` on an `Err` value: Error(Term(ColorOutOfRange), ...)
+```
+
+Interpretation:
+
+- Direct API steady-state key storage does not use Keychain; it uses `DirectAPISettings` via `~/.warp-oss/settings.toml`.
+- Other app features still use secure storage, including auth user persistence and MCP OAuth credentials.
+- Official Warp's Keychain trust decision cannot apply to Warp OSS because official Warp uses a different bundle identifier and a notarized Developer ID identity.
+- A bare `target/debug/warp-oss` binary is linker/ad-hoc signed and rejected by Gatekeeper; the local `.app` path must be signed with a stable Apple Development identity, or a release/distributed build must be signed with Developer ID Application and a stable `dev.warp.WarpOss` bundle identifier.
+- Native prompt-repeat validation remains blocked until `cargo bundle` successfully creates `WarpOss.app`.
+
 ## Root Cause Candidates
 
 | Candidate | Evidence Required | Result | Verdict |
@@ -127,7 +163,7 @@ Interpretation:
 | Warp drops Authorization header | mocked provider test shows missing header | Not tested in Task 1 | Still worth testing as regression coverage |
 | Rig OpenRouter path differs from native path | Rig and native diagnostics differ for same config | Not tested in Task 1 | Still worth testing after diagnostics land |
 | Profile UI selected a stale/manual model under wrong provider | profile selection provider does not match label | User screenshot shows OpenRouter model; no persisted profile file found | Not confirmed |
-| Keychain prompt is caused by unstable code identity | `codesign` DR changes across builds or app is ad hoc signed | Expected app bundle missing; keychain item exists for `dev.warp.WarpOss` | Inconclusive |
+| Keychain prompt is caused by unstable code identity | `codesign` DR changes across builds or app is ad hoc signed | Official Warp is notarized Developer ID under `dev.warp.Warp-Stable`; bare local `target/debug/warp-oss` is ad-hoc/rejected; exact prompting `WarpOss.app` comparison is blocked by `cargo bundle` panic | Partially supported; exact prompting bundle remains unverified |
 
 ## Confirmed Root Cause For The Current Saved Credential
 

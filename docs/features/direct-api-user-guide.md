@@ -341,6 +341,26 @@ Each conversation includes:
 - **official stable Warp macOS**: Uses the official channel path under `~/.warp/`
 - **Linux/Windows**: Stored in the channel-specific settings path for that build
 
+### macOS Keychain Prompts
+
+Direct API provider keys do not use macOS Keychain in the warp-oss build. They are loaded through `DirectAPISettings` from `~/.warp-oss/settings.toml`.
+
+You may still see a macOS Keychain prompt when another feature reads secure storage, such as user auth state or MCP OAuth credentials. Official Warp and Warp OSS do not share keychain trust:
+
+- Official Warp uses the bundle identifier `dev.warp.Warp-Stable` and is signed/notarized with Warp's Developer ID.
+- Warp OSS uses the bundle identifier `dev.warp.WarpOss`.
+- macOS Keychain access is tied to the calling app's code identity, so approving official Warp does not approve a locally built Warp OSS app.
+
+For local builds, use a stable Apple Development signing identity. `./script/run` signs `WarpOss.app` with the first Apple Development identity it finds, or with `WARP_CODESIGN_IDENTITY` when set:
+
+```bash
+WARP_CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" ./script/run --dont-open
+```
+
+If no Apple Development identity is available and `WARP_CODESIGN_IDENTITY` is unset, the local scripts fall back to ad-hoc signing. Ad-hoc signing is useful for local execution, but it is weaker evidence for Keychain prompt diagnosis because it does not carry a stable developer identity.
+
+For distributed builds, sign with a Developer ID Application certificate and keep the bundle identifier stable as `dev.warp.WarpOss`. The first run may still prompt for existing keychain items created under another identity. Repeated runs of the same signed app should not repeatedly prompt for the same item after you choose **Always Allow**.
+
 ### What Warp Sees
 
 Warp's OSS fork:

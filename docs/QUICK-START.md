@@ -84,6 +84,18 @@ When enabled, Direct API profiles show `Agent engine: Native / Rig Agent`. Use `
 - Confirm the `warp-oss` build can write to `~/.warp-oss/settings.toml`
 - Restart Warp after fixing file permissions
 
+**macOS asks for Keychain access**
+- Direct API provider keys are stored in `~/.warp-oss/settings.toml`, not Keychain
+- Other features may still read Keychain-backed secure storage
+- Official Warp and Warp OSS have different app identities, so Keychain approval for official Warp does not approve `dev.warp.WarpOss`
+- Use a stable signing identity for local builds:
+
+```bash
+WARP_CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" ./script/run --dont-open
+```
+
+If no Apple Development identity is available and `WARP_CODESIGN_IDENTITY` is unset, the local scripts fall back to ad-hoc signing. That can run locally, but it is weaker for Keychain prompt diagnosis.
+
 **"API key not configured" when running commands**
 - Go to Settings → Agents → Direct API and verify the key is saved
 - Test the connection before using

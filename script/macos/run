@@ -127,8 +127,14 @@ if [[ ",$FEATURES," =~ ",heap_usage_tracking," ]]; then
 fi
 
 echo "Codesigning app..."
-SIGNING_CERT="$(security find-identity -p codesigning -v | grep "Apple Development" | awk '{print $2}' | head -1)"
-codesign --force --deep --options runtime --sign "${SIGNING_CERT:--}" "$WARP_APP_PATH" --entitlements script/Debug-Entitlements.plist
+SIGNING_CERT="${WARP_CODESIGN_IDENTITY:-$(security find-identity -p codesigning -v | grep "Apple Development" | awk '{print $2}' | head -1)}"
+if [[ -z "$SIGNING_CERT" ]]; then
+  echo "No Apple Development cert found and WARP_CODESIGN_IDENTITY is unset; falling back to ad-hoc signing."
+  SIGNING_CERT="-"
+else
+  echo "Signing with identity: $SIGNING_CERT"
+fi
+codesign --force --deep --options runtime --sign "$SIGNING_CERT" "$WARP_APP_PATH" --entitlements script/Debug-Entitlements.plist
 
 if [ "$DONT_OPEN" = false ] ; then
     if  [ "$OPEN_WITH_LAUNCHD" = true ]; then

@@ -673,7 +673,7 @@ Expected: UI helper tests and persistence tests pass.
 - Modify if needed: `docs/QUICK-START.md`
 - Do not modify official `~/.warp`
 
-- [ ] **Step 1: Determine whether Direct API itself needs keychain**
+- [x] **Step 1: Determine whether Direct API itself needs keychain**
 
 Run:
 
@@ -683,7 +683,7 @@ rg -n "secure_storage\\(|read_value\\(|write_value\\(|migrate_from_keychain|ApiK
 
 Expected: Direct API steady-state config uses `DirectAPISettings` and `~/.warp-oss/settings.toml`. Other app features such as MCP/OAuth may still use secure storage.
 
-- [ ] **Step 2: Compare signing identities across builds**
+- [x] **Step 2: Compare available signing identities and record blocker for exact prompting `WarpOss.app` comparison**
 
 Run twice, once for the app that prompts and once for any previous app build that did not:
 
@@ -694,7 +694,7 @@ spctl --assess --type execute --verbose=4 /path/to/WarpOss.app 2>&1 | sed -n '1,
 
 Expected: identifies ad hoc, unsigned, Apple Development, or Developer ID Application identity.
 
-- [ ] **Step 3: Remediation decision**
+- [x] **Step 3: Remediation decision**
 
 Use this decision table:
 
@@ -706,7 +706,7 @@ Use this decision table:
 | Direct API does not require keychain but another feature prompts | Keep Direct API in settings TOML and document which feature caused secure storage access. |
 | Existing keychain item was created by another signing identity | Delete the stale `dev.warp.WarpOss` keychain item or allow access once for the new signed identity. |
 
-- [ ] **Step 4: Add signing documentation**
+- [x] **Step 4: Add signing documentation**
 
 Document:
 
@@ -717,7 +717,7 @@ For local builds, use a stable Apple Development signing identity.
 For distributed builds, use Developer ID Application signing and keep the bundle identifier stable.
 ```
 
-- [ ] **Step 5: Validate keychain prompt behavior**
+- [x] **Step 5: Attempt keychain prompt validation; native app bundle build is blocked by a `cargo bundle` `ColorOutOfRange` panic**
 
 After signing:
 

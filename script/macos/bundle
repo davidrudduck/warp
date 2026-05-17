@@ -649,12 +649,12 @@ fi
 ##############################
 
 if [[ $SELFSIGN = true ]]; then
-  SIGNING_CERT="$(security find-identity -p codesigning -v | grep "Apple Development" | awk '{print $2}' | head -1)"
+  SIGNING_CERT="${WARP_CODESIGN_IDENTITY:-$(security find-identity -p codesigning -v | grep "Apple Development" | awk '{print $2}' | head -1)}"
   if [[ -z "$SIGNING_CERT" ]]; then
-    echo "No Apple Development cert found, falling back to ad-hoc signing."
+    echo "No Apple Development cert found and WARP_CODESIGN_IDENTITY is unset; falling back to ad-hoc signing."
     SIGNING_CERT="-"
   else
-    echo "Found Apple Development certificate"
+    echo "Self-signing with identity: $SIGNING_CERT"
   fi
   if [[ "$ARTIFACT" == app ]]; then
     echo "Self-signing $BUNDLE_DIR/$WARP_APP_NAME.app with ${SIGNING_CERT}..."
