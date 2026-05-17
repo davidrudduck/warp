@@ -28,6 +28,11 @@ Choose your provider:
 - Create a new API key
 - No key format restrictions
 
+**OpenRouter** (OpenAI-compatible provider gateway)
+- Go to https://openrouter.ai/keys
+- Create a new API key
+- Format: starts with `sk-or-v1-`
+
 **Ollama** (Local LLM)
 - Download from https://ollama.ai
 - Run `ollama pull llama2` (or your preferred model)

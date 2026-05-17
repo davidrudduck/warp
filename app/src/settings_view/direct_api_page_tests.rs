@@ -247,6 +247,52 @@ fn openrouter_explicit_enabled_still_requires_current_key_prefix() {
 }
 
 #[test]
+fn openrouter_enable_rejects_invalid_saved_key_prefix() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        DirectAPISettings::register(&mut app);
+        app.add_singleton_model(|_| AuthStateProvider::new_logged_out_for_test());
+        app.add_singleton_model(|_| Appearance::mock());
+        app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
+
+        DirectAPISettings::handle(&app).update(&mut app, |settings, ctx| {
+            settings
+                .api_key_openrouter
+                .set_value(Some("sk-or-invalid".to_string()), ctx)
+                .expect("OpenRouter API key should save");
+        });
+
+        let (_window_id, view) =
+            app.add_window(WindowStyle::NotStealFocus, DirectApiSettingsPageView::new);
+        view.update(&mut app, |view, ctx| {
+            view.handle_toggle_provider_enabled(ProviderType::OpenRouter, ctx);
+
+            let row = view
+                .provider_row(ProviderType::OpenRouter)
+                .expect("OpenRouter row should exist");
+            assert_eq!(
+                row.test_result.borrow().as_ref(),
+                Some(&Err(
+                    "OpenRouter is missing required configuration".to_string()
+                ))
+            );
+        });
+
+        app.read(|ctx| {
+            let settings = DirectAPISettings::as_ref(ctx);
+            assert_ne!(
+                settings
+                    .enabled_providers
+                    .value()
+                    .get("OpenRouter")
+                    .copied(),
+                Some(true)
+            );
+        });
+    });
+}
+
+#[test]
 fn model_refresh_success_reports_provider_access_validated() {
     assert_eq!(
         provider_model_list_success_message(ProviderType::OpenRouter, 356),
@@ -492,63 +538,6 @@ fn validates_all_provider_variants() {
             }
         }
     }
-}
-
-// ============================================================================
-// US-002: Buffer Handling Tests
-// ============================================================================
-
-// TODO: Test that switching providers clears buffers and re-masks
-// This requires ViewContext and mock setup to test view behavior.
-// The test should:
-// 1. Create a DirectApiSettingsPageView
-// 2. Set API key in editor buffer
-// 3. Switch provider via SelectProvider action
-// 4. Assert that api_key_editor buffer is cleared
-// 5. Assert that show_api_key is reset to false (masked)
-//
-// Implementation blocked on: Need to understand how to create ViewContext
-// and EditorView in tests without full app context.
-#[test]
-#[ignore = "Requires ViewContext mock setup - see TODO comment"]
-fn validates_buffer_clear_and_remask_on_provider_switch() {
-    // Stub: This test validates that switching providers:
-    // - Clears the API key editor buffer
-    // - Clears the base URL editor buffer
-    // - Resets show_api_key to false (re-masks)
-    //
-    // Expected behavior from direct_api_page.rs:
-    // When SelectProvider action is received:
-    // 1. Update selected_provider RefCell
-    // 2. Clear api_key_editor buffer
-    // 3. Clear base_url_editor buffer (if provider doesn't need it)
-    // 4. Set show_api_key to false
-    // 5. Prefill base_url_editor with default_base_url() if needs_base_url()
-}
-
-// TODO: Test that re-selecting Custom provider preserves user-typed base URL
-// This requires ViewContext and mock setup to test view behavior.
-// The test should:
-// 1. Create a DirectApiSettingsPageView with Custom provider
-// 2. Set custom base URL in base_url_editor
-// 3. Switch to OpenAI provider
-// 4. Switch back to Custom provider
-// 5. Assert that base_url_editor still contains the user-typed URL
-//
-// Implementation blocked on: Need to understand how to create ViewContext
-// and EditorView in tests without full app context.
-#[test]
-#[ignore = "Requires ViewContext mock setup - see TODO comment"]
-fn preserves_custom_base_url_buffer_on_reselection() {
-    // Stub: This test validates that re-selecting Custom provider:
-    // - Preserves the user-typed base URL in the buffer
-    // - Does NOT reset to empty string
-    //
-    // Expected behavior from direct_api_page.rs:
-    // When switching back to Custom provider:
-    // 1. Check if base_url_editor buffer is non-empty
-    // 2. If non-empty, preserve it (user-typed)
-    // 3. If empty, leave it empty (don't prefill)
 }
 
 #[test]
@@ -1133,59 +1122,6 @@ fn provider_rows_load_persisted_base_urls_on_startup() {
             );
         });
     });
-}
-
-#[test]
-#[ignore = "Requires ViewContext mock setup"]
-fn model_selector_renders_empty_state_when_cache_missing() {
-    // Expected: When cached_models is empty, widget shows placeholder
-    // "Click 'Refresh models' to fetch available models" and no dropdown.
-    // Requires: ViewContext mock to verify render output.
-}
-
-#[test]
-fn feature_flag_off_hides_model_selector_widget() {
-    use warp_core::features::FeatureFlag;
-
-    // Verify flag exists and is accessible.
-    let _flag_exists = FeatureFlag::DirectApiModelSelection;
-
-    // Expected: ModelSelectorWidget::render returns empty container when flag disabled.
-    // Limitation: Feature flags are compile-time; runtime toggling not possible in tests.
-}
-
-#[test]
-#[ignore = "Requires ViewContext mock setup"]
-fn update_model_list_populates_dropdown_on_success() {
-    // Expected: handle_update_model_list fetches models, writes to cache,
-    // refreshes dropdown, emits telemetry, clears is_fetching_models.
-    // Requires: ViewContext mock to verify async spawn and state updates.
-}
-
-#[test]
-#[ignore = "Requires ViewContext mock setup"]
-fn double_click_update_model_list_is_noop() {
-    // Expected: Second click while is_fetching_models=true returns early, no spawn.
-    // Requires: ViewContext mock to verify single spawn.
-    // Note: US-011 (fetch_in_flight guard) marked incomplete; relies on button state only.
-}
-
-#[test]
-#[ignore = "Requires ViewContext mock setup"]
-fn stale_selection_marked_in_dropdown() {
-    // Expected: When user's saved model selection is not in the fresh model list,
-    // it appears in the dropdown with a "(stale)" suffix appended to the model ID.
-    // The stale model appears at the end of the list after all fresh models.
-    // User can keep the stale selection or switch to a fresh model.
-    //
-    // Test flow:
-    // 1. Set saved_selection to "gpt-4" in ApiKeyManager
-    // 2. Populate cache with models ["gpt-4o", "gpt-4o-mini"] (no "gpt-4")
-    // 3. Call refresh_model_dropdown
-    // 4. Verify dropdown items: ["gpt-4o", "gpt-4o-mini", "gpt-4 (stale)"]
-    // 5. Verify "gpt-4 (stale)" is the selected item
-    //
-    // Requires: ViewContext mock to verify dropdown.set_items() and set_selected_by_action().
 }
 
 // ============================================================================

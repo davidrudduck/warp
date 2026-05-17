@@ -724,10 +724,24 @@ impl DirectApiSettingsPageView {
         ctx: &mut ViewContext<Self>,
     ) {
         let provider_id = provider.to_provider_id();
-        let currently_enabled = {
+        let (currently_enabled, has_required_config) = {
             let keys = self.api_key_manager.as_ref(ctx).keys(ctx);
-            provider_is_toggled_on(&keys, provider_id)
+            (
+                provider_is_enabled(&keys, provider_id),
+                provider_has_required_config(&keys, provider_id),
+            )
         };
+        if !currently_enabled && !has_required_config {
+            if let Some(row) = self.provider_row(provider) {
+                *row.test_result.borrow_mut() = Some(Err(format!(
+                    "{} is missing required configuration",
+                    provider.as_str()
+                )));
+            }
+            ctx.notify();
+            return;
+        }
+
         self.api_key_manager.update(ctx, |manager, ctx| {
             manager.set_provider_enabled(provider_id, !currently_enabled, ctx);
         });
