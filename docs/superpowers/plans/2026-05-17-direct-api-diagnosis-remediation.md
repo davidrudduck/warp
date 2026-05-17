@@ -430,7 +430,7 @@ Expected: route config, model list, and OpenRouter adapter tests pass.
 - Modify: `app/src/settings_view/direct_api_page.rs`
 - Modify: `app/src/settings_view/direct_api_page_tests.rs`
 
-- [ ] **Step 1: Add pure row-state tests**
+- [x] **Step 1: Add pure row-state tests**
 
 Add tests proving labels and controls are derived from provider state:
 
@@ -448,7 +448,7 @@ fn provider_rows_keep_custom_last_for_scanability() {
 }
 ```
 
-- [ ] **Step 2: Run tests before layout changes**
+- [x] **Step 2: Run tests before layout changes**
 
 Run:
 
@@ -458,7 +458,7 @@ cargo test -p warp direct_api_page -- --nocapture
 
 Expected: existing tests pass.
 
-- [ ] **Step 3: Split provider row rendering into named helpers**
+- [x] **Step 3: Split provider row rendering into named helpers**
 
 In `app/src/settings_view/direct_api_page.rs`, extract helpers:
 
@@ -492,7 +492,7 @@ fn render_provider_base_url_row(
 
 Use existing `ActionButton` themes unchanged. Do not introduce a feature-specific button theme.
 
-- [ ] **Step 4: Use a stacked responsive row**
+- [x] **Step 4: Use a stacked responsive row**
 
 Replace the single wide `top_row` with this visual structure:
 
@@ -507,7 +507,7 @@ Result message
 
 Desktop may use two columns, but every column must have a fixed max width and must not depend on `margin_left(182.)`.
 
-- [ ] **Step 5: Validate visually**
+- [x] **Step 5: Validate layout with automated checks; native visual evidence is deferred to Task 8**
 
 Run:
 

@@ -53,6 +53,7 @@ const BASE_URL_INPUT_MAX_WIDTH: f32 = 420.;
 const INPUT_BORDER_RADIUS: f32 = 6.;
 const INPUT_PADDING_VERTICAL: f32 = 10.;
 const INPUT_PADDING_HORIZONTAL: f32 = 12.;
+const PROVIDER_ROW_MAX_WIDTH: f32 = 560.;
 
 /// Tooltip text shown on the API Key visibility toggle button.
 ///
@@ -68,6 +69,14 @@ fn visibility_tooltip(show: bool) -> &'static str {
 
 fn invalid_base_url_message() -> String {
     "Base URL must use https://, except http:// localhost or private LAN addresses".to_string()
+}
+
+fn provider_status_label(enabled: bool) -> &'static str {
+    if enabled {
+        "Enabled"
+    } else {
+        "Disabled"
+    }
 }
 
 fn normalized_base_url_for_provider(provider: &ProviderType, url: &str) -> Result<String, String> {
@@ -1221,6 +1230,139 @@ impl SettingsWidget for TitleWidget {
 #[derive(Default)]
 struct ProviderRowsWidget {}
 
+fn render_provider_title_cell(
+    provider: ProviderType,
+    enabled: bool,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    let provider_label = appearance
+        .ui_builder()
+        .span(provider.as_str())
+        .build()
+        .finish();
+    let status_label = appearance
+        .ui_builder()
+        .span(provider_status_label(enabled))
+        .build()
+        .finish();
+
+    Flex::row()
+        .with_child(
+            Container::new(provider_label)
+                .with_margin_right(12.)
+                .finish(),
+        )
+        .with_child(status_label)
+        .finish()
+}
+
+fn render_provider_key_cell(row: &ProviderRowState, appearance: &Appearance) -> Box<dyn Element> {
+    use warpui::elements::ChildView;
+
+    let key_editor = render_chromed_input_with_max_width(
+        row.api_key_editor.clone(),
+        appearance,
+        ROW_KEY_INPUT_MAX_WIDTH,
+    );
+
+    Flex::row()
+        .with_child(Container::new(key_editor).with_margin_right(8.).finish())
+        .with_child(ChildView::new(&row.toggle_visibility_button).finish())
+        .finish()
+}
+
+fn render_provider_action_row(row: &ProviderRowState) -> Box<dyn Element> {
+    use warpui::elements::ChildView;
+
+    let primary_actions = Flex::row()
+        .with_child(
+            Container::new(ChildView::new(&row.save_button).finish())
+                .with_margin_right(8.)
+                .finish(),
+        )
+        .with_child(
+            Container::new(ChildView::new(&row.test_button).finish())
+                .with_margin_right(8.)
+                .finish(),
+        )
+        .with_child(ChildView::new(&row.enable_button).finish())
+        .finish();
+
+    let secondary_actions = Flex::row()
+        .with_child(ChildView::new(&row.refresh_button).finish())
+        .finish();
+
+    Flex::column()
+        .with_child(primary_actions)
+        .with_child(
+            Container::new(secondary_actions)
+                .with_margin_top(4.)
+                .finish(),
+        )
+        .finish()
+}
+
+fn render_provider_base_url_row(
+    row: &ProviderRowState,
+    appearance: &Appearance,
+) -> Option<Box<dyn Element>> {
+    let base_url_editor = row.base_url_editor.as_ref()?;
+    let base_label = appearance.ui_builder().span("Base URL").build().finish();
+    let base_editor = render_chromed_input_with_max_width(
+        base_url_editor.clone(),
+        appearance,
+        BASE_URL_INPUT_MAX_WIDTH,
+    );
+
+    Some(
+        Flex::column()
+            .with_child(base_label)
+            .with_child(Container::new(base_editor).with_margin_top(4.).finish())
+            .finish(),
+    )
+}
+
+fn render_provider_model_row(
+    row: &ProviderRowState,
+    appearance: &Appearance,
+) -> Option<Box<dyn Element>> {
+    use warpui::elements::ChildView;
+
+    if !FeatureFlag::DirectApiModelSelection.is_enabled() || !row.model_dropdown_has_items.get() {
+        return None;
+    }
+
+    let model_label = appearance.ui_builder().span("Model").build().finish();
+    Some(
+        Flex::column()
+            .with_child(model_label)
+            .with_child(
+                Container::new(ChildView::new(&row.model_dropdown).finish())
+                    .with_margin_top(4.)
+                    .finish(),
+            )
+            .finish(),
+    )
+}
+
+fn render_provider_result_row(
+    row: &ProviderRowState,
+    appearance: &Appearance,
+) -> Option<Box<dyn Element>> {
+    let message = match row.test_result.borrow().as_ref()? {
+        Ok(msg) => format!("OK: {msg}"),
+        Err(msg) => format!("Error: {msg}"),
+    };
+    Some(
+        appearance
+            .ui_builder()
+            .span(message)
+            .with_soft_wrap()
+            .build()
+            .finish(),
+    )
+}
+
 impl SettingsWidget for ProviderRowsWidget {
     type View = DirectApiSettingsPageView;
 
@@ -1234,8 +1376,6 @@ impl SettingsWidget for ProviderRowsWidget {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
-        use warpui::elements::ChildView;
-
         let keys = view.api_key_manager.as_ref(app).keys(app);
         let mut column = Flex::column();
 
@@ -1243,125 +1383,43 @@ impl SettingsWidget for ProviderRowsWidget {
             let provider_id = row.provider.to_provider_id();
             let enabled = provider_is_enabled(&keys, provider_id);
 
-            let provider_label = appearance
-                .ui_builder()
-                .span(row.provider.as_str())
-                .build()
-                .finish();
-            let provider_cell = ConstrainedBox::new(provider_label)
-                .with_width(170.)
-                .finish();
-
-            let key_editor = render_chromed_input_with_max_width(
-                row.api_key_editor.clone(),
-                appearance,
-                ROW_KEY_INPUT_MAX_WIDTH,
-            );
-            let key_cell = Flex::row()
-                .with_child(Container::new(key_editor).with_margin_right(8.).finish())
-                .with_child(ChildView::new(&row.toggle_visibility_button).finish())
-                .finish();
-
-            let enabled_status = appearance
-                .ui_builder()
-                .span(if enabled { "Enabled" } else { "Disabled" })
-                .build()
-                .finish();
-
-            let actions = Flex::row()
-                .with_child(
-                    Container::new(ChildView::new(&row.save_button).finish())
-                        .with_margin_right(8.)
-                        .finish(),
-                )
-                .with_child(
-                    Container::new(ChildView::new(&row.test_button).finish())
-                        .with_margin_right(8.)
-                        .finish(),
-                )
-                .with_child(
-                    Container::new(ChildView::new(&row.enable_button).finish())
-                        .with_margin_right(8.)
-                        .finish(),
-                )
-                .with_child(ChildView::new(&row.refresh_button).finish())
-                .finish();
-
-            let top_row = Flex::row()
-                .with_child(
-                    Container::new(provider_cell)
-                        .with_margin_right(12.)
-                        .finish(),
-                )
-                .with_child(Container::new(key_cell).with_margin_right(12.).finish())
-                .with_child(Container::new(actions).with_margin_right(12.).finish())
-                .with_child(enabled_status)
-                .finish();
-
-            let mut row_column = Flex::column().with_child(top_row);
-
-            if let Some(base_url_editor) = &row.base_url_editor {
-                let base_label = appearance.ui_builder().span("Base URL").build().finish();
-                let base_editor = render_chromed_input_with_max_width(
-                    base_url_editor.clone(),
+            let mut row_column = Flex::column()
+                .with_child(render_provider_title_cell(
+                    row.provider,
+                    enabled,
                     appearance,
-                    BASE_URL_INPUT_MAX_WIDTH,
-                );
-                let base_row = Flex::row()
-                    .with_child(
-                        Container::new(ConstrainedBox::new(base_label).with_width(170.).finish())
-                            .with_margin_right(12.)
-                            .finish(),
-                    )
-                    .with_child(base_editor)
-                    .finish();
-                row_column.add_child(
-                    Container::new(base_row)
+                ))
+                .with_child(
+                    Container::new(render_provider_key_cell(row, appearance))
                         .with_margin_top(8.)
-                        .with_margin_left(182.)
+                        .finish(),
+                )
+                .with_child(
+                    Container::new(render_provider_action_row(row))
+                        .with_margin_top(8.)
                         .finish(),
                 );
+
+            if let Some(base_url_row) = render_provider_base_url_row(row, appearance) {
+                row_column.add_child(Container::new(base_url_row).with_margin_top(10.).finish());
             }
 
-            if FeatureFlag::DirectApiModelSelection.is_enabled() {
-                if row.model_dropdown_has_items.get() {
-                    let model_label = appearance.ui_builder().span("Model").build().finish();
-                    let model_row = Flex::row()
-                        .with_child(
-                            Container::new(
-                                ConstrainedBox::new(model_label).with_width(170.).finish(),
-                            )
-                            .with_margin_right(12.)
-                            .finish(),
-                        )
-                        .with_child(ChildView::new(&row.model_dropdown).finish())
-                        .finish();
-                    row_column.add_child(
-                        Container::new(model_row)
-                            .with_margin_top(8.)
-                            .with_margin_left(182.)
-                            .finish(),
-                    );
-                }
+            if let Some(model_row) = render_provider_model_row(row, appearance) {
+                row_column.add_child(Container::new(model_row).with_margin_top(10.).finish());
             }
 
-            if let Some(result) = row.test_result.borrow().as_ref() {
-                let message = match result {
-                    Ok(msg) => format!("OK: {msg}"),
-                    Err(msg) => format!("Error: {msg}"),
-                };
-                row_column.add_child(
-                    Container::new(appearance.ui_builder().span(message).build().finish())
-                        .with_margin_top(8.)
-                        .with_margin_left(182.)
-                        .finish(),
-                );
+            if let Some(result_row) = render_provider_result_row(row, appearance) {
+                row_column.add_child(Container::new(result_row).with_margin_top(10.).finish());
             }
 
             column.add_child(
-                Container::new(row_column.finish())
-                    .with_margin_bottom(ROW_VERTICAL_SPACING)
-                    .finish(),
+                Container::new(
+                    ConstrainedBox::new(row_column.finish())
+                        .with_max_width(PROVIDER_ROW_MAX_WIDTH)
+                        .finish(),
+                )
+                .with_margin_bottom(ROW_VERTICAL_SPACING)
+                .finish(),
             );
         }
 

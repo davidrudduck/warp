@@ -1,4 +1,7 @@
-use super::{visibility_tooltip, DirectApiPageAction, DirectApiSettingsPageView, ProviderType};
+use super::{
+    provider_status_label, visibility_tooltip, DirectApiPageAction, DirectApiSettingsPageView,
+    ProviderType,
+};
 use crate::appearance::Appearance;
 use crate::auth::AuthStateProvider;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
@@ -20,6 +23,23 @@ fn api_key_placeholder_for_each_provider() {
     assert_eq!(ProviderType::Ollama.api_key_placeholder(), "Optional");
     assert_eq!(ProviderType::OpenRouter.api_key_placeholder(), "sk-or-...");
     assert_eq!(ProviderType::Custom.api_key_placeholder(), "Optional");
+}
+
+#[test]
+fn provider_row_primary_status_labels_are_short() {
+    assert_eq!(ProviderType::OpenRouter.as_str(), "OpenRouter");
+    assert_eq!(ProviderType::OpenRouter.api_key_placeholder(), "sk-or-...");
+    assert_eq!(
+        ProviderType::OpenRouter.default_base_url(),
+        "https://openrouter.ai/api/v1"
+    );
+    assert_eq!(provider_status_label(true), "Enabled");
+    assert_eq!(provider_status_label(false), "Disabled");
+}
+
+#[test]
+fn provider_rows_keep_custom_last_for_scanability() {
+    assert_eq!(ProviderType::all().last(), Some(&ProviderType::Custom));
 }
 
 #[test]
