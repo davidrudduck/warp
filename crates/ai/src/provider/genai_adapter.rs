@@ -44,10 +44,20 @@ impl LlmProvider for GenaiAdapter {
             .client
             .exec_chat(&self.model, genai_req, None)
             .await
-            .map_err(|e| ProviderError::Remote {
-                provider: self.provider.clone(),
-                code: None,
-                message: e.to_string(),
+            .map_err(|e| {
+                log_direct_api_route_genai_error(
+                    &self.provider,
+                    self.base_url.as_deref(),
+                    &self.model,
+                    self.api_key.as_deref(),
+                    &e,
+                );
+                let message = e.to_string();
+                ProviderError::Remote {
+                    provider: self.provider.clone(),
+                    code: None,
+                    message,
+                }
             })?;
 
         Ok(convert_from_genai_response(genai_resp))
@@ -61,21 +71,44 @@ impl LlmProvider for GenaiAdapter {
             .client
             .exec_chat_stream(&self.model, genai_req, Some(&stream_options))
             .await
-            .map_err(|e| ProviderError::Remote {
-                provider: self.provider.clone(),
-                code: None,
-                message: e.to_string(),
+            .map_err(|e| {
+                log_direct_api_route_genai_error(
+                    &self.provider,
+                    self.base_url.as_deref(),
+                    &self.model,
+                    self.api_key.as_deref(),
+                    &e,
+                );
+                let message = e.to_string();
+                ProviderError::Remote {
+                    provider: self.provider.clone(),
+                    code: None,
+                    message,
+                }
             })?;
 
         let provider = self.provider.clone();
+        let base_url = self.base_url.clone();
+        let model = self.model.clone();
+        let api_key = self.api_key.clone();
         let stream = stream_resp.stream.flat_map(move |result| {
             let events = match result {
                 Ok(event) => convert_genai_stream_event(event),
-                Err(e) => vec![Err(ProviderError::Remote {
-                    provider: provider.clone(),
-                    code: None,
-                    message: e.to_string(),
-                })],
+                Err(e) => {
+                    log_direct_api_route_genai_error(
+                        &provider,
+                        base_url.as_deref(),
+                        &model,
+                        api_key.as_deref(),
+                        &e,
+                    );
+                    let message = e.to_string();
+                    vec![Err(ProviderError::Remote {
+                        provider: provider.clone(),
+                        code: None,
+                        message,
+                    })]
+                }
             };
             futures::stream::iter(events)
         });
@@ -110,6 +143,64 @@ impl LlmProvider for GenaiAdapter {
         self.client = build_client(&self.provider, self.api_key.clone(), Some(base_url.clone()));
         self.base_url = Some(base_url);
         self
+    }
+}
+
+fn log_direct_api_route_genai_error(
+    provider: &str,
+    base_url: Option<&str>,
+    model: &str,
+    api_key: Option<&str>,
+    error: &genai::Error,
+) {
+    let message = error.to_string();
+    log::debug!(
+        "{}",
+        crate::logging::redact_direct_api_route_diagnostic(
+            "NativeGenai",
+            provider,
+            base_url.unwrap_or(""),
+            model,
+            api_key,
+            genai_error_http_status(error)
+                .or_else(|| crate::logging::http_status_from_diagnostic_message(&message)),
+            Some(&message),
+        )
+    );
+}
+
+fn genai_error_http_status(error: &genai::Error) -> Option<u16> {
+    match error {
+        genai::Error::HttpError { status, .. } => Some(status.as_u16()),
+        genai::Error::WebStream { cause, .. } => {
+            crate::logging::http_status_from_diagnostic_message(cause)
+        }
+        genai::Error::ChatReqHasNoMessages { .. }
+        | genai::Error::LastChatMessageIsNotUser { .. }
+        | genai::Error::MessageRoleNotSupported { .. }
+        | genai::Error::MessageContentTypeNotSupported { .. }
+        | genai::Error::JsonModeWithoutInstruction
+        | genai::Error::VerbosityParsing { .. }
+        | genai::Error::ReasoningParsingError { .. }
+        | genai::Error::ServiceTierParsing { .. }
+        | genai::Error::PromptCacheRetentionParsing { .. }
+        | genai::Error::NoChatResponse { .. }
+        | genai::Error::InvalidJsonResponseElement { .. }
+        | genai::Error::RequiresApiKey { .. }
+        | genai::Error::NoAuthResolver { .. }
+        | genai::Error::NoAuthData { .. }
+        | genai::Error::ModelMapperFailed { .. }
+        | genai::Error::WebAdapterCall { .. }
+        | genai::Error::WebModelCall { .. }
+        | genai::Error::ChatResponseGeneration { .. }
+        | genai::Error::ChatResponse { .. }
+        | genai::Error::StreamParse { .. }
+        | genai::Error::Resolver { .. }
+        | genai::Error::AdapterNotSupported { .. }
+        | genai::Error::AdapterKindMismatch { .. }
+        | genai::Error::Internal(_)
+        | genai::Error::JsonValueExt(_)
+        | genai::Error::SerdeJson(_) => None,
     }
 }
 

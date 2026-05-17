@@ -30,6 +30,18 @@ async fn run_native_provider_stream(params: RequestParams) -> anyhow::Result<Cha
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("Direct API route config missing"))?;
     let request = build_chat_request(&params);
+    log::debug!(
+        "{}",
+        ai::logging::redact_direct_api_route_diagnostic(
+            "NativeGenai",
+            provider_name(config.provider_id),
+            config.base_url.as_deref().unwrap_or(""),
+            &config.model_id,
+            config.api_key.as_deref(),
+            None,
+            None,
+        )
+    );
     provider_for_config(config)
         .chat_stream(request)
         .await

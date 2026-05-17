@@ -100,6 +100,30 @@ fn rig_backend_failure_diagnostic_adds_safe_error_category() {
     assert!(!rendered.contains("raw error details"));
 }
 
+#[test]
+fn rig_backend_failure_diagnostic_records_http_status() {
+    let config = RigBackendConfig::new(
+        RigProviderKind::OpenRouter,
+        "moonshotai/kimi-k2.6",
+        Some("sk-secret".to_string()),
+        Some("https://openrouter.ai/api/v1".to_string()),
+    );
+    let mut diagnostic = super::rig_diagnostic_event_from_config(&config);
+
+    let rendered = super::categorized_rig_diagnostic(
+        &mut diagnostic,
+        &ProviderError::Remote {
+            provider: "rig".to_string(),
+            code: None,
+            message: "HTTP error.\nStatus: 401 Unauthorized\nBody: secret".to_string(),
+        },
+    );
+
+    assert!(rendered.contains("error_category=remote"));
+    assert!(rendered.contains("status=401"));
+    assert!(!rendered.contains("Body: secret"));
+}
+
 #[tokio::test]
 async fn rig_backend_emits_tool_call_without_executing_tool() {
     let mut backend = FakeRigBackend::new().with_streamed_tool_call(

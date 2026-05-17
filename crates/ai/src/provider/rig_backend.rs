@@ -251,11 +251,18 @@ fn log_rig_diagnostic_provider_error(diagnostics: &mut RigDiagnosticEvent, error
     log::debug!("{}", categorized_rig_diagnostic(diagnostics, error));
 }
 
+fn log_rig_diagnostic_stream_error(diagnostics: &mut RigDiagnosticEvent, error: &ProviderError) {
+    diagnostics.error_category = Some(provider_error_category(error).to_string());
+    diagnostics.http_status = provider_error_http_status(error);
+    log::debug!("{}", redact_rig_diagnostic_event(diagnostics));
+}
+
 fn categorized_rig_diagnostic(
     diagnostics: &mut RigDiagnosticEvent,
     error: &ProviderError,
 ) -> String {
     diagnostics.error_category = Some(provider_error_category(error).to_string());
+    diagnostics.http_status = provider_error_http_status(error);
     redact_rig_diagnostic_event(diagnostics)
 }
 
@@ -272,6 +279,7 @@ where
         Ok(request) => request,
         Err(err) => {
             diagnostics.error_category = Some(provider_error_category(&err).to_string());
+            diagnostics.http_status = provider_error_http_status(&err);
             log::debug!("{}", redact_rig_diagnostic_event(&diagnostics));
             return Err(err.into());
         }
@@ -280,8 +288,7 @@ where
         Ok(stream) => stream,
         Err(err) => {
             let err = rig_completion_error(err);
-            diagnostics.error_category = Some(provider_error_category(&err).to_string());
-            log::debug!("{}", redact_rig_diagnostic_event(&diagnostics));
+            log_rig_diagnostic_stream_error(&mut diagnostics, &err);
             return Err(err.into());
         }
     };
@@ -318,8 +325,7 @@ where
                     }
                 }
                 Err(err) => {
-                    diagnostics.error_category = Some(provider_error_category(err).to_string());
-                    log::debug!("{}", redact_rig_diagnostic_event(&diagnostics));
+                    log_rig_diagnostic_stream_error(&mut diagnostics, err);
                 }
             }
         }
@@ -396,6 +402,23 @@ fn provider_error_category(error: &ProviderError) -> &'static str {
         ProviderError::StreamParse(_) => "stream_parse",
         ProviderError::Cancelled => "cancelled",
         ProviderError::UnsupportedModel(_) => "unsupported_model",
+    }
+}
+
+fn provider_error_http_status(error: &ProviderError) -> Option<u16> {
+    match error {
+        ProviderError::Http { status, .. } => Some(*status),
+        ProviderError::Remote { message, .. } => {
+            crate::logging::http_status_from_diagnostic_message(message)
+        }
+        ProviderError::Auth(_)
+        | ProviderError::RateLimited { .. }
+        | ProviderError::ServiceUnavailable
+        | ProviderError::ContextLengthExceeded
+        | ProviderError::Transport(_)
+        | ProviderError::StreamParse(_)
+        | ProviderError::Cancelled
+        | ProviderError::UnsupportedModel(_) => None,
     }
 }
 

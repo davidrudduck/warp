@@ -16,6 +16,18 @@ pub async fn run_rig_provider_stream(params: RequestParams) -> anyhow::Result<Ch
         .ok_or_else(|| anyhow::anyhow!("Direct API route config missing"))?;
     let request = super::direct_tools::build_chat_request(&params);
     let rig_config = rig_config_from_direct_api_config(config)?;
+    log::debug!(
+        "{}",
+        ai::logging::redact_direct_api_route_diagnostic(
+            "RigAgent",
+            provider_label(config.provider_id),
+            config.base_url.as_deref().unwrap_or(""),
+            &config.model_id,
+            config.api_key.as_deref(),
+            None,
+            None,
+        )
+    );
     ai::provider::rig_backend::RigDirectBackend::new(rig_config)?
         .stream_turn(request)
         .await
@@ -61,6 +73,18 @@ fn rig_base_url_from_direct_api_config(config: &DirectApiRouteConfig) -> Option<
         | ProviderId::GoogleGemini
         | ProviderId::Ollama
         | ProviderId::OpenRouter => config.base_url.clone(),
+    }
+}
+
+#[cfg(feature = "direct_api_rig_backend")]
+fn provider_label(provider_id: ProviderId) -> &'static str {
+    match provider_id {
+        ProviderId::OpenAI => "openai",
+        ProviderId::Anthropic => "anthropic",
+        ProviderId::GoogleGemini => "gemini",
+        ProviderId::Ollama => "ollama",
+        ProviderId::OpenRouter => "openrouter",
+        ProviderId::Custom => "custom",
     }
 }
 

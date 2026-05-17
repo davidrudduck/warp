@@ -190,7 +190,7 @@ Add this table to the research note:
 - Modify: `crates/ai/src/provider/genai_adapter.rs`
 - Modify: `crates/ai/src/provider/rig_backend.rs`
 
-- [ ] **Step 1: Add a failing redaction test**
+- [x] **Step 1: Add a failing redaction test**
 
 Add a test in `crates/ai/src/logging/logger_tests.rs`:
 
@@ -218,7 +218,7 @@ fn direct_api_route_diagnostics_do_not_render_secrets() {
 }
 ```
 
-- [ ] **Step 2: Run the redaction test to verify it fails**
+- [x] **Step 2: Run the redaction test to verify it fails**
 
 Run:
 
@@ -228,7 +228,7 @@ cargo test -p ai direct_api_route_diagnostics_do_not_render_secrets -- --nocaptu
 
 Expected: fails because `redact_direct_api_route_diagnostic` does not exist.
 
-- [ ] **Step 3: Implement the redacted formatter**
+- [x] **Step 3: Implement the redacted formatter**
 
 Add to `crates/ai/src/logging/mod.rs`:
 
@@ -277,7 +277,7 @@ fn safe_log_token(value: &str) -> &str {
 
 Use `reqwest::Url` because `crates/ai` already depends on `reqwest` and `crates/ai/src/url_validation.rs` already parses Direct API URLs through `reqwest::Url`.
 
-- [ ] **Step 4: Wire route-start diagnostics**
+- [x] **Step 4: Wire route-start diagnostics**
 
 In `app/src/ai/agent/api/direct_tools.rs`, log one debug line before invoking the provider:
 
@@ -298,13 +298,13 @@ log::debug!(
 
 In `app/src/ai/agent/api/rig_direct.rs`, log the same diagnostic with `backend=RigAgent`.
 
-- [ ] **Step 5: Wire provider error diagnostics**
+- [x] **Step 5: Wire provider error diagnostics**
 
 In `crates/ai/src/provider/genai_adapter.rs`, convert `exec_chat_stream` errors through a helper that logs status if available from the genai error string. If the concrete genai error exposes structured HTTP status, use the structured field. If not, classify with string matching and only log the numeric status and hashed provider message.
 
 In `crates/ai/src/provider/rig_backend.rs`, extend `categorized_rig_diagnostic` with HTTP status if Rig exposes it. Preserve the existing redacted Rig diagnostic format.
 
-- [ ] **Step 6: Run logging tests**
+- [x] **Step 6: Run logging tests**
 
 Run:
 

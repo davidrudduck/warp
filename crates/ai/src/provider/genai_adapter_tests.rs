@@ -132,6 +132,17 @@ async fn openrouter_stream_sends_authorization_header_to_custom_endpoint() {
 }
 
 #[test]
+fn genai_http_error_status_uses_structured_status() {
+    let error = genai::Error::HttpError {
+        status: reqwest::StatusCode::UNAUTHORIZED,
+        canonical_reason: "Unauthorized".to_string(),
+        body: "{\"error\":{\"message\":\"User not found.\"}}".to_string(),
+    };
+
+    assert_eq!(genai_error_http_status(&error), Some(401));
+}
+
+#[test]
 fn stream_end_emits_complete_tool_calls_before_end() {
     let events = convert_genai_stream_event(ChatStreamEvent::End(genai::chat::StreamEnd {
         captured_content: Some(genai::chat::MessageContent::from_tool_calls(vec![

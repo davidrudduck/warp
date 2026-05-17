@@ -94,6 +94,35 @@ fn rig_backend_diagnostics_redact_api_keys_and_tool_args() {
 }
 
 #[test]
+fn direct_api_route_diagnostics_do_not_render_secrets() {
+    let rendered = redact_direct_api_route_diagnostic(
+        "RigAgent",
+        "OpenRouter",
+        "https://openrouter.ai/api/v1",
+        "moonshotai/kimi-k2.6",
+        Some("sk-or-v1-secret-secret-secret"),
+        Some(401),
+        Some("User not found."),
+    );
+
+    assert!(rendered.contains("backend=RigAgent"));
+    assert!(rendered.contains("provider=OpenRouter"));
+    assert!(rendered.contains("base_url_host=openrouter.ai"));
+    assert!(rendered.contains("status=401"));
+    assert!(rendered.contains("api_key_present=true"));
+    assert!(!rendered.contains("sk-or-v1"));
+    assert!(!rendered.contains("kimi-k2.6"));
+    assert!(!rendered.contains("User not found."));
+}
+
+#[test]
+fn direct_api_status_extraction_handles_provider_error_text() {
+    let message = "Web stream error.\nCause: HTTP error.\nStatus: 401 Unauthorized\nBody: secret";
+
+    assert_eq!(http_status_from_diagnostic_message(message), Some(401));
+}
+
+#[test]
 fn rig_backend_diagnostics_hash_custom_model_ids() {
     let event = RigDiagnosticEvent {
         provider: "CustomOpenAICompatible".to_string(),
@@ -141,6 +170,7 @@ fn rig_backend_diagnostics_are_strict_allowlist() {
         tool_call_count: 1,
         finish_reason: Some("Stop".to_string()),
         error_category: Some("none".to_string()),
+        http_status: None,
     };
 
     let rendered = redact_rig_diagnostic_event(&event);
@@ -159,6 +189,7 @@ fn rig_backend_diagnostics_are_strict_allowlist() {
             "tool_call_count",
             "finish_reason",
             "error_category",
+            "status",
         ]
     );
 }

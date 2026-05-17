@@ -52,6 +52,7 @@ pub struct RigDiagnosticEvent {
     pub(crate) tool_call_count: usize,
     pub(crate) finish_reason: Option<String>,
     pub(crate) error_category: Option<String>,
+    pub(crate) http_status: Option<u16>,
 }
 
 pub fn redact_rig_diagnostic_event(event: &RigDiagnosticEvent) -> String {
@@ -70,9 +71,13 @@ pub fn redact_rig_diagnostic_event(event: &RigDiagnosticEvent) -> String {
         .as_deref()
         .filter(|value| is_safe_log_value(value))
         .unwrap_or("none");
+    let http_status = event
+        .http_status
+        .map(|status| status.to_string())
+        .unwrap_or_else(|| "none".to_string());
 
     format!(
-        "backend=rig_agent provider={} {} event_count={} tool_call_count={} finish_reason={} error_category={}",
+        "backend=rig_agent provider={} {} event_count={} tool_call_count={} finish_reason={} error_category={} status={}",
         if is_safe_log_value(&event.provider) {
             event.provider.as_str()
         } else {
@@ -83,7 +88,62 @@ pub fn redact_rig_diagnostic_event(event: &RigDiagnosticEvent) -> String {
         event.tool_call_count,
         finish_reason,
         error_category,
+        http_status,
     )
+}
+
+pub fn redact_direct_api_route_diagnostic(
+    backend: &str,
+    provider: &str,
+    base_url: &str,
+    model_id: &str,
+    api_key: Option<&str>,
+    status: Option<u16>,
+    provider_message: Option<&str>,
+) -> String {
+    let base_url_host = reqwest::Url::parse(base_url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_string))
+        .unwrap_or_else(|| "unknown".to_string());
+    let status = status
+        .map(|status| status.to_string())
+        .unwrap_or_else(|| "none".to_string());
+    let error_hash = provider_message
+        .filter(|message| !message.trim().is_empty())
+        .map(hash_custom_model_id)
+        .unwrap_or_else(|| "none".to_string());
+
+    format!(
+        "direct_api_route backend={} provider={} base_url_host={} model_id_hash={} api_key_present={} status={} provider_error_hash={}",
+        safe_log_token(backend),
+        safe_log_token(provider),
+        safe_log_token(&base_url_host),
+        hash_custom_model_id(model_id),
+        api_key.is_some_and(|key| !key.trim().is_empty()),
+        safe_log_token(&status),
+        error_hash,
+    )
+}
+
+pub fn http_status_from_diagnostic_message(message: &str) -> Option<u16> {
+    ["Status:", "status:", "HTTP", "http", "status code"]
+        .iter()
+        .find_map(|marker| status_after_marker(message, marker))
+}
+
+fn status_after_marker(message: &str, marker: &str) -> Option<u16> {
+    let marker_index = message.find(marker)?;
+    let tail = &message[marker_index + marker.len()..];
+    let digits = tail
+        .chars()
+        .skip_while(|ch| !ch.is_ascii_digit())
+        .take_while(|ch| ch.is_ascii_digit())
+        .collect::<String>();
+    if digits.len() == 3 {
+        digits.parse().ok()
+    } else {
+        None
+    }
 }
 
 fn is_safe_log_value(value: &str) -> bool {
@@ -91,6 +151,14 @@ fn is_safe_log_value(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/'))
+}
+
+fn safe_log_token(value: &str) -> &str {
+    if is_safe_log_value(value) {
+        value
+    } else {
+        "unknown"
+    }
 }
 
 fn hash_custom_model_id(model_id: &str) -> String {
