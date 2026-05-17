@@ -93,7 +93,7 @@ Direct API keys stay in the channel-specific settings file and are not attached 
 2. Select **OpenAI** from the Provider dropdown
 3. Paste your API key into the **API Key** field
 4. Click **Test Connection**
-5. You should see: ✓ API key format valid (full test pending)
+5. You should see: ✓ API key format valid. Run Refresh models to validate provider access.
 6. Click **Save Settings**
 
 **Choose a Model**
@@ -125,7 +125,7 @@ Other options:
 2. Select **Anthropic** from the Provider dropdown
 3. Paste your API key
 4. Click **Test Connection**
-5. You should see: ✓ API key format valid (full test pending)
+5. You should see: ✓ API key format valid. Run Refresh models to validate provider access.
 6. Click **Save Settings**
 
 **Choose a Model**
@@ -156,7 +156,7 @@ Other options:
 2. Select **Google Gemini** from the Provider dropdown
 3. Paste your API key
 4. Click **Test Connection**
-5. You should see: ✓ API key format valid (full test pending)
+5. You should see: ✓ API key format valid. Run Refresh models to validate provider access.
 6. Click **Save Settings**
 
 **Choose a Model**
@@ -203,7 +203,7 @@ You should see your downloaded models.
 3. Leave **API Key** blank (not required)
 4. **Base URL** should be `http://localhost:11434` (default)
 5. Click **Test Connection**
-6. You should see: ✓ Ollama runs locally - no API key needed
+6. You should see: ✓ Ollama runs locally. Run Refresh models to validate access.
 7. Click **Save Settings**
 
 **Choose a Model**
@@ -242,7 +242,7 @@ Available models from `ollama pull` command:
 3. Paste your API key
 4. **Base URL** should be `https://openrouter.ai/api/v1` (default)
 5. Click **Test Connection**
-6. You should see: ✓ API key format valid (full test pending)
+6. You should see: ✓ API key format valid. Run Refresh models to validate provider access.
 7. Click **Save Settings**
 
 **Choose a Model**
@@ -269,7 +269,7 @@ For endpoints compatible with OpenAI's API format (including LM Studio, Vllm, cu
 3. Enter your **API Key** (or leave blank if endpoint doesn't require auth)
 4. Enter your **Base URL** (e.g., `http://localhost:8000`)
 5. Click **Test Connection**
-6. You should see: ✓ Custom provider configured (full test pending)
+6. You should see: ✓ Custom provider format valid. Run Refresh models to validate provider access.
 7. Click **Save Settings**
 
 **Example: LM Studio**
@@ -288,11 +288,11 @@ After entering your API key:
 2. Warp will validate:
    - API key format is correct
    - Required custom-provider base URL is present
-   - Full provider reachability and authentication testing is pending
+   - Provider reachability and authentication are validated when you click **Refresh models**
 3. You'll see one of:
-   - ✓ API key format valid (full test pending)
-   - ✓ Ollama runs locally - no API key needed
-   - ✓ Custom provider configured (full test pending)
+   - ✓ API key format valid. Run Refresh models to validate provider access.
+   - ✓ Ollama runs locally. Run Refresh models to validate access.
+   - ✓ Custom provider format valid. Run Refresh models to validate provider access.
    - ✗ Provider-specific key validation errors, such as a missing key or an unexpected key prefix
    - ✗ Base URL is required for custom providers
 
@@ -375,7 +375,7 @@ Phase 2 adds per-provider model selection, allowing you to choose which specific
 
 The first time you use a provider, the model list may be empty or show defaults. To fetch the latest models:
 
-**Step 1: Click "Update Model List"**
+**Step 1: Click "Refresh models"**
 
 This button appears below the provider selector. Clicking it will:
 - Contact the provider's API to fetch available models
@@ -386,7 +386,7 @@ This button appears below the provider selector. Clicking it will:
 ```text
 Fetching models... (shows loading state)
 ↓
-✓ Found 12 models for OpenAI
+✓ OK: OpenAI access validated. Fetched 12 models.
 ↓
 Models appear in dropdown
 ```
@@ -437,7 +437,7 @@ If you don't select a model, Warp uses these defaults:
 - Complex tasks: Use -turbo or -sonnet variants
 - Maximum capability: Use -opus or GPT-4
 
-**When to Update Model List:**
+**When to Refresh Models:**
 - First time setup: Always update to see latest models
 - After 24 hours: Cache expires, click to refresh
 - New model release: Update manually to see it
@@ -446,9 +446,9 @@ If you don't select a model, Warp uses these defaults:
 
 | Issue | Solution |
 |---|---|
-| "Update Model List" does nothing | Check API key is saved first |
-| Model list empty | Click "Update Model List", wait 2-5 seconds |
-| Old models showing | Model list cached, click update to refresh |
+| "Refresh models" does nothing | Check API key is saved first |
+| Model list empty | Click "Refresh models", wait 2-5 seconds |
+| Old models showing | Model list cached, click refresh to update |
 | Can't select model | Ensure DirectApiModelSelection feature enabled |
 
 ### Advanced: Model List Cache
@@ -469,7 +469,7 @@ Structure:
 ```
 
 Cache expires after 24 hours. To force refresh:
-1. Click "Update Model List" in UI, OR
+1. Click "Refresh models" in UI, OR
 2. Delete cache file manually (not recommended)
 
 ### Feature Flag
@@ -480,7 +480,7 @@ Model selection is gated behind `FeatureFlag::DirectApiModelSelection` in DOGFOO
 
 ### Common Issues
 
-**Q: "Authentication failed" error during model refresh or Direct API requests**
+**Q: "Provider rejected the saved API key" error during model refresh or Direct API requests**
 
 - Check API key is exactly correct (no extra spaces)
 - Verify key is still valid (not revoked)

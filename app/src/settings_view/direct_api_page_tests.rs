@@ -1,12 +1,16 @@
 use super::{
-    provider_status_label, visibility_tooltip, DirectApiPageAction, DirectApiSettingsPageView,
-    ProviderType,
+    provider_model_list_error_message, provider_model_list_success_message,
+    provider_preflight_message, provider_status_label, validate_provider_base_url_preflight,
+    visibility_tooltip, DirectApiPageAction, DirectApiSettingsPageView, ProviderType,
 };
 use crate::appearance::Appearance;
 use crate::auth::AuthStateProvider;
+use crate::server::telemetry::context_provider::AppTelemetryContextProvider;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::test_util::settings::initialize_settings_for_tests;
+use ai::model_registry::{ModelDescriptor, ModelListCache, ModelListError, ProviderId};
 use ai::url_validation::validate_direct_api_base_url;
+use std::sync::Arc;
 use warp_core::settings::{DirectAPISettings, Setting};
 use warpui::platform::WindowStyle;
 use warpui::{App, SingletonEntity as _, TypedActionView};
@@ -185,6 +189,56 @@ fn validate_api_key_optional_for_ollama_and_custom() {
 fn visibility_tooltip_reflects_show_state() {
     assert_eq!(visibility_tooltip(false), "Show API key");
     assert_eq!(visibility_tooltip(true), "Hide API key");
+}
+
+#[test]
+fn remote_provider_test_result_is_not_reported_as_validated_until_network_probe_runs() {
+    assert_eq!(
+        provider_preflight_message(ProviderType::OpenRouter),
+        "API key format valid. Run Refresh models to validate provider access."
+    );
+    assert_eq!(
+        provider_preflight_message(ProviderType::OpenAI),
+        "API key format valid. Run Refresh models to validate provider access."
+    );
+    assert_eq!(
+        provider_preflight_message(ProviderType::Custom),
+        "Custom provider format valid. Run Refresh models to validate provider access."
+    );
+    assert!(!provider_preflight_message(ProviderType::OpenRouter).contains("full test pending"));
+}
+
+#[test]
+fn model_refresh_success_reports_provider_access_validated() {
+    assert_eq!(
+        provider_model_list_success_message(ProviderType::OpenRouter, 356),
+        "OK: OpenRouter access validated. Fetched 356 models."
+    );
+}
+
+#[test]
+fn model_refresh_auth_failure_reports_saved_key_rejection() {
+    assert_eq!(
+        provider_model_list_error_message(ModelListError::AuthFailed),
+        "Error: Provider rejected the saved API key."
+    );
+}
+
+#[test]
+fn provider_preflight_rejects_invalid_base_urls_before_claiming_success() {
+    assert_eq!(
+        validate_provider_base_url_preflight(ProviderType::OpenRouter, "http://openrouter.ai/v1")
+            .unwrap_err(),
+        "Base URL must use https://, except http:// localhost or private LAN addresses"
+    );
+    assert_eq!(
+        validate_provider_base_url_preflight(ProviderType::Custom, "").unwrap_err(),
+        "Base URL is required for custom providers"
+    );
+    assert!(
+        validate_provider_base_url_preflight(ProviderType::Custom, "http://10.0.0.2:8080/v1")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -630,7 +684,232 @@ fn openrouter_test_with_blank_key_uses_existing_key() {
             let row = view
                 .provider_row(ProviderType::OpenRouter)
                 .expect("OpenRouter row should exist");
-            assert!(row.test_result.borrow().as_ref().is_some_and(Result::is_ok));
+            assert_eq!(
+                row.test_result.borrow().as_ref(),
+                Some(&Ok(
+                    "API key format valid. Run Refresh models to validate provider access."
+                        .to_string()
+                ))
+            );
+        });
+    });
+}
+
+#[test]
+fn openrouter_test_rejects_invalid_base_url_before_preflight_success() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        DirectAPISettings::register(&mut app);
+        app.add_singleton_model(|_| AuthStateProvider::new_logged_out_for_test());
+        app.add_singleton_model(|_| Appearance::mock());
+        app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
+
+        DirectAPISettings::handle(&app).update(&mut app, |settings, ctx| {
+            settings
+                .api_key_openrouter
+                .set_value(Some("sk-or-existing".to_string()), ctx)
+                .expect("OpenRouter API key should save");
+        });
+
+        let (_window_id, view) =
+            app.add_window(WindowStyle::NotStealFocus, DirectApiSettingsPageView::new);
+        view.update(&mut app, |view, ctx| {
+            let row = view
+                .provider_row(ProviderType::OpenRouter)
+                .expect("OpenRouter row should exist");
+            row.base_url_editor
+                .as_ref()
+                .expect("OpenRouter should have a base URL editor")
+                .update(ctx, |editor, ctx| {
+                    editor.set_buffer_text("http://openrouter.ai/api/v1", ctx);
+                });
+
+            view.handle_test_connection(ProviderType::OpenRouter, ctx);
+
+            let row = view
+                .provider_row(ProviderType::OpenRouter)
+                .expect("OpenRouter row should exist");
+            assert_eq!(
+                row.test_result.borrow().as_ref(),
+                Some(&Err(
+                    "Base URL must use https://, except http:// localhost or private LAN addresses"
+                        .to_string()
+                ))
+            );
+        });
+    });
+}
+
+#[test]
+fn ollama_test_rejects_invalid_base_url_before_preflight_success() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        DirectAPISettings::register(&mut app);
+        app.add_singleton_model(|_| AuthStateProvider::new_logged_out_for_test());
+        app.add_singleton_model(|_| Appearance::mock());
+        app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
+
+        let (_window_id, view) =
+            app.add_window(WindowStyle::NotStealFocus, DirectApiSettingsPageView::new);
+        view.update(&mut app, |view, ctx| {
+            let row = view
+                .provider_row(ProviderType::Ollama)
+                .expect("Ollama row should exist");
+            row.base_url_editor
+                .as_ref()
+                .expect("Ollama should have a base URL editor")
+                .update(ctx, |editor, ctx| {
+                    editor.set_buffer_text("http://8.8.8.8:11434", ctx);
+                });
+
+            view.handle_test_connection(ProviderType::Ollama, ctx);
+
+            let row = view
+                .provider_row(ProviderType::Ollama)
+                .expect("Ollama row should exist");
+            assert_eq!(
+                row.test_result.borrow().as_ref(),
+                Some(&Err(
+                    "Base URL must use https://, except http:// localhost or private LAN addresses"
+                        .to_string()
+                ))
+            );
+        });
+    });
+}
+
+#[test]
+fn custom_test_rejects_missing_base_url_before_preflight_success() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        DirectAPISettings::register(&mut app);
+        app.add_singleton_model(|_| AuthStateProvider::new_logged_out_for_test());
+        app.add_singleton_model(|_| Appearance::mock());
+        app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
+
+        let (_window_id, view) =
+            app.add_window(WindowStyle::NotStealFocus, DirectApiSettingsPageView::new);
+        view.update(&mut app, |view, ctx| {
+            let row = view
+                .provider_row(ProviderType::Custom)
+                .expect("Custom row should exist");
+            row.base_url_editor
+                .as_ref()
+                .expect("Custom should have a base URL editor")
+                .update(ctx, |editor, ctx| {
+                    editor.set_buffer_text("", ctx);
+                });
+
+            view.handle_test_connection(ProviderType::Custom, ctx);
+
+            let row = view
+                .provider_row(ProviderType::Custom)
+                .expect("Custom row should exist");
+            assert_eq!(
+                row.test_result.borrow().as_ref(),
+                Some(&Err("Base URL is required for custom providers".to_string()))
+            );
+        });
+    });
+}
+
+#[test]
+fn model_fetch_callback_reports_openrouter_auth_failure_as_saved_key_rejection() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        DirectAPISettings::register(&mut app);
+        app.add_singleton_model(|_| AuthStateProvider::new_logged_out_for_test());
+        app.add_singleton_model(|_| Appearance::mock());
+        app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
+        app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
+
+        let (_window_id, view) =
+            app.add_window(WindowStyle::NotStealFocus, DirectApiSettingsPageView::new);
+        view.update(&mut app, |view, ctx| {
+            let cache_path = tempfile::tempdir()
+                .expect("cache temp dir should be created")
+                .path()
+                .join("models.json");
+            let cache = Arc::new(
+                ModelListCache::new_with_path(cache_path).expect("test cache should be created"),
+            );
+
+            view.on_models_fetched(
+                (
+                    ProviderId::OpenRouter,
+                    cache,
+                    Err(ModelListError::AuthFailed),
+                    42,
+                ),
+                ctx,
+            );
+
+            let row = view
+                .provider_row(ProviderType::OpenRouter)
+                .expect("OpenRouter row should exist");
+            assert_eq!(
+                row.test_result.borrow().as_ref(),
+                Some(&Err(
+                    "Error: Provider rejected the saved API key.".to_string()
+                ))
+            );
+        });
+    });
+}
+
+#[test]
+fn model_fetch_callback_reports_openrouter_success_as_access_validated() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        DirectAPISettings::register(&mut app);
+        app.add_singleton_model(|_| AuthStateProvider::new_logged_out_for_test());
+        app.add_singleton_model(|_| Appearance::mock());
+        app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
+        app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
+
+        let (_window_id, view) =
+            app.add_window(WindowStyle::NotStealFocus, DirectApiSettingsPageView::new);
+        view.update(&mut app, |view, ctx| {
+            let cache_path = tempfile::tempdir()
+                .expect("cache temp dir should be created")
+                .path()
+                .join("models.json");
+            let cache = Arc::new(
+                ModelListCache::new_with_path(cache_path).expect("test cache should be created"),
+            );
+
+            view.on_models_fetched(
+                (
+                    ProviderId::OpenRouter,
+                    cache,
+                    Ok(vec![
+                        ModelDescriptor {
+                            id: "openrouter/model-a".to_string(),
+                            display_name: None,
+                            context_window: None,
+                            supports_tools: true,
+                        },
+                        ModelDescriptor {
+                            id: "openrouter/model-b".to_string(),
+                            display_name: None,
+                            context_window: None,
+                            supports_tools: true,
+                        },
+                    ]),
+                    42,
+                ),
+                ctx,
+            );
+
+            let row = view
+                .provider_row(ProviderType::OpenRouter)
+                .expect("OpenRouter row should exist");
+            assert_eq!(
+                row.test_result.borrow().as_ref(),
+                Some(&Ok(
+                    "OK: OpenRouter access validated. Fetched 2 models.".to_string()
+                ))
+            );
         });
     });
 }
@@ -708,7 +987,7 @@ fn provider_rows_load_persisted_base_urls_on_startup() {
 #[ignore = "Requires ViewContext mock setup"]
 fn model_selector_renders_empty_state_when_cache_missing() {
     // Expected: When cached_models is empty, widget shows placeholder
-    // "Click 'Update Model List' to fetch available models" and no dropdown.
+    // "Click 'Refresh models' to fetch available models" and no dropdown.
     // Requires: ViewContext mock to verify render output.
 }
 

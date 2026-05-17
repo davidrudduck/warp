@@ -600,7 +600,7 @@ Expected: selected backend is unambiguous without relying only on subtle color.
 - Modify if needed: `crates/ai/src/model_registry/providers/openrouter.rs`
 - Modify if needed: `crates/ai/src/model_registry/providers/custom.rs`
 
-- [ ] **Step 1: Add tests that reject "full test pending" as success**
+- [x] **Step 1: Add tests that reject "full test pending" as success**
 
 Add a test around provider result text helpers after extracting them:
 
@@ -614,7 +614,7 @@ fn remote_provider_test_result_is_not_reported_as_validated_until_network_probe_
 }
 ```
 
-- [ ] **Step 2: Replace misleading test copy**
+- [x] **Step 2: Replace misleading test copy**
 
 Replace "API key format valid (full test pending)" with:
 
@@ -634,7 +634,7 @@ For `401` or `403`, show:
 Error: Provider rejected the saved API key.
 ```
 
-- [ ] **Step 3: Keep blank-key preservation behavior**
+- [x] **Step 3: Keep blank-key preservation behavior**
 
 Preserve `api_key_or_saved` behavior for all keyed providers:
 
@@ -654,7 +654,7 @@ fn api_key_or_saved(
 }
 ```
 
-- [ ] **Step 4: Run settings UI tests**
+- [x] **Step 4: Run settings UI tests**
 
 Run:
 

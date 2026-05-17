@@ -42,7 +42,7 @@ use warpui::{
 };
 
 /// Model list cache freshness threshold. Entries older than this are ignored
-/// by `get()` and require an explicit refresh via "Update Model List".
+/// by `get()` and require an explicit refresh via "Refresh models".
 const MODEL_CACHE_TTL: Duration = Duration::from_secs(86_400);
 
 const ITEM_VERTICAL_SPACING: f32 = 24.;
@@ -79,6 +79,44 @@ fn provider_status_label(enabled: bool) -> &'static str {
     }
 }
 
+fn provider_preflight_message(provider: ProviderType) -> String {
+    match provider {
+        ProviderType::Ollama => "Ollama runs locally. Run Refresh models to validate access.",
+        ProviderType::Custom => {
+            "Custom provider format valid. Run Refresh models to validate provider access."
+        }
+        ProviderType::OpenAI
+        | ProviderType::Anthropic
+        | ProviderType::GoogleGemini
+        | ProviderType::OpenRouter => {
+            "API key format valid. Run Refresh models to validate provider access."
+        }
+    }
+    .to_string()
+}
+
+fn provider_model_list_success_message(provider: ProviderType, count: usize) -> String {
+    format!(
+        "OK: {} access validated. Fetched {count} models.",
+        provider.as_str()
+    )
+}
+
+fn provider_model_list_error_message(err: ModelListError) -> String {
+    match err {
+        ModelListError::AuthFailed => "Error: Provider rejected the saved API key.".to_string(),
+        ModelListError::RateLimited { retry_after_secs } => format!(
+            "Rate limited (retry after {}s)",
+            retry_after_secs.unwrap_or(60)
+        ),
+        ModelListError::Offline => "Provider unreachable (offline)".to_string(),
+        ModelListError::Unsupported => "Provider does not support model listing".to_string(),
+        ModelListError::Network(msg) => format!("Network error: {msg}"),
+        ModelListError::ParseFailed(msg) => format!("Parse error: {msg}"),
+        ModelListError::Cancelled => "Cancelled".to_string(),
+    }
+}
+
 fn normalized_base_url_for_provider(provider: &ProviderType, url: &str) -> Result<String, String> {
     match provider {
         ProviderType::Ollama | ProviderType::OpenRouter | ProviderType::Custom => {
@@ -89,6 +127,16 @@ fn normalized_base_url_for_provider(provider: &ProviderType, url: &str) -> Resul
         }
     }
     .map_err(|_| invalid_base_url_message())
+}
+
+fn validate_provider_base_url_preflight(provider: ProviderType, url: &str) -> Result<(), String> {
+    if provider == ProviderType::Custom && url.is_empty() {
+        return Err("Base URL is required for custom providers".to_string());
+    }
+    if provider.needs_base_url() && !url.is_empty() {
+        normalized_base_url_for_provider(&provider, url)?;
+    }
+    Ok(())
 }
 
 fn render_chromed_input_with_max_width(
@@ -529,16 +577,14 @@ impl DirectApiSettingsPageView {
             return;
         }
 
-        // Custom providers also need a Base URL to be testable.
-        if provider == ProviderType::Custom {
+        if provider.needs_base_url() {
             let base_url = row
                 .base_url_editor
                 .as_ref()
                 .map(|editor| editor.as_ref(ctx).buffer_text(ctx))
                 .unwrap_or_default();
-            if base_url.is_empty() {
-                *row.test_result.borrow_mut() =
-                    Some(Err("Base URL is required for custom providers".to_string()));
+            if let Err(msg) = validate_provider_base_url_preflight(provider, &base_url) {
+                *row.test_result.borrow_mut() = Some(Err(msg));
                 ctx.notify();
                 return;
             }
@@ -550,18 +596,7 @@ impl DirectApiSettingsPageView {
         });
         ctx.notify();
 
-        // TODO: Implement actual API validation. For now, surface a
-        // provider-appropriate "format valid, full test pending" message.
-        let msg = match provider {
-            ProviderType::Ollama => "Ollama runs locally - no API key needed".to_string(),
-            ProviderType::Custom => "Custom provider configured (full test pending)".to_string(),
-            ProviderType::OpenAI
-            | ProviderType::Anthropic
-            | ProviderType::GoogleGemini
-            | ProviderType::OpenRouter => "API key format valid (full test pending)".to_string(),
-        };
-
-        *row.test_result.borrow_mut() = Some(Ok(msg));
+        *row.test_result.borrow_mut() = Some(Ok(provider_preflight_message(provider)));
         row.test_button.update(ctx, |button, ctx| {
             button.set_disabled(false, ctx);
         });
@@ -842,7 +877,8 @@ impl DirectApiSettingsPageView {
                 );
                 match cache.set(provider_id, models) {
                     Ok(()) => {
-                        *row.test_result.borrow_mut() = Some(Ok(format!("Fetched {count} models")));
+                        *row.test_result.borrow_mut() =
+                            Some(Ok(provider_model_list_success_message(provider, count)));
                     }
                     Err(e) => {
                         log::error!("Failed to cache models: {e}");
@@ -869,21 +905,7 @@ impl DirectApiSettingsPageView {
                     },
                     ctx
                 );
-                let msg = match err {
-                    ModelListError::AuthFailed => "Authentication failed".to_string(),
-                    ModelListError::RateLimited { retry_after_secs } => format!(
-                        "Rate limited (retry after {}s)",
-                        retry_after_secs.unwrap_or(60)
-                    ),
-                    ModelListError::Offline => "Provider unreachable (offline)".to_string(),
-                    ModelListError::Unsupported => {
-                        "Provider does not support model listing".to_string()
-                    }
-                    ModelListError::Network(msg) => format!("Network error: {msg}"),
-                    ModelListError::ParseFailed(msg) => format!("Parse error: {msg}"),
-                    ModelListError::Cancelled => "Cancelled".to_string(),
-                };
-                *row.test_result.borrow_mut() = Some(Err(msg));
+                *row.test_result.borrow_mut() = Some(Err(provider_model_list_error_message(err)));
             }
         }
 
