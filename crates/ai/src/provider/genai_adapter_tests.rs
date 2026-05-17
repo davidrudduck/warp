@@ -143,6 +143,43 @@ fn genai_http_error_status_uses_structured_status() {
 }
 
 #[test]
+fn openrouter_401_maps_to_provider_auth_without_body() {
+    let error = genai::Error::HttpError {
+        status: reqwest::StatusCode::UNAUTHORIZED,
+        canonical_reason: "Unauthorized".to_string(),
+        body: "{\"error\":{\"message\":\"User not found.\"}}".to_string(),
+    };
+
+    let provider_error = provider_error_from_genai_error("openrouter", error.to_string(), &error);
+
+    assert!(matches!(
+        provider_error,
+        ProviderError::Auth(message)
+            if message == "OpenRouter rejected the saved API key"
+    ));
+}
+
+#[test]
+fn openrouter_web_stream_401_maps_to_provider_auth_without_body() {
+    let error = genai::Error::WebStream {
+        model_iden: genai::ModelIden::new(
+            genai::adapter::AdapterKind::OpenAI,
+            "moonshotai/kimi-k2.6",
+        ),
+        cause: "HTTP error.\nStatus: 401 Unauthorized\nBody: {\"error\":{\"message\":\"User not found.\"}}".to_string(),
+        error: std::io::Error::other("stream failed").into(),
+    };
+
+    let provider_error = provider_error_from_genai_error("openrouter", error.to_string(), &error);
+
+    assert!(matches!(
+        provider_error,
+        ProviderError::Auth(message)
+            if message == "OpenRouter rejected the saved API key"
+    ));
+}
+
+#[test]
 fn stream_end_emits_complete_tool_calls_before_end() {
     let events = convert_genai_stream_event(ChatStreamEvent::End(genai::chat::StreamEnd {
         captured_content: Some(genai::chat::MessageContent::from_tool_calls(vec![

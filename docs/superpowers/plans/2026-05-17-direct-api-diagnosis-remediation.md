@@ -323,7 +323,7 @@ Expected: all logging redaction tests pass.
 - Modify if needed: `crates/ai/src/provider/genai_adapter.rs`
 - Modify if needed: `crates/ai/src/provider/rig_backend.rs`
 
-- [ ] **Step 1: Add a direct tools test module**
+- [x] **Step 1: Add a direct tools test module**
 
 Add to the bottom of `app/src/ai/agent/api/direct_tools.rs`:
 
@@ -333,7 +333,7 @@ Add to the bottom of `app/src/ai/agent/api/direct_tools.rs`:
 mod tests;
 ```
 
-- [ ] **Step 2: Add a route construction test**
+- [x] **Step 2: Add a route construction test**
 
 Create `app/src/ai/agent/api/direct_tools_tests.rs`:
 
@@ -356,7 +356,7 @@ fn openrouter_provider_config_uses_openrouter_adapter_label_and_base_url() {
 }
 ```
 
-- [ ] **Step 3: Run the test to verify it fails**
+- [x] **Step 3: Run the test to verify it fails**
 
 Run:
 
@@ -366,7 +366,7 @@ cargo test -p warp openrouter_provider_config_uses_openrouter_adapter_label_and_
 
 Expected: fails because debug accessors do not exist or because endpoint normalization differs.
 
-- [ ] **Step 4: Add safe diagnostic accessors**
+- [x] **Step 4: Add safe diagnostic accessors**
 
 In `crates/ai/src/provider/genai_adapter.rs`, add accessors that do not expose secrets:
 
@@ -382,7 +382,7 @@ impl GenaiAdapter {
 }
 ```
 
-- [ ] **Step 5: Add a live-gated OpenRouter smoke test**
+- [x] **Step 5: Add a live-gated OpenRouter smoke test**
 
 Create or extend `crates/ai/tests/e2e_direct_provider.rs` with an ignored test:
 
@@ -404,7 +404,7 @@ async fn openrouter_key_endpoint_accepts_saved_bearer_key() {
 }
 ```
 
-- [ ] **Step 6: Decide the 401 remediation from evidence**
+- [x] **Step 6: Decide the 401 remediation from evidence**
 
 Use the Task 1 report:
 
@@ -413,7 +413,7 @@ Use the Task 1 report:
 - If native succeeds and Rig fails, keep Rig disabled by default and patch `RigProviderKind::OpenRouter` first.
 - If Rig and native both fail only for OpenRouter models, inspect whether the OpenAI-compatible adapter sends the wrong base URL, missing bearer auth, or incompatible body.
 
-- [ ] **Step 7: Run route tests**
+- [x] **Step 7: Run route tests**
 
 Run:
 

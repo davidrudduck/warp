@@ -486,6 +486,7 @@ Model selection is gated behind `FeatureFlag::DirectApiModelSelection` in DOGFOO
 - Verify key is still valid (not revoked)
 - Check provider account has billing enabled
 - For OpenAI: Verify organization access if using org API keys
+- For OpenRouter 401 errors such as `User not found`, OpenRouter rejected the configured key. Replace the saved OpenRouter key in `~/.warp-oss/settings.toml`, then retry.
 
 **Q: "Connection failed" error during model refresh or Direct API requests**
 

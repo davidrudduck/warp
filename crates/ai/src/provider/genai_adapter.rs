@@ -33,6 +33,14 @@ impl GenaiAdapter {
             capabilities: ModelCapabilities::default(),
         }
     }
+
+    pub fn diagnostic_provider_label(&self) -> &str {
+        &self.provider
+    }
+
+    pub fn diagnostic_base_url(&self) -> Option<&str> {
+        self.base_url.as_deref()
+    }
 }
 
 #[async_trait]
@@ -53,11 +61,7 @@ impl LlmProvider for GenaiAdapter {
                     &e,
                 );
                 let message = e.to_string();
-                ProviderError::Remote {
-                    provider: self.provider.clone(),
-                    code: None,
-                    message,
-                }
+                provider_error_from_genai_error(&self.provider, message, &e)
             })?;
 
         Ok(convert_from_genai_response(genai_resp))
@@ -80,11 +84,7 @@ impl LlmProvider for GenaiAdapter {
                     &e,
                 );
                 let message = e.to_string();
-                ProviderError::Remote {
-                    provider: self.provider.clone(),
-                    code: None,
-                    message,
-                }
+                provider_error_from_genai_error(&self.provider, message, &e)
             })?;
 
         let provider = self.provider.clone();
@@ -103,11 +103,7 @@ impl LlmProvider for GenaiAdapter {
                         &e,
                     );
                     let message = e.to_string();
-                    vec![Err(ProviderError::Remote {
-                        provider: provider.clone(),
-                        code: None,
-                        message,
-                    })]
+                    vec![Err(provider_error_from_genai_error(&provider, message, &e))]
                 }
             };
             futures::stream::iter(events)
@@ -167,6 +163,33 @@ fn log_direct_api_route_genai_error(
             Some(&message),
         )
     );
+}
+
+fn provider_error_from_genai_error(
+    provider: &str,
+    message: String,
+    error: &genai::Error,
+) -> ProviderError {
+    let status = genai_error_http_status(error);
+    if provider == "openrouter" && status == Some(401) {
+        return ProviderError::Auth("OpenRouter rejected the saved API key".to_string());
+    }
+    if status == Some(401) {
+        return ProviderError::Auth(format!(
+            "Direct API provider {provider} rejected the API key"
+        ));
+    }
+    if let Some(status) = status {
+        return ProviderError::Http {
+            status,
+            body: message,
+        };
+    }
+    ProviderError::Remote {
+        provider: provider.to_string(),
+        code: None,
+        message,
+    }
 }
 
 fn genai_error_http_status(error: &genai::Error) -> Option<u16> {

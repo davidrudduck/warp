@@ -45,6 +45,22 @@ fn init_test_db(db_path: &std::path::Path) {
 }
 
 #[tokio::test]
+#[ignore = "requires OPENROUTER_API_KEY and network"]
+async fn openrouter_key_endpoint_accepts_saved_bearer_key() {
+    let key = std::env::var("OPENROUTER_API_KEY")
+        .expect("OPENROUTER_API_KEY must be set for this ignored test");
+    let status = reqwest::Client::new()
+        .get("https://openrouter.ai/api/v1/key")
+        .header("Authorization", format!("Bearer {key}"))
+        .send()
+        .await
+        .expect("request should complete")
+        .status();
+
+    assert_eq!(status.as_u16(), 200);
+}
+
+#[tokio::test]
 #[ignore] // Requires OPENAI_API_KEY env var
 async fn e2e_openai_conversation_with_persistence() {
     // Setup

@@ -670,3 +670,7 @@ fn provider_name(provider_id: ProviderId) -> &'static str {
         ProviderId::Custom => "custom",
     }
 }
+
+#[cfg(test)]
+#[path = "direct_tools_tests.rs"]
+mod tests;
