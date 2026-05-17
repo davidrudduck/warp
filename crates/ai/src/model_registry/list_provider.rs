@@ -21,7 +21,7 @@ pub enum ModelListError {
     #[error("network error: {0}")]
     Network(String),
 
-    #[error("auth failed (HTTP 401/403)")]
+    #[error("auth failed (HTTP 401)")]
     AuthFailed,
 
     #[error("rate limited (HTTP 429); retry after {retry_after_secs:?}s")]

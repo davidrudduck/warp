@@ -793,7 +793,7 @@ impl CachedModels {
 Cache is invalidated when:
 1. User saves a new API key (forces fresh model list fetch)
 2. 24 hours have elapsed since last fetch
-3. User manually clicks "Update Model List"
+3. User manually clicks "Refresh models"
 
 #### Model Persistence
 

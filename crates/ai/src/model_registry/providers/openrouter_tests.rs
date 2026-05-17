@@ -81,6 +81,29 @@ async fn openrouter_auth_failed_on_401() {
 }
 
 #[tokio::test]
+async fn openrouter_forbidden_preserves_http_error_context() {
+    install_crypto_provider();
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+        .mock("GET", "/models")
+        .with_status(403)
+        .create_async()
+        .await;
+
+    let provider = OpenRouterListProvider::new("test-key".to_string(), Some(server.url()));
+
+    let result = provider.list_models().await;
+    assert!(result.is_err());
+
+    match result.unwrap_err() {
+        ModelListError::Network(message) if message.contains("HTTP 403") => {}
+        other => panic!("expected HTTP 403 Network error, got {other:?}"),
+    }
+
+    mock.assert_async().await;
+}
+
+#[tokio::test]
 async fn openrouter_rate_limited_on_429() {
     install_crypto_provider();
     let mut server = mockito::Server::new_async().await;

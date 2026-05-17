@@ -111,7 +111,7 @@ async fn custom_list_models_without_auth() {
 }
 
 #[tokio::test]
-async fn custom_auth_failed_on_403() {
+async fn custom_forbidden_preserves_http_error_context() {
     install_crypto_provider();
     let mut server = mockito::Server::new_async().await;
     let mock = server
@@ -127,8 +127,8 @@ async fn custom_auth_failed_on_403() {
     assert!(result.is_err());
 
     match result.unwrap_err() {
-        ModelListError::AuthFailed => {}
-        other => panic!("expected AuthFailed, got {other:?}"),
+        ModelListError::Network(message) if message.contains("HTTP 403") => {}
+        other => panic!("expected HTTP 403 Network error, got {other:?}"),
     }
 
     mock.assert_async().await;

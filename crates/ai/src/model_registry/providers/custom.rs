@@ -43,7 +43,7 @@ impl ModelListProvider for CustomListProvider {
         })?;
 
         let status = response.status();
-        if status == 401 || status == 403 {
+        if status == 401 {
             return Err(ModelListError::AuthFailed);
         }
         if status == 429 {

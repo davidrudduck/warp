@@ -30,7 +30,7 @@ Per-provider model selection allows you to choose which specific model to use fo
 
 The first time you use a provider, the model list may be empty or show defaults. To fetch the latest models:
 
-**Step 1: Click "Update Model List"**
+**Step 1: Click "Refresh models"**
 
 This button appears below the provider selector. Clicking it will:
 - Contact the provider's API to fetch available models
@@ -92,18 +92,18 @@ If you don't select a model, Warp uses these defaults:
 - Complex tasks: Use -turbo or -sonnet variants
 - Maximum capability: Use -opus or GPT-4
 
-**When to Update Model List:**
-- First time setup: Always update to see latest models
+**When to Refresh Models:**
+- First time setup: Always refresh to see latest models
 - After 24 hours: Cache expires, click to refresh
-- New model release: Update manually to see it
+- New model release: Refresh manually to see it
 
 **Troubleshooting:**
 
 | Issue | Solution |
 |---|---|
-| "Update Model List" does nothing | Check API key is saved first |
-| Model list empty | Click "Update Model List", wait 2-5 seconds |
-| Old models showing | Model list cached, click update to refresh |
+| "Refresh models" does nothing | Check API key is saved first |
+| Model list empty | Click "Refresh models", wait 2-5 seconds |
+| Old models showing | Model list cached, click refresh to update |
 | Can't select model | Ensure DirectApiModelSelection feature enabled |
 
 ### Advanced: Model List Cache
@@ -124,7 +124,7 @@ Structure:
 ```
 
 Cache expires after 24 hours. To force refresh:
-1. Click "Update Model List" in UI, OR
+1. Click "Refresh models" in UI, OR
 2. Delete cache file manually (not recommended)
 
 ### Feature Flag
