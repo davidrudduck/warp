@@ -736,7 +736,7 @@ Expected:
 **Files:**
 - Read: all files changed in Tasks 2 through 7
 
-- [ ] **Step 1: Run targeted unit tests**
+- [x] **Step 1: Run targeted unit tests**
 
 Run:
 
@@ -751,7 +751,7 @@ cargo test -p warp direct_api -- --nocapture
 
 Expected: all pass.
 
-- [ ] **Step 2: Run build check**
+- [x] **Step 2: Run build check**
 
 Run:
 
@@ -761,7 +761,7 @@ cargo check -p warp --bin warp-oss
 
 Expected: completes without errors.
 
-- [ ] **Step 3: Run optional Rig feature check if the feature is enabled in the target build**
+- [x] **Step 3: Run optional Rig feature check if the feature is enabled in the target build**
 
 Run:
 
@@ -771,7 +771,7 @@ cargo check -p warp --bin warp-oss --features direct_api_rig_backend
 
 Expected: completes without errors, or records the exact missing feature/dependency blocker.
 
-- [ ] **Step 4: Run live OpenRouter smoke test only with explicit key**
+- [x] **Step 4: Check live OpenRouter smoke-test precondition; skipped because `OPENROUTER_API_KEY` is not set**
 
 Run:
 
@@ -781,7 +781,7 @@ cargo test -p ai openrouter_key_endpoint_accepts_saved_bearer_key -- --ignored -
 
 Expected: passes when `OPENROUTER_API_KEY` is already set in the shell to a valid key. Fails with 401 when the supplied OpenRouter key is invalid or revoked. Do not inline the key in the command or derive it from `settings.toml` in process arguments.
 
-- [ ] **Step 5: Manual app validation**
+- [x] **Step 5: Attempt manual app validation; native `WarpOss.app` validation is blocked by the `cargo bundle` `ColorOutOfRange` panic recorded in Task 7**
 
 Validate:
 
