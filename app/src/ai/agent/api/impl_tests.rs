@@ -64,7 +64,7 @@ fn direct_api_request_params_for_openrouter() -> RequestParams {
     params.direct_api_route_config = Some(DirectApiRouteConfig {
         provider_id: ai::model_registry::ProviderId::OpenRouter,
         model_id: "openai/gpt-4o-mini".to_string(),
-        api_key: Some("sk-or-test".to_string()),
+        api_key: Some("sk-or-v1-test".to_string()),
         base_url: Some("https://openrouter.ai/api/v1".to_string()),
     });
     params
@@ -198,13 +198,32 @@ fn direct_api_routing_requires_openrouter_base_url() {
     params.direct_api_route_config = Some(DirectApiRouteConfig {
         provider_id: ai::model_registry::ProviderId::OpenRouter,
         model_id: "openai/gpt-4o-mini".to_string(),
-        api_key: Some("sk-or-test".to_string()),
+        api_key: Some("sk-or-v1-test".to_string()),
         base_url: None,
     });
 
     let err = super::super::direct::validate_direct_route(&params).unwrap_err();
 
     assert_eq!(err.to_string(), "Direct API provider requires a base URL");
+}
+
+#[test]
+fn direct_api_routing_rejects_openrouter_key_with_invalid_prefix() {
+    let mut params = request_params_with_ask_user_question_enabled(false);
+    params.model_routing = ModelRouting::DirectApi;
+    params.direct_api_route_config = Some(DirectApiRouteConfig {
+        provider_id: ai::model_registry::ProviderId::OpenRouter,
+        model_id: "openai/gpt-4o-mini".to_string(),
+        api_key: Some("sk-or-test".to_string()),
+        base_url: Some("https://openrouter.ai/api/v1".to_string()),
+    });
+
+    let err = super::super::direct::validate_direct_route(&params).unwrap_err();
+
+    assert_eq!(
+        err.to_string(),
+        "OpenRouter API keys should start with 'sk-or-v1-'"
+    );
 }
 
 #[test]

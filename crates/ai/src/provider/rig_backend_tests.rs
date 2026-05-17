@@ -124,6 +124,48 @@ fn rig_backend_failure_diagnostic_records_http_status() {
     assert!(!rendered.contains("Body: secret"));
 }
 
+#[test]
+fn rig_provider_401_error_maps_to_auth_failure() {
+    let error = super::rig_completion_error(rig_core::completion::CompletionError::ProviderError(
+        "HTTP error.\nStatus: 401 Unauthorized\nBody: secret".to_string(),
+    ));
+
+    assert!(matches!(
+        error,
+        ProviderError::Auth(message)
+            if message == "Rig Direct API provider rejected the API key"
+    ));
+}
+
+#[test]
+fn rig_provider_403_error_maps_to_auth_failure() {
+    let error = super::rig_completion_error(rig_core::completion::CompletionError::ProviderError(
+        "HTTP error.\nStatus: 403 Forbidden\nBody: secret".to_string(),
+    ));
+
+    assert!(matches!(
+        error,
+        ProviderError::Auth(message)
+            if message == "Rig Direct API provider rejected the API key"
+    ));
+}
+
+#[test]
+fn rig_structured_http_401_error_maps_to_auth_failure() {
+    let error = super::rig_completion_error(rig_core::completion::CompletionError::HttpError(
+        rig_core::http_client::Error::InvalidStatusCodeWithMessage(
+            reqwest::StatusCode::UNAUTHORIZED,
+            "secret".to_string(),
+        ),
+    ));
+
+    assert!(matches!(
+        error,
+        ProviderError::Auth(message)
+            if message == "Rig Direct API provider rejected the API key"
+    ));
+}
+
 #[tokio::test]
 async fn rig_backend_emits_tool_call_without_executing_tool() {
     let mut backend = FakeRigBackend::new().with_streamed_tool_call(

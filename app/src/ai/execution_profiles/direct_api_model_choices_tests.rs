@@ -40,7 +40,7 @@ fn direct_api_choices_include_safe_default_model_without_cache() {
 fn direct_api_choices_ignore_disabled_configured_provider() {
     let mut keys = ApiKeys {
         openai: Some("sk-test".to_string()),
-        open_router: Some("sk-or-test".to_string()),
+        open_router: Some("sk-or-v1-test".to_string()),
         ..ApiKeys::default()
     };
     keys.enabled_providers.insert(ProviderId::OpenAI, false);
@@ -189,7 +189,7 @@ fn direct_api_choices_allow_custom_and_ollama_with_base_urls() {
 #[test]
 fn direct_api_choices_allow_openrouter_with_key_without_cached_models() {
     let mut keys = ApiKeys {
-        open_router: Some("sk-or-test".to_string()),
+        open_router: Some("sk-or-v1-test".to_string()),
         ..ApiKeys::default()
     };
     keys.selected_models
@@ -199,4 +199,18 @@ fn direct_api_choices_allow_openrouter_with_key_without_cached_models() {
 
     assert_eq!(choices.len(), 1);
     assert_eq!(choices[0].label, "OpenRouter / openrouter/model");
+}
+
+#[test]
+fn direct_api_choices_ignore_openrouter_key_with_invalid_prefix() {
+    let mut keys = ApiKeys {
+        open_router: Some("sk-or-test".to_string()),
+        ..ApiKeys::default()
+    };
+    keys.selected_models
+        .insert(ProviderId::OpenRouter, "openrouter/model".to_string());
+
+    let choices = direct_api_model_choices_from_parts(&keys, None);
+
+    assert!(choices.is_empty());
 }

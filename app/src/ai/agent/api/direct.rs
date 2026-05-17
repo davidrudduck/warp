@@ -51,6 +51,13 @@ pub fn validate_direct_route(params: &RequestParams) -> anyhow::Result<()> {
             {
                 anyhow::bail!("Direct API provider requires an API key");
             }
+            if config
+                .api_key
+                .as_ref()
+                .is_some_and(|key| !key.starts_with("sk-or-v1-"))
+            {
+                anyhow::bail!("OpenRouter API keys should start with 'sk-or-v1-'");
+            }
             let Some(base_url) = config
                 .base_url
                 .as_ref()

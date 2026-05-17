@@ -127,6 +127,7 @@ impl std::fmt::Debug for DirectApiRouteConfig {
 pub enum DirectApiRouteConfigError {
     ProviderDisabled(ProviderId),
     MissingApiKey(ProviderId),
+    InvalidApiKey(ProviderId),
     MissingBaseUrl(ProviderId),
     InvalidBaseUrl(ProviderId),
 }
@@ -145,6 +146,13 @@ impl std::fmt::Display for DirectApiRouteConfigError {
                 write!(
                     f,
                     "Direct API provider {} requires an API key",
+                    provider_id.display_name()
+                )
+            }
+            DirectApiRouteConfigError::InvalidApiKey(provider_id) => {
+                write!(
+                    f,
+                    "Direct API provider {} has an invalid API key",
                     provider_id.display_name()
                 )
             }
@@ -203,7 +211,12 @@ impl DirectApiRouteConfig {
                 }
             },
             ProviderId::OpenRouter => match non_empty_string(keys.open_router.clone()) {
-                Some(key) => Some(key),
+                Some(key) if key.starts_with("sk-or-v1-") => Some(key),
+                Some(_key) => {
+                    return Err(DirectApiRouteConfigError::InvalidApiKey(
+                        selection.provider_id,
+                    ));
+                }
                 None => {
                     return Err(DirectApiRouteConfigError::MissingApiKey(
                         selection.provider_id,
@@ -1048,7 +1061,7 @@ mod tests {
             let terminal_view_id = install_request_params_singletons(&mut app);
 
             ApiKeyManager::handle(&app).update(&mut app, |manager, ctx| {
-                manager.set_open_router_key(Some("sk-or-direct".to_string()), ctx);
+                manager.set_open_router_key(Some("sk-or-v1-direct".to_string()), ctx);
             });
             AIExecutionProfilesModel::handle(&app).update(&mut app, |model, ctx| {
                 let profile_id = *model.active_profile(Some(terminal_view_id), ctx).id();
@@ -1080,8 +1093,51 @@ mod tests {
                 .direct_api_route_config
                 .expect("OpenRouter direct route should be configured");
             assert_eq!(route.provider_id, ProviderId::OpenRouter);
-            assert_eq!(route.api_key.as_deref(), Some("sk-or-direct"));
+            assert_eq!(route.api_key.as_deref(), Some("sk-or-v1-direct"));
             assert_eq!(route.base_url.as_deref(), Some(OPENROUTER_DEFAULT_BASE_URL));
+        });
+    }
+
+    #[test]
+    fn request_params_reject_openrouter_key_with_invalid_prefix() {
+        App::test((), |mut app| async move {
+            let terminal_view_id = install_request_params_singletons(&mut app);
+
+            ApiKeyManager::handle(&app).update(&mut app, |manager, ctx| {
+                manager.set_open_router_key(Some("sk-or-direct".to_string()), ctx);
+            });
+            AIExecutionProfilesModel::handle(&app).update(&mut app, |model, ctx| {
+                let profile_id = *model.active_profile(Some(terminal_view_id), ctx).id();
+                model.set_model_routing(profile_id, ModelRouting::DirectApi, ctx);
+                model.set_direct_api_model(
+                    profile_id,
+                    Some(DirectApiProfileModelSelection {
+                        provider_id: ProviderId::OpenRouter,
+                        model_id: "openai/gpt-4o-mini".to_string(),
+                    }),
+                    ctx,
+                );
+            });
+
+            let params = app.update(|ctx| {
+                let request_input = request_input();
+                RequestParams::new(
+                    Some(terminal_view_id),
+                    SessionContext::new_for_test(),
+                    &request_input,
+                    conversation_data(),
+                    None,
+                    ctx,
+                )
+            });
+
+            assert_eq!(params.model_routing, ModelRouting::DirectApi);
+            assert!(params.direct_api_route_config.is_none());
+            assert_eq!(
+                params.direct_api_route_error.as_deref(),
+                Some("Direct API provider OpenRouter has an invalid API key")
+            );
+            assert_eq!(params.api_keys, None);
         });
     }
 }

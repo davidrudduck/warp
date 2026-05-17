@@ -62,7 +62,9 @@ fn direct_api_providers_with_possible_models(keys: &ApiKeys) -> Vec<ProviderId> 
     if provider_is_enabled(keys, ProviderId::Ollama) && has_non_empty_value(&keys.ollama_base_url) {
         providers.push(ProviderId::Ollama);
     }
-    if provider_is_enabled(keys, ProviderId::OpenRouter) && has_non_empty_value(&keys.open_router) {
+    if provider_is_enabled(keys, ProviderId::OpenRouter)
+        && has_openrouter_api_key(&keys.open_router)
+    {
         providers.push(ProviderId::OpenRouter);
     }
     if provider_is_enabled(keys, ProviderId::Custom) && has_non_empty_value(&keys.custom_base_url) {
@@ -80,6 +82,12 @@ fn provider_is_enabled(keys: &ApiKeys, provider_id: ProviderId) -> bool {
 
 fn has_non_empty_value(value: &Option<String>) -> bool {
     value.as_ref().is_some_and(|value| !value.trim().is_empty())
+}
+
+fn has_openrouter_api_key(value: &Option<String>) -> bool {
+    value
+        .as_ref()
+        .is_some_and(|value| value.trim().starts_with("sk-or-v1-"))
 }
 
 fn default_model_id(provider_id: ProviderId) -> Option<&'static str> {

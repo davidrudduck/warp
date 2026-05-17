@@ -713,28 +713,54 @@ fn required_api_key(config: &RigBackendConfig) -> Result<String, ProviderError> 
 
 fn rig_completion_error(err: CompletionError) -> ProviderError {
     match err {
-        CompletionError::HttpError(err) => ProviderError::Remote {
-            provider: "rig".to_string(),
-            code: None,
-            message: err.to_string(),
-        },
+        CompletionError::HttpError(err) => rig_http_error(err),
         CompletionError::JsonError(err) => ProviderError::StreamParse(err.to_string()),
         CompletionError::UrlError(err) => ProviderError::StreamParse(err.to_string()),
         CompletionError::RequestError(err) => ProviderError::StreamParse(err.to_string()),
         CompletionError::ResponseError(message) => ProviderError::StreamParse(message),
-        CompletionError::ProviderError(message) => ProviderError::Remote {
-            provider: "rig".to_string(),
-            code: None,
-            message,
-        },
+        CompletionError::ProviderError(message) => rig_provider_error(message),
     }
 }
 
 fn rig_client_error(err: rig_core::http_client::Error) -> ProviderError {
-    ProviderError::Remote {
-        provider: "rig".to_string(),
-        code: None,
-        message: err.to_string(),
+    rig_http_error(err)
+}
+
+fn rig_http_error(err: rig_core::http_client::Error) -> ProviderError {
+    match &err {
+        rig_core::http_client::Error::InvalidStatusCode(status)
+        | rig_core::http_client::Error::InvalidStatusCodeWithMessage(status, _)
+            if matches!(status.as_u16(), 401 | 403) =>
+        {
+            ProviderError::Auth("Rig Direct API provider rejected the API key".to_string())
+        }
+        rig_core::http_client::Error::Protocol(_)
+        | rig_core::http_client::Error::InvalidStatusCode(_)
+        | rig_core::http_client::Error::InvalidStatusCodeWithMessage(_, _)
+        | rig_core::http_client::Error::InvalidHeaderValue(_)
+        | rig_core::http_client::Error::NoHeaders
+        | rig_core::http_client::Error::StreamEnded
+        | rig_core::http_client::Error::InvalidContentType(_)
+        | rig_core::http_client::Error::Instance(_) => ProviderError::Remote {
+            provider: "rig".to_string(),
+            code: None,
+            message: err.to_string(),
+        },
+    }
+}
+
+fn rig_provider_error(message: String) -> ProviderError {
+    if matches!(
+        crate::logging::http_status_from_diagnostic_message(&message),
+        Some(401 | 403)
+    ) {
+        ProviderError::Auth("Rig Direct API provider rejected the API key".to_string())
+    } else {
+        ProviderError::Remote {
+            provider: "rig".to_string(),
+            code: None,
+            message,
+        }
     }
 }
 
