@@ -701,17 +701,15 @@ JSON-backed cache with 24-hour TTL:
 // crates/ai/src/model_registry/cache.rs
 
 pub struct ModelListCache {
-    cache_path: PathBuf,  // ~/.cache/warp/model_cache.json
+    cache_path: PathBuf,  // warp_core::paths::cache_dir()/direct_api/models.json
 }
 
 impl ModelListCache {
-    pub fn new() -> Result<Self, CacheError> {
-        let cache_dir = dirs::cache_dir()
-            .ok_or(CacheError::NoCacheDir)?
-            .join("warp");
+    pub fn new() -> Result<Self> {
+        let cache_dir = warp_core::paths::cache_dir().join("direct_api");
         std::fs::create_dir_all(&cache_dir)?;
         Ok(Self {
-            cache_path: cache_dir.join("model_cache.json"),
+            cache_path: cache_dir.join("models.json"),
         })
     }
     
@@ -768,7 +766,7 @@ impl CachedModels {
 **Cache Location**:
 
 ```bash
-~/.cache/warp/model_cache.json
+~/Library/Application Support/dev.warp.WarpOss/direct_api/models.json
 ```
 
 **Cache Structure**:

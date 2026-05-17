@@ -171,10 +171,10 @@ fn provider_error_from_genai_error(
     error: &genai::Error,
 ) -> ProviderError {
     let status = genai_error_http_status(error);
-    if provider == "openrouter" && matches!(status, Some(401 | 403)) {
+    if provider == "openrouter" && matches!(status, Some(401)) {
         return ProviderError::Auth("OpenRouter rejected the saved API key".to_string());
     }
-    if matches!(status, Some(401 | 403)) {
+    if matches!(status, Some(401)) {
         return ProviderError::Auth(format!(
             "Direct API provider {provider} rejected the API key"
         ));

@@ -192,11 +192,10 @@ fn rig_backend_diagnostics_hash_custom_model_ids() {
 }
 
 #[test]
-fn rig_backend_diagnostics_preserve_public_model_ids_and_error_category() {
+fn rig_backend_diagnostics_hash_public_model_ids_and_preserve_error_category() {
     let event = RigDiagnosticEvent {
         provider: "OpenRouter".to_string(),
         model_id: "moonshotai/kimi-k2.6".to_string(),
-        model_id_is_public: true,
         error_category: Some("remote".to_string()),
         ..Default::default()
     };
@@ -205,7 +204,8 @@ fn rig_backend_diagnostics_preserve_public_model_ids_and_error_category() {
 
     assert!(rendered.contains("backend=rig_agent"));
     assert!(rendered.contains("provider=OpenRouter"));
-    assert!(rendered.contains("model_id=moonshotai/kimi-k2.6"));
+    assert!(!rendered.contains("moonshotai/kimi-k2.6"));
+    assert!(rendered.contains("model_id_hash="));
     assert!(rendered.contains("error_category=remote"));
 }
 
@@ -214,7 +214,6 @@ fn rig_backend_diagnostics_are_strict_allowlist() {
     let event = RigDiagnosticEvent {
         provider: "OpenRouter".to_string(),
         model_id: "moonshotai/kimi-k2.6".to_string(),
-        model_id_is_public: true,
         event_count: 5,
         tool_call_count: 1,
         finish_reason: Some("Stop".to_string()),
@@ -233,7 +232,7 @@ fn rig_backend_diagnostics_are_strict_allowlist() {
         vec![
             "backend",
             "provider",
-            "model_id",
+            "model_id_hash",
             "event_count",
             "tool_call_count",
             "finish_reason",
@@ -248,7 +247,6 @@ fn rig_backend_diagnostics_hash_public_flagged_unsafe_model_ids() {
     let event = RigDiagnosticEvent {
         provider: "OpenRouter".to_string(),
         model_id: "moonshotai/kimi-k2.6\napi_key=secret".to_string(),
-        model_id_is_public: true,
         ..Default::default()
     };
 

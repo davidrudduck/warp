@@ -138,15 +138,15 @@ fn rig_provider_401_error_maps_to_auth_failure() {
 }
 
 #[test]
-fn rig_provider_403_error_maps_to_auth_failure() {
+fn rig_provider_403_error_preserves_remote_error_context() {
     let error = super::rig_completion_error(rig_core::completion::CompletionError::ProviderError(
         "HTTP error.\nStatus: 403 Forbidden\nBody: secret".to_string(),
     ));
 
     assert!(matches!(
         error,
-        ProviderError::Auth(message)
-            if message == "Rig Direct API provider rejected the API key"
+        ProviderError::Remote { provider, message, .. }
+            if provider == "rig" && message.contains("Status: 403 Forbidden")
     ));
 }
 
@@ -163,6 +163,22 @@ fn rig_structured_http_401_error_maps_to_auth_failure() {
         error,
         ProviderError::Auth(message)
             if message == "Rig Direct API provider rejected the API key"
+    ));
+}
+
+#[test]
+fn rig_structured_http_403_error_preserves_remote_error_context() {
+    let error = super::rig_completion_error(rig_core::completion::CompletionError::HttpError(
+        rig_core::http_client::Error::InvalidStatusCodeWithMessage(
+            reqwest::StatusCode::FORBIDDEN,
+            "insufficient credits".to_string(),
+        ),
+    ));
+
+    assert!(matches!(
+        error,
+        ProviderError::Remote { provider, message, .. }
+            if provider == "rig" && message.contains("403")
     ));
 }
 

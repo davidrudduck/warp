@@ -338,44 +338,7 @@ fn rig_diagnostic_event_from_config(config: &RigBackendConfig) -> RigDiagnosticE
     RigDiagnosticEvent {
         provider: rig_provider_label(config.provider_kind).to_string(),
         model_id: config.model_id.clone(),
-        model_id_is_public: is_public_rig_model_id(config.provider_kind, &config.model_id),
         ..Default::default()
-    }
-}
-
-fn is_public_rig_model_id(provider: RigProviderKind, model_id: &str) -> bool {
-    match provider {
-        RigProviderKind::OpenAI => matches!(
-            model_id,
-            "gpt-4o"
-                | "gpt-4o-mini"
-                | "gpt-4.1"
-                | "gpt-4.1-mini"
-                | "gpt-4.1-nano"
-                | "gpt-5"
-                | "gpt-5-mini"
-                | "gpt-5-nano"
-        ),
-        RigProviderKind::Anthropic => matches!(
-            model_id,
-            "claude-3-5-sonnet-20241022"
-                | "claude-3-5-haiku-20241022"
-                | "claude-3-7-sonnet-20250219"
-                | "claude-sonnet-4-20250514"
-                | "claude-opus-4-20250514"
-        ),
-        RigProviderKind::GoogleGemini => matches!(
-            model_id,
-            "gemini-2.0-flash" | "gemini-2.5-flash" | "gemini-2.5-pro"
-        ),
-        RigProviderKind::OpenRouter => matches!(
-            model_id,
-            "moonshotai/kimi-k2.6"
-                | "openai/gpt-4o-mini"
-                | "anthropic/claude-3.5-sonnet"
-                | "google/gemini-2.5-flash"
-        ),
-        RigProviderKind::Ollama | RigProviderKind::CustomOpenAICompatible => false,
     }
 }
 
@@ -730,7 +693,7 @@ fn rig_http_error(err: rig_core::http_client::Error) -> ProviderError {
     match &err {
         rig_core::http_client::Error::InvalidStatusCode(status)
         | rig_core::http_client::Error::InvalidStatusCodeWithMessage(status, _)
-            if matches!(status.as_u16(), 401 | 403) =>
+            if matches!(status.as_u16(), 401) =>
         {
             ProviderError::Auth("Rig Direct API provider rejected the API key".to_string())
         }
@@ -752,7 +715,7 @@ fn rig_http_error(err: rig_core::http_client::Error) -> ProviderError {
 fn rig_provider_error(message: String) -> ProviderError {
     if matches!(
         crate::logging::http_status_from_diagnostic_message(&message),
-        Some(401 | 403)
+        Some(401)
     ) {
         ProviderError::Auth("Rig Direct API provider rejected the API key".to_string())
     } else {

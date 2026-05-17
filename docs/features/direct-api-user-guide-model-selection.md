@@ -108,9 +108,9 @@ If you don't select a model, Warp uses these defaults:
 
 ### Advanced: Model List Cache
 
-Models are cached at:
+On macOS OSS builds, models are cached at:
 ```bash
-~/.cache/warp/model_cache.json
+~/Library/Application Support/dev.warp.WarpOss/direct_api/models.json
 ```
 
 Structure:

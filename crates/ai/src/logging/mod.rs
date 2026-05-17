@@ -61,7 +61,6 @@ fn redact_secrets(message: &str) -> String {
 pub struct RigDiagnosticEvent {
     pub(crate) provider: String,
     pub(crate) model_id: String,
-    pub(crate) model_id_is_public: bool,
     pub(crate) event_count: usize,
     pub(crate) tool_call_count: usize,
     pub(crate) finish_reason: Option<String>,
@@ -70,11 +69,7 @@ pub struct RigDiagnosticEvent {
 }
 
 pub fn redact_rig_diagnostic_event(event: &RigDiagnosticEvent) -> String {
-    let model_field = if event.model_id_is_public && is_safe_log_value(&event.model_id) {
-        format!("model_id={}", event.model_id)
-    } else {
-        format!("model_id_hash={}", hash_custom_model_id(&event.model_id))
-    };
+    let model_field = format!("model_id_hash={}", hash_custom_model_id(&event.model_id));
     let finish_reason = event
         .finish_reason
         .as_deref()

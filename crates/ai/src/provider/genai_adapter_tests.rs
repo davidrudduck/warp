@@ -180,7 +180,7 @@ fn openrouter_web_stream_401_maps_to_provider_auth_without_body() {
 }
 
 #[test]
-fn openrouter_403_maps_to_provider_auth_without_body() {
+fn openrouter_403_preserves_http_error_context() {
     let error = genai::Error::HttpError {
         status: reqwest::StatusCode::FORBIDDEN,
         canonical_reason: "Forbidden".to_string(),
@@ -191,13 +191,13 @@ fn openrouter_403_maps_to_provider_auth_without_body() {
 
     assert!(matches!(
         provider_error,
-        ProviderError::Auth(message)
-            if message == "OpenRouter rejected the saved API key"
+        ProviderError::Http { status: 403, body }
+            if body.contains("insufficient credits")
     ));
 }
 
 #[test]
-fn provider_403_maps_to_provider_auth_without_body() {
+fn provider_403_preserves_http_error_context() {
     let error = genai::Error::HttpError {
         status: reqwest::StatusCode::FORBIDDEN,
         canonical_reason: "Forbidden".to_string(),
@@ -208,8 +208,8 @@ fn provider_403_maps_to_provider_auth_without_body() {
 
     assert!(matches!(
         provider_error,
-        ProviderError::Auth(message)
-            if message == "Direct API provider openai rejected the API key"
+        ProviderError::Http { status: 403, body }
+            if body.contains("forbidden")
     ));
 }
 
