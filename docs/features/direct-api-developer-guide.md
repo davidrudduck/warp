@@ -271,15 +271,9 @@ pub async fn run(
     tx: AgentEventSender,
     tool_req_tx: mpsc::Sender<ToolDispatchRequest>,
     cancellation_rx: futures::channel::oneshot::Receiver<()>,
-    conversation_repo: ConversationRepository,
-    logger: DirectApiLogger,
+    repository: Option<Arc<ConversationRepository>>,
 ) -> Result<(), ProviderError> {
-    // Load existing history or use initial_messages
-    let mut history = if initial_messages.is_empty() {
-        conversation_repo.load_messages(&conversation_id).await?
-    } else {
-        initial_messages
-    };
+    let mut history = initial_messages;
     
     loop {
         // Trim to context window
@@ -298,7 +292,9 @@ pub async fn run(
         // Save assistant message
         let msg = ChatMessage::Assistant { text, tool_calls: tool_calls.clone() };
         history.push(msg.clone());
-        conversation_repo.append_message(&conversation_id, msg).await?;
+        if let Some(ref repo) = repository {
+            repo.save_messages(conversation_id.to_string(), history.clone()).await?;
+        }
         
         // If no tool calls, we're done
         if tool_calls.is_empty() {
@@ -311,7 +307,9 @@ pub async fn run(
         // Add tool results to history
         let tool_result_msg = ChatMessage::User(result_blocks);
         history.push(tool_result_msg.clone());
-        conversation_repo.append_message(&conversation_id, tool_result_msg).await?;
+        if let Some(ref repo) = repository {
+            repo.save_messages(conversation_id.to_string(), history.clone()).await?;
+        }
     }
     
     Ok(())
@@ -381,11 +379,11 @@ CREATE TABLE direct_messages (
 pub struct ConversationRepository { ... }
 
 impl ConversationRepository {
-    pub async fn create_conversation(&self, provider: &str, model: &str) -> Result<String>;
-    pub async fn append_message(&self, conv_id: &str, msg: ChatMessage) -> Result<()>;
-    pub async fn load_messages(&self, conv_id: &str) -> Result<Vec<ChatMessage>>;
-    pub async fn get_conversation(&self, conv_id: &str) -> Result<DirectConversation>;
-    pub async fn list_conversations(&self) -> Result<Vec<DirectConversation>>;
+    pub async fn create_conversation(&self, provider: String, model: String) -> Result<String>;
+    pub async fn save_messages(&self, conv_id: String, messages: Vec<ChatMessage>) -> Result<()>;
+    pub async fn load_messages(&self, conv_id: String) -> Result<Vec<ChatMessage>>;
+    pub async fn get_conversation(&self, conv_id: String) -> Result<DirectConversation>;
+    pub async fn generate_title(&self, conv_id: String) -> Result<()>;
 }
 ```
 
@@ -423,17 +421,19 @@ impl DirectMessage {
 **Usage**:
 
 ```rust
-let repo = ConversationRepository::new();
+let repo = ConversationRepository::new(db_path);
 
 // Create conversation
-let conv_id = repo.create_conversation("openai", "gpt-4o").await?;
+let conv_id = repo
+    .create_conversation("openai".to_string(), "gpt-4o".to_string())
+    .await?;
 
-// Append message during loop
-repo.append_message(&conv_id, ChatMessage::User(...)).await?;
+// Save the current message history during the loop
+repo.save_messages(conv_id.clone(), history).await?;
 
 // Resume conversation
-let messages = repo.load_messages(&conv_id).await?;
-let conv = repo.get_conversation(&conv_id).await?;
+let messages = repo.load_messages(conv_id.clone()).await?;
+let conv = repo.get_conversation(conv_id).await?;
 println!("Title: {}", conv.title.unwrap_or_default());
 println!("Messages: {}", conv.message_count);
 ```
