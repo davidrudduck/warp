@@ -535,7 +535,7 @@ Expected: no overlapping labels, inputs, buttons, or status text.
 - Modify: `app/src/ai/execution_profiles/editor/ui_helpers.rs`
 - Modify: `app/src/ai/execution_profiles/editor/mod_tests.rs`
 
-- [ ] **Step 1: Add state tests**
+- [x] **Step 1: Add state tests**
 
 Extend `app/src/ai/execution_profiles/editor/mod_tests.rs`:
 
@@ -551,7 +551,7 @@ fn direct_api_agent_backend_state_marks_rig_selected_when_available() {
 }
 ```
 
-- [ ] **Step 2: Run the state tests**
+- [x] **Step 2: Run the state tests**
 
 Run:
 
@@ -561,7 +561,7 @@ cargo test -p warp direct_api_agent_backend -- --nocapture
 
 Expected: existing selector-state behavior is preserved.
 
-- [ ] **Step 3: Render a non-color selected signal**
+- [x] **Step 3: Render a non-color selected signal**
 
 In `render_direct_api_agent_backend_button`, add a check icon or explicit selected suffix for the selected option. Prefer an existing icon:
 
@@ -581,7 +581,7 @@ let mut button = appearance
 
 If the button builder supports leading icons, use `Icon::Check` for selected instead of visible "selected" copy. Keep the text fallback if icon-only state is not accessible.
 
-- [ ] **Step 4: Validate profile UI**
+- [x] **Step 4: Validate profile UI with automated checks; native visual evidence is deferred to Task 8**
 
 Run the app and inspect the profile editor:
 

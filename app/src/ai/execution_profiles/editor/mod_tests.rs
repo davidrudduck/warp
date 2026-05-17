@@ -1,5 +1,9 @@
-use super::ui_helpers::{context_window_snap_values, direct_api_agent_backend_selector_state};
+use super::ui_helpers::{
+    context_window_snap_values, direct_api_agent_backend_button_presentation,
+    direct_api_agent_backend_selector_state,
+};
 use crate::ai::execution_profiles::{AIExecutionProfile, DirectApiAgentBackend, ModelRouting};
+use crate::ui_components::icons::Icon;
 
 /// Helper: round-trip f32 → u32 for readable assertions and absorb the
 /// negligible f64→f32 drift the snap helper picks up on large ranges.
@@ -67,6 +71,36 @@ fn execution_profile_editor_disables_rig_backend_selector_option_without_feature
             .collect::<Vec<_>>(),
         vec![("Native", true), ("Rig Agent", false)]
     );
+}
+
+#[test]
+fn direct_api_agent_backend_state_marks_rig_selected_when_available() {
+    let profile = direct_api_profile_with_backend(DirectApiAgentBackend::RigAgent);
+    let state = direct_api_agent_backend_selector_state(&profile, true, true)
+        .expect("Direct API profile with enabled gate should show backend selector");
+
+    assert_eq!(state.selected_backend, DirectApiAgentBackend::RigAgent);
+    assert!(state
+        .options
+        .iter()
+        .any(|option| { option.backend == DirectApiAgentBackend::RigAgent && option.enabled }));
+}
+
+#[test]
+fn direct_api_agent_backend_button_presentation_marks_selected_without_color_only() {
+    let profile = direct_api_profile_with_backend(DirectApiAgentBackend::RigAgent);
+    let state = direct_api_agent_backend_selector_state(&profile, true, true)
+        .expect("Direct API profile with enabled gate should show backend selector");
+    let rig_option = state
+        .options
+        .iter()
+        .find(|option| option.backend == DirectApiAgentBackend::RigAgent)
+        .expect("Rig Agent option should be present");
+
+    let presentation = direct_api_agent_backend_button_presentation(rig_option, true);
+
+    assert_eq!(presentation.label, "Rig Agent");
+    assert_eq!(presentation.selected_icon, Some(Icon::Check));
 }
 
 #[test]

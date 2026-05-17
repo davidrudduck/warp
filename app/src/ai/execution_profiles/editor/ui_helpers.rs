@@ -24,7 +24,7 @@ use warpui::elements::{
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::ui_components::{
-    button::ButtonVariant,
+    button::{ButtonVariant, TextAndIcon, TextAndIconAlignment},
     components::{Coords, UiComponent, UiComponentStyles},
 };
 use warpui::AppContext;
@@ -35,7 +35,7 @@ use super::ExecutionProfileEditorViewAction;
 
 const CONTEXT_WINDOW_SLIDER_WIDTH: f32 = 220.;
 const CONTEXT_WINDOW_INPUT_BOX_WIDTH: f32 = 120.;
-const DIRECT_API_AGENT_BACKEND_BUTTON_WIDTH: f32 = 90.;
+const DIRECT_API_AGENT_BACKEND_BUTTON_WIDTH: f32 = 112.;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct DirectApiAgentBackendOptionState {
@@ -51,6 +51,12 @@ pub(super) struct DirectApiAgentBackendSelectorState {
     pub disabled_state_label: Option<&'static str>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct DirectApiAgentBackendButtonPresentation {
+    pub label: &'static str,
+    pub selected_icon: Option<Icon>,
+}
+
 impl DirectApiAgentBackendSelectorState {
     #[cfg(test)]
     pub(super) fn option_labels(&self) -> Vec<String> {
@@ -58,6 +64,16 @@ impl DirectApiAgentBackendSelectorState {
             .iter()
             .map(|option| option.label.to_string())
             .collect()
+    }
+}
+
+pub(super) fn direct_api_agent_backend_button_presentation(
+    option: &DirectApiAgentBackendOptionState,
+    selected: bool,
+) -> DirectApiAgentBackendButtonPresentation {
+    DirectApiAgentBackendButtonPresentation {
+        label: option.label,
+        selected_icon: selected.then_some(Icon::Check),
     }
 }
 
@@ -483,26 +499,45 @@ fn render_direct_api_agent_backend_button(
         DirectApiAgentBackend::RigAgent => view.rig_backend_button_mouse_state.clone(),
     };
 
+    let presentation = direct_api_agent_backend_button_presentation(&option, selected);
+    let button_label_color = appearance.theme().active_ui_text_color();
+
     let mut button = appearance
         .ui_builder()
-        .button(ButtonVariant::Secondary, mouse_state)
-        .with_centered_text_label(option.label.to_string())
-        .with_style(UiComponentStyles {
-            width: Some(DIRECT_API_AGENT_BACKEND_BUTTON_WIDTH),
-            padding: Some(Coords {
-                top: 5.,
-                bottom: 5.,
-                left: 8.,
-                right: 8.,
-            }),
-            margin: Some(Coords {
-                left: 0.,
-                right: 6.,
-                top: 0.,
-                bottom: 0.,
-            }),
-            ..Default::default()
-        });
+        .button(ButtonVariant::Secondary, mouse_state);
+
+    button = if let Some(icon) = presentation.selected_icon {
+        button.with_text_and_icon_label(
+            TextAndIcon::new(
+                TextAndIconAlignment::IconFirst,
+                presentation.label,
+                icon.to_warpui_icon(button_label_color),
+                MainAxisSize::Max,
+                MainAxisAlignment::Center,
+                vec2f(14., 14.),
+            )
+            .with_inner_padding(4.),
+        )
+    } else {
+        button.with_centered_text_label(presentation.label.to_string())
+    };
+
+    let mut button = button.with_style(UiComponentStyles {
+        width: Some(DIRECT_API_AGENT_BACKEND_BUTTON_WIDTH),
+        padding: Some(Coords {
+            top: 5.,
+            bottom: 5.,
+            left: 8.,
+            right: 8.,
+        }),
+        margin: Some(Coords {
+            left: 0.,
+            right: 6.,
+            top: 0.,
+            bottom: 0.,
+        }),
+        ..Default::default()
+    });
 
     if selected {
         button = button.active();
