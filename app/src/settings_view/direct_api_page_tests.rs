@@ -236,6 +236,17 @@ fn openrouter_required_config_requires_current_key_prefix() {
 }
 
 #[test]
+fn openrouter_explicit_enabled_still_requires_current_key_prefix() {
+    let mut keys = ApiKeys {
+        open_router: Some("sk-or-invalid".to_string()),
+        ..ApiKeys::default()
+    };
+    keys.enabled_providers.insert(ProviderId::OpenRouter, true);
+
+    assert!(!provider_is_enabled(&keys, ProviderId::OpenRouter));
+}
+
+#[test]
 fn model_refresh_success_reports_provider_access_validated() {
     assert_eq!(
         provider_model_list_success_message(ProviderType::OpenRouter, 356),
@@ -799,6 +810,86 @@ fn openrouter_refresh_rejects_saved_key_with_invalid_prefix_before_fetch() {
                 ))
             );
             assert!(!row.fetch_in_flight.get());
+        });
+    });
+}
+
+#[test]
+fn openrouter_select_model_rejects_saved_key_with_invalid_prefix() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        DirectAPISettings::register(&mut app);
+        app.add_singleton_model(|_| AuthStateProvider::new_logged_out_for_test());
+        app.add_singleton_model(|_| Appearance::mock());
+        app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
+        app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
+
+        DirectAPISettings::handle(&app).update(&mut app, |settings, ctx| {
+            settings
+                .api_key_openrouter
+                .set_value(Some("sk-or-invalid".to_string()), ctx)
+                .expect("OpenRouter API key should save");
+        });
+
+        let (_window_id, view) =
+            app.add_window(WindowStyle::NotStealFocus, DirectApiSettingsPageView::new);
+        view.update(&mut app, |view, ctx| {
+            view.handle_select_model(
+                ProviderType::OpenRouter,
+                "openrouter/model".to_string(),
+                ctx,
+            );
+
+            let row = view
+                .provider_row(ProviderType::OpenRouter)
+                .expect("OpenRouter row should exist");
+            assert_eq!(
+                row.test_result.borrow().as_ref(),
+                Some(&Err(
+                    "OpenRouter API keys should start with 'sk-or-v1-'".to_string()
+                ))
+            );
+        });
+
+        app.read(|ctx| {
+            let settings = DirectAPISettings::as_ref(ctx);
+            assert!(!settings.selected_models.value().contains_key("OpenRouter"));
+        });
+    });
+}
+
+#[test]
+fn openrouter_dropdown_hides_cached_models_when_saved_key_has_invalid_prefix() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        DirectAPISettings::register(&mut app);
+        app.add_singleton_model(|_| AuthStateProvider::new_logged_out_for_test());
+        app.add_singleton_model(|_| Appearance::mock());
+        app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
+
+        DirectAPISettings::handle(&app).update(&mut app, |settings, ctx| {
+            settings
+                .api_key_openrouter
+                .set_value(Some("sk-or-invalid".to_string()), ctx)
+                .expect("OpenRouter API key should save");
+            let mut selected_models = settings.selected_models.value().clone();
+            selected_models.insert("OpenRouter".to_string(), "openrouter/stale".to_string());
+            settings
+                .selected_models
+                .set_value(selected_models, ctx)
+                .expect("selected model should save");
+        });
+
+        let (_window_id, view) =
+            app.add_window(WindowStyle::NotStealFocus, DirectApiSettingsPageView::new);
+        view.update(&mut app, |view, ctx| {
+            view.refresh_model_dropdown(ProviderType::OpenRouter, ctx);
+
+            let row = view
+                .provider_row(ProviderType::OpenRouter)
+                .expect("OpenRouter row should exist");
+            assert!(!row.model_dropdown_has_items.get());
+            assert!(row.cached_models.borrow().is_empty());
         });
     });
 }

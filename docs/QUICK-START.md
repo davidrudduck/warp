@@ -48,16 +48,9 @@ Choose your provider:
 5. Click **Save Settings**
 6. Click **Refresh models** to validate provider access and populate models
 
-### 4. Start Using AI
+### 4. Start Using Warp Agent Mode
 
-In any Warp terminal:
-
-```bash
-# Use Claude Code to work with your configured API
-claude-code --help
-```
-
-Or use Warp's built-in Agent Mode:
+In any Warp terminal, use Warp's built-in Agent Mode:
 
 ```bash
 @agent help me install Node.js

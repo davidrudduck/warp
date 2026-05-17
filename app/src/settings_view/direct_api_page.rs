@@ -726,7 +726,7 @@ impl DirectApiSettingsPageView {
         let provider_id = provider.to_provider_id();
         let currently_enabled = {
             let keys = self.api_key_manager.as_ref(ctx).keys(ctx);
-            provider_is_enabled(&keys, provider_id)
+            provider_is_toggled_on(&keys, provider_id)
         };
         self.api_key_manager.update(ctx, |manager, ctx| {
             manager.set_provider_enabled(provider_id, !currently_enabled, ctx);
@@ -945,6 +945,16 @@ impl DirectApiSettingsPageView {
         ctx: &mut ViewContext<Self>,
     ) {
         let provider_id = provider.to_provider_id();
+        let keys = self.api_key_manager.as_ref(ctx).keys(ctx);
+        if provider_id == ProviderId::OpenRouter && !has_openrouter_api_key(&keys.open_router) {
+            if let Some(row) = self.provider_row(provider) {
+                *row.test_result.borrow_mut() = Some(Err(
+                    "OpenRouter API keys should start with 'sk-or-v1-'".to_string(),
+                ));
+            }
+            ctx.notify();
+            return;
+        }
 
         self.api_key_manager.update(ctx, |manager, ctx| {
             manager.set_selected_model(provider_id, model_id.clone(), ctx);
@@ -969,6 +979,18 @@ impl DirectApiSettingsPageView {
 
     fn refresh_model_dropdown(&mut self, provider: ProviderType, ctx: &mut ViewContext<Self>) {
         let provider_id = provider.to_provider_id();
+        let keys = self.api_key_manager.as_ref(ctx).keys(ctx);
+        if provider_id == ProviderId::OpenRouter && !has_openrouter_api_key(&keys.open_router) {
+            if let Some(row) = self.provider_row(provider) {
+                row.model_dropdown_has_items.set(false);
+                row.model_dropdown.update(ctx, |dropdown, ctx| {
+                    dropdown.set_items(Vec::new(), ctx);
+                    dropdown.set_selected_to_none(ctx);
+                });
+                *row.cached_models.borrow_mut() = Vec::new();
+            }
+            return;
+        }
 
         let models = self
             .model_cache
@@ -1126,6 +1148,10 @@ impl DirectApiSettingsPageView {
 }
 
 fn provider_is_enabled(keys: &::ai::api_keys::ApiKeys, provider_id: ProviderId) -> bool {
+    provider_is_toggled_on(keys, provider_id) && provider_has_required_config(keys, provider_id)
+}
+
+fn provider_is_toggled_on(keys: &::ai::api_keys::ApiKeys, provider_id: ProviderId) -> bool {
     keys.enabled_providers
         .get(&provider_id)
         .copied()
