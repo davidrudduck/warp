@@ -115,7 +115,7 @@ UI layer:
 
 ```text
 app/src/settings_view/
-├── direct_api_page.rs           # Settings page (provider dropdown, key input, test button)
+├── direct_api_page.rs           # Settings page (provider rows, key input, Test/Save/Refresh controls)
 └── ...
 ```
 
@@ -448,47 +448,41 @@ WarpUI-based settings page for configuring API keys.
 
 ```rust
 pub enum DirectApiPageAction {
-    SelectProvider(String),
-    TestConnection,
-    SaveApiKey,
+    TestConnection(String),
+    SaveApiKey(String),
+    ToggleProviderEnabled(String),
+    UpdateModelList(String),
+    ToggleApiKeyVisibility(String),
+    SelectModel(String),
+    ToggleRigBackendEnabled,
 }
 
 pub struct DirectApiSettingsPageView {
     page: PageType<Self>,
     api_key_manager: ModelHandle<ApiKeyManager>,
-    provider_dropdown: ViewHandle<Dropdown<DirectApiPageAction>>,
-    api_key_editor: ViewHandle<EditorView>,
-    base_url_editor: ViewHandle<EditorView>,
-    selected_provider: RefCell<ProviderType>,
-    test_result: RefCell<Option<Result<String, String>>>,
-    test_button: ViewHandle<ActionButton>,
-    save_button: ViewHandle<ActionButton>,
+    provider_rows: Vec<ProviderRowState>,
+    model_cache: Arc<ModelListCache>,
 }
 ```
 
 **Widgets**:
 
-1. **Provider Dropdown** — Select from 6 providers
-2. **API Key Input** — EditorView for entering key
-3. **Base URL Input** — Shown for providers with configurable base URLs, including Ollama, OpenRouter, and custom endpoints
-4. **Test Connection Button** — Performs local key-format and required-base-URL validation; full provider reachability and authentication testing is pending
-5. **Save Settings Button** — Persists to DirectAPISettings
-6. **Status Display** — Shows ✓/✗ results
+1. **Provider rows** — One row per provider for scanable setup
+2. **API key input** — EditorView for entering key
+3. **Base URL input** — Shown for providers with configurable base URLs, including Ollama, OpenRouter, and custom endpoints
+4. **Test button** — Performs local key-format and required-base-URL validation
+5. **Save button** — Persists to DirectAPISettings
+6. **Enable/Disable button** — Toggles provider availability when required config is valid
+7. **Refresh models button** — Validates provider reachability/authentication and caches available models
+8. **Status display** — Shows validation/fetch results
 
 **Action Handlers**:
 
 ```rust
-fn handle_select_provider(&mut self, provider: String, ctx: &mut ViewContext<Self>) {
-    if let Some(provider_type) = ProviderType::from_str(&provider) {
-        *self.selected_provider.borrow_mut() = provider_type;
-        // Clear test result when switching providers
-    }
-}
+fn handle_test_connection(&mut self, provider: ProviderType, ctx: &mut ViewContext<Self>) {
+    let row = self.provider_row(provider);
+    let api_key = row.api_key_editor.as_ref(ctx).buffer_text(ctx);
 
-fn handle_test_connection(&mut self, ctx: &mut ViewContext<Self>) {
-    let provider = self.selected_provider.borrow().clone();
-    let api_key = self.api_key_editor.get_text();
-    
     // Validate format based on provider
     match provider {
         ProviderType::OpenAI => {
@@ -504,10 +498,10 @@ fn handle_test_connection(&mut self, ctx: &mut ViewContext<Self>) {
     }
 }
 
-fn handle_save_api_key(&mut self, ctx: &mut ViewContext<Self>) {
-    let provider = self.selected_provider.borrow().clone();
-    let api_key = self.api_key_editor.get_text();
-    
+fn handle_save_api_key(&mut self, provider: ProviderType, ctx: &mut ViewContext<Self>) {
+    let row = self.provider_row(provider);
+    let api_key = row.api_key_editor.as_ref(ctx).buffer_text(ctx);
+
     self.api_key_manager.update(ctx, |manager, _| {
         match provider {
             ProviderType::OpenAI => manager.set_openai_key(Some(api_key)),

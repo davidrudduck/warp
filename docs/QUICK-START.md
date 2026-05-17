@@ -49,8 +49,8 @@ Choose your provider:
 1. Find the provider row you want to configure
 2. Paste your API key for remote providers (or leave blank for Ollama)
 3. For Ollama/OpenRouter/custom: Enter base URL if not default
-4. Click **Test Connection** to validate local key and base URL format
-5. Click **Save Settings**
+4. Click **Test** to validate local key and base URL format
+5. Click **Save**
 6. Click **Refresh models** to validate provider access and populate models
 
 ### 4. Start Using Warp Agent Mode

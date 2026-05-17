@@ -92,9 +92,9 @@ Direct API keys stay in the channel-specific settings file and are not attached 
 1. Open Warp Settings → Agents → Direct API
 2. Find the **OpenAI** provider row
 3. Paste your API key into the **API Key** field
-4. Click **Test Connection**
+4. Click **Test**
 5. You should see: ✓ API key format valid. Run Refresh models to validate provider access.
-6. Click **Save Settings**
+6. Click **Save**
 
 **Choose a Model**
 
@@ -124,9 +124,9 @@ Other options:
 1. Open Warp Settings → Agents → Direct API
 2. Find the **Anthropic** provider row
 3. Paste your API key
-4. Click **Test Connection**
+4. Click **Test**
 5. You should see: ✓ API key format valid. Run Refresh models to validate provider access.
-6. Click **Save Settings**
+6. Click **Save**
 
 **Choose a Model**
 
@@ -155,9 +155,9 @@ Other options:
 1. Open Warp Settings → Agents → Direct API
 2. Find the **Google Gemini** provider row
 3. Paste your API key
-4. Click **Test Connection**
+4. Click **Test**
 5. You should see: ✓ API key format valid. Run Refresh models to validate provider access.
-6. Click **Save Settings**
+6. Click **Save**
 
 **Choose a Model**
 
@@ -202,9 +202,9 @@ You should see your downloaded models.
 2. Find the **Ollama** provider row
 3. Leave **API Key** blank (not required)
 4. **Base URL** should be `http://localhost:11434` (default)
-5. Click **Test Connection**
+5. Click **Test**
 6. You should see: ✓ Ollama runs locally. Run Refresh models to validate access.
-7. Click **Save Settings**
+7. Click **Save**
 
 **Choose a Model**
 
@@ -241,9 +241,9 @@ Available models from `ollama pull` command:
 2. Find the **OpenRouter** provider row
 3. Paste your API key
 4. **Base URL** should be `https://openrouter.ai/api/v1` (default)
-5. Click **Test Connection**
+5. Click **Test**
 6. You should see: ✓ API key format valid. Run Refresh models to validate provider access.
-7. Click **Save Settings**
+7. Click **Save**
 
 **Choose a Model**
 
@@ -268,9 +268,9 @@ For endpoints compatible with OpenAI's API format (including LM Studio, Vllm, cu
 2. Find the **Custom (OpenAI-compatible)** provider row
 3. Enter your **API Key** (or leave blank if endpoint doesn't require auth)
 4. Enter your **Base URL** (e.g., `http://localhost:8000`)
-5. Click **Test Connection**
+5. Click **Test**
 6. You should see: ✓ Custom provider format valid. Run Refresh models to validate provider access.
-7. Click **Save Settings**
+7. Click **Save**
 
 **Example: LM Studio**
 
@@ -284,7 +284,7 @@ Model: llama-2-7b-chat.Q4_K_M
 
 After entering your API key:
 
-1. Click **Test Connection** button
+1. Click **Test** button
 2. Warp will validate:
    - API key format is correct
    - Required custom-provider base URL is present
@@ -300,7 +300,7 @@ After entering your API key:
 
 After a successful test:
 
-1. Click **Save Settings**
+1. Click **Save**
 2. Warp writes the Direct API configuration to the channel-specific settings file
 3. For the warp-oss macOS build, that file is `~/.warp-oss/settings.toml`
 
