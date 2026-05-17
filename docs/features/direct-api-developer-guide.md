@@ -499,13 +499,12 @@ fn handle_save_api_key(&mut self, provider: ProviderType, ctx: &mut ViewContext<
     let row = self.provider_row(provider);
     let api_key = row.api_key_editor.as_ref(ctx).buffer_text(ctx);
 
-    self.api_key_manager.update(ctx, |manager, _| {
+    self.api_key_manager.update(ctx, |manager, ctx| {
         match provider {
-            ProviderType::OpenAI => manager.set_openai_key(Some(api_key)),
-            ProviderType::Anthropic => manager.set_anthropic_key(Some(api_key)),
+            ProviderType::OpenAI => manager.set_openai_key(Some(api_key), ctx),
+            ProviderType::Anthropic => manager.set_anthropic_key(Some(api_key), ctx),
             // ... others
-        }?;
-        Ok(())
+        }
     })
 }
 ```
@@ -548,10 +547,8 @@ static JWT_PATTERN: Lazy<Regex> = Lazy::new(||
 pub struct DirectApiLogger { ... }
 
 impl DirectApiLogger {
-    pub fn init() -> Self { ... }
-    pub async fn log_regular(&self, message: &str) { ... }
-    pub async fn log_debug(&self, message: &str) { ... }
-    pub fn set_debug_enabled(&self, enabled: bool) { ... }
+    pub fn new(log_dir: PathBuf) -> Self { ... }
+    pub async fn log(&self, message: &str) { ... }
 }
 ```
 
