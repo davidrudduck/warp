@@ -565,7 +565,7 @@ A: Yes. Edit the active execution profile in Settings -> Agents -> Profiles, set
 
 **Q: What happens if I run out of API credits?**
 
-A: Your requests will fail with an authentication error. Check your provider's dashboard and add billing or credits.
+A: Your requests will fail with a provider or HTTP error, such as a 403. Check your provider's dashboard and add billing or credits.
 
 **Q: Do you support model switching?**
 

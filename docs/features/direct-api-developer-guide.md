@@ -527,17 +527,20 @@ On macOS, the OSS app log is `warp-oss.log` under `~/Library/Logs/`.
 **Redaction Patterns**:
 
 ```rust
-static OPENAI_PATTERN: Lazy<Regex> = Lazy::new(|| 
-    Regex::new(r"sk-[A-Za-z0-9]{48}").unwrap()
+static OPENAI_PATTERN: Lazy<Regex> = Lazy::new(||
+    Regex::new(r"sk-[A-Za-z0-9_\.\-]+").unwrap()
 );
-static ANTHROPIC_PATTERN: Lazy<Regex> = Lazy::new(|| 
-    Regex::new(r"sk-ant-[A-Za-z0-9-]{95}").unwrap()
+static ANTHROPIC_PATTERN: Lazy<Regex> = Lazy::new(||
+    Regex::new(r"sk-ant-[A-Za-z0-9_-]+").unwrap()
 );
-static BEARER_PATTERN: Lazy<Regex> = Lazy::new(|| 
-    Regex::new(r"Bearer [a-zA-Z0-9._-]+").unwrap()
+static OPENROUTER_PATTERN: Lazy<Regex> = Lazy::new(||
+    Regex::new(r"sk-or-v1-[A-Za-z0-9_\.\-]+").unwrap()
 );
-static JWT_PATTERN: Lazy<Regex> = Lazy::new(|| 
-    Regex::new(r"eyJ[A-Za-z0-9_-]+").unwrap()
+static BEARER_PATTERN: Lazy<Regex> = Lazy::new(||
+    Regex::new(r"Bearer\s+[A-Za-z0-9_\.\-]+").unwrap()
+);
+static JWT_PATTERN: Lazy<Regex> = Lazy::new(||
+    Regex::new(r"eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+").unwrap()
 );
 ```
 
